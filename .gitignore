@@ -22,6 +22,7 @@ backend/pom.xml.next
 backend/release.properties
 backend/dependency-reduced-pom.xml
 backend/spring-boot-admin-server-data/
+backend/dockerize/
 
 # Frontend (Node.js/Vite/React) specific
 frontend/node_modules/
