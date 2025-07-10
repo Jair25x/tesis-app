@@ -83,7 +83,14 @@ git clone https://github.com/Jair25x/tesis-app-backend.git
 cd tesis-app-backend
 ```
 2. Configuración de Variables de Entorno
-Crea un archivo .env en la raíz de este directorio (tesis-app-backend) con las variables de entorno necesarias para tus servicios (ej. claves secretas JWT, credenciales de base de datos, URLs de servicios externos como OpenAI). Este archivo está en el .gitignore y no debe subirse al repositorio.
+Copia el archivo `.env.example` y renómbralo como `.env` en la raíz de este directorio. Luego completa los valores necesarios. Este archivo está en el .gitignore y no debe subirse al repositorio.
+
+```bash
+cp .env.example .env
+```
+
+Este archivo de ejemplo contiene todas las variables necesarias para Docker Compose y los microservicios. Personalízalas según tu entorno.
+
 
 # Ejemplo de .env
 ```bash
