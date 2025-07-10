@@ -1,0 +1,30 @@
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  boot:
+    admin:
+      client:
+        url: http://admin-monitoring-service:9090
+        instance:
+          metadata:
+            user:
+              name: admin
+              password: admin
+
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://github.com/Jair25x/tesis-config-repo
+          default-label: main
+          search-paths: .
+          username: Jair25x
+          password: ${GITHUB_TOKEN}
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/

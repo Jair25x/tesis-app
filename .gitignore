@@ -1,0 +1,36 @@
+# Common to all projects
+.DS_Store
+Thumbs.db
+.env
+.env.local
+.env.*.local
+*.log
+
+# IDE specific files
+.idea/
+.vscode/
+.project
+.classpath
+.settings/
+*.iml
+
+# Backend (Java/Maven) specific
+backend/target/
+backend/pom.xml.tag
+backend/pom.xml.versionsBackup
+backend/pom.xml.next
+backend/release.properties
+backend/dependency-reduced-pom.xml
+backend/spring-boot-admin-server-data/
+
+# Frontend (Node.js/Vite/React) specific
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/.vite-temp/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnp/
+frontend/.pnp.js

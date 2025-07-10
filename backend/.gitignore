@@ -1,0 +1,34 @@
+# Maven build output
+target/
+pom.xml.tag
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+build/ # Some build tools might create this
+*.log
+
+# IDE specific files
+.idea/        # IntelliJ IDEA
+.vscode/      # VS Code (if you have workspace settings here)
+.project
+.classpath
+.settings/    # Eclipse
+.factorypath
+
+# Operating System files
+.DS_Store     # macOS
+Thumbs.db     # Windows
+
+# Environment variables (if you have them directly in the root)
+.env
+.env.local
+
+# Docker specific (if not part of build context for other reasons)
+*.jar
+*.war
+*.zip
+*.tar.gz
+
+# Spring Boot Admin (if you have local-temp files)
+spring-boot-admin-server-data/

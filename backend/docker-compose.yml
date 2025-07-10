@@ -1,0 +1,153 @@
+version: '3.9'
+
+services:
+  eureka-server:
+    build:
+      context: .
+      dockerfile: ./eureka-server/Dockerfile
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.50'
+    networks:
+      - tesis-network
+
+  admin-monitoring-service:
+    build:
+      context: .
+      dockerfile: ./admin-monitoring-service/Dockerfile
+    container_name: admin-monitoring-service
+    ports:
+      - "9090:9090"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+    depends_on:
+      - eureka-server
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.30'
+    networks:
+      - tesis-network
+
+  config-service:
+    build:
+      context: .
+      dockerfile: ./config-service/Dockerfile
+    container_name: config-service
+    ports:
+      - "8888:8888"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+    depends_on:
+      - eureka-server
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.30'
+    networks:
+      - tesis-network
+
+  gateway-service:
+    build:
+      context: .
+      dockerfile: ./gateway-service/Dockerfile
+    container_name: gateway-service
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - CONFIG_SERVER_URL=http://config-service:8888
+    depends_on:
+      - eureka-server
+      - config-service
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.50'
+    networks:
+      - tesis-network
+
+  # --- SERVICIO DE BASE DE DATOS PARA AUTH-PROFILE-SERVICE ---
+  auth-profile-db:
+    image: postgres:13.21-alpine # Imagen de PostgreSQL, versión 13, ligera
+    container_name: auth-profile-db # Nombre del contenedor para fácil identificación
+    ports:
+      - "5432:5432" # Mapea el puerto 5432 del host al contenedor
+    environment:
+      - POSTGRES_DB=tesisdb_auth # Nombre de la base de datos
+      - POSTGRES_USER=postgres # Usuario de la base de datos
+      - POSTGRES_PASSWORD=misan # Contraseña del usuario
+    volumes:
+      - auth-profile-db-data:/var/lib/postgresql/data # Volumen para persistir los datos de la BD
+    restart: always # Asegura que la BD siempre intente reiniciarse
+    networks:
+      - tesis-network # Conecta a la red de tus microservicios
+    # Opcional: Puedes añadir la sección deploy aquí si planeas usar Docker Swarm.
+    # Para desarrollo local con 'docker-compose up', esta sección será ignorada.
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 1024M # Las BDs suelen necesitar más memoria
+    #       cpus: '1.0'
+
+
+  # --- SERVICIO: Auth Service (Consolidación de Auth y User Profile) ---
+  auth-service:
+    build:
+      context: .
+      dockerfile: ./auth-service/Dockerfile
+    container_name: auth-service
+    ports:
+      - "8082:8082" # Mapea el puerto 8082
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - CONFIG_SERVER_URL=http://config-service:8888
+      - SPRING_BOOT_ADMIN_CLIENT_URL=http://admin-monitoring-service:9090
+      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_NAME=admin
+      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_PASSWORD=admin
+      # --- Configuración de la Base de Datos para Auth-Profile Service ---
+      # La URL ahora apunta al nombre del servicio de la BD en Docker Compose
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://auth-profile-db:5432/tesisdb_auth
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=misan
+    depends_on:
+      - eureka-server
+      - config-service
+      - admin-monitoring-service
+      - auth-profile-db # Ahora depende del servicio de base de datos
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.50'
+    networks:
+      - tesis-network
+
+# --- Definición de Volúmenes ---
+volumes:
+  auth-profile-db-data: # Define el volumen con nombre para la persistencia de datos de la BD
+
+# --- Definicion de Redes ---
+networks:
+  tesis-network:
+    driver: bridge
