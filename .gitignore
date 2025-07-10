@@ -34,3 +34,4 @@ frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/.pnp/
 frontend/.pnp.js
+**/logs/
