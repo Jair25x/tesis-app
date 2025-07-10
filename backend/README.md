@@ -102,17 +102,26 @@ POSTGRES_DB=auth_db
 # ... otras variables
 ```
 
-3. Construir los Microservicios
+3. Descargar Dockerize
+Los Dockerfiles requieren la herramienta [`dockerize`](https://github.com/jwilder/dockerize) para esperar a que los servicios dependientes estén disponibles. Puedes descargarla y colocarla en `backend/dockerize/` ejecutando:
+```bash
+mkdir -p backend/dockerize
+curl -L https://github.com/jwilder/dockerize/releases/download/v0.6.1/dockerize-linux-amd64-v0.6.1.tar.gz \
+  | tar -xz -C backend/dockerize
+chmod +x backend/dockerize/dockerize
+```
+
+4. Construir los Microservicios
 Desde la raíz del monorepo (tesis-app-backend), construye todos los servicios con Maven. Este comando compilará el código, ejecutará las pruebas y generará los archivos .jar en las carpetas target/ de cada microservicio.
 ```bash
 mvn clean install
 ```
-4. Ejecutar con Docker Compose
+5. Ejecutar con Docker Compose
 Una vez construidos los JARs, puedes levantar todos los microservicios y sus dependencias (bases de datos, Eureka, etc.) usando Docker Compose. Este comando construirá las imágenes Docker de tus servicios (si es necesario) y las levantará.
 ```bash
 docker-compose up --build
 ```
-5. Acceder a los Servicios
+6. Acceder a los Servicios
 Una vez que todos los servicios estén en ejecución, puedes acceder a ellos a través de las siguientes URLs:
 ```bash
 Spring Boot Admin: http://localhost:9090
