@@ -106,7 +106,7 @@ POSTGRES_DB=auth_db
 Los Dockerfiles requieren la herramienta [`dockerize`](https://github.com/jwilder/dockerize) para esperar a que los servicios dependientes estén disponibles. Puedes descargarla y colocarla en `backend/dockerize/` ejecutando:
 ```bash
 mkdir -p backend/dockerize
-curl -L https://github.com/jwilder/dockerize/releases/download/v0.6.1/dockerize-linux-amd64-v0.6.1.tar.gz \
+curl -L https://github.com/jwilder/dockerize/releases/download/v0.6.1/dockerize-linux-amd64-v0.9.3.tar.gz \
   | tar -xz -C backend/dockerize
 chmod +x backend/dockerize/dockerize
 ```
