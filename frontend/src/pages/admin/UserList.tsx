@@ -2,19 +2,23 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getAllUsers, setUserEnabled } from "../../services/adminService";
 import type { AdminUserSummary } from "../../types/AdminTypes";
+import LoadingScreen from "../../components/LoadingScreen";
+import { useApi } from "../../hooks/useApi";
 
 export default function UserList() {
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
+  const { execute: fetchUsers, isLoading, error } = useApi(getAllUsers);
+  const { execute: toggleEnabledApi } = useApi(setUserEnabled);
 
   useEffect(() => {
-    getAllUsers()
+    fetchUsers()
       .then(setUsers)
       .catch(console.error);
-  }, []);
+  }, [fetchUsers]);
 
   const toggleEnabled = async (id: number, enabled: boolean) => {
     try {
-      await setUserEnabled(id, !enabled);
+      await toggleEnabledApi(id, !enabled);
       setUsers((prev) =>
         prev.map((u) => (u.id === id ? { ...u, enabled: !enabled } : u))
       );
@@ -22,6 +26,9 @@ export default function UserList() {
       console.error(err);
     }
   };
+
+  if (isLoading) return <LoadingScreen />;
+  if (error) return <p className="text-center mt-10 text-red-500">{error}</p>;
 
   return (
     <div className="p-6">
