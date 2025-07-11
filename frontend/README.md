@@ -77,3 +77,21 @@ the API base URL used by the application:
 cp .env.example .env
 ```
 
+
+## Administración
+
+La aplicación cuenta con un pequeño panel de administración accesible en la ruta `/admin`. Estas vistas solo están disponibles para usuarios con el rol `ROLE_ADMIN`.
+
+### Rutas
+
+- `/admin` – Panel principal de administración.
+- `/admin/users` – Listado de usuarios registrados con opciones para activar o desactivar cuentas.
+- `/admin/users/:id` – Formulario para editar la información de un usuario específico.
+
+### Ejemplo de uso
+
+1. Inicia sesión con un usuario que tenga asignado el rol `ROLE_ADMIN`.
+2. Dirígete a `/admin` desde el menú lateral para abrir el panel.
+3. En la sección de *Usuarios* podrás ver la lista y modificar cada cuenta.
+4. Puedes activar o desactivar usuarios directamente desde el listado o ingresar al formulario de edición para cambiar sus datos.
+
