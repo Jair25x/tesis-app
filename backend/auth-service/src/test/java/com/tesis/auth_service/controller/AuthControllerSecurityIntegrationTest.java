@@ -7,6 +7,8 @@ import com.tesis.auth_service.repository.RoleRepository;
 import com.tesis.auth_service.repository.UserRepository;
 import com.tesis.auth_service.security.jwt.JwtTokenProvider;
 import com.tesis.auth_service.service.UserDetailsImpl;
+
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import org.springframework.transaction.annotation.Transactional;
+
 import java.time.LocalDateTime;
 import java.util.Set;
 
@@ -26,9 +30,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.springframework.security.crypto.password.PasswordEncoder; // Importar esto
+
+
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Transactional
 class AuthControllerSecurityIntegrationTest {
 
     @Autowired
@@ -42,6 +50,9 @@ class AuthControllerSecurityIntegrationTest {
 
     @Autowired
     private JwtTokenProvider tokenProvider;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     private String adminToken;
     private String userToken;
@@ -57,7 +68,7 @@ class AuthControllerSecurityIntegrationTest {
 
         User admin = User.builder()
                 .username("admin")
-                .password("pass")
+                .password(passwordEncoder.encode("pass"))
                 .email("admin@example.com")
                 .nombres("Admin")
                 .apellidos("User")
@@ -71,7 +82,7 @@ class AuthControllerSecurityIntegrationTest {
 
         User user = User.builder()
                 .username("user")
-                .password("pass")
+                .password(passwordEncoder.encode("pass"))
                 .email("user@example.com")
                 .nombres("Normal")
                 .apellidos("User")
