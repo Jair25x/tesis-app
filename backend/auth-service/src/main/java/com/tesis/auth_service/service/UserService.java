@@ -4,6 +4,7 @@ import com.tesis.auth_service.dto.AdminUpdateUserRequest;
 import com.tesis.auth_service.dto.ChangePasswordRequest;
 import com.tesis.auth_service.dto.UpdateProfileRequest;
 import com.tesis.auth_service.dto.UserProfileDto;
+import com.tesis.auth_service.dto.UserStatsDto;
 import com.tesis.auth_service.dto.UserSummaryDto;
 import com.tesis.auth_service.model.User;
 
@@ -33,4 +34,6 @@ public interface UserService {
     UserSummaryDto updateCurrentUserProfile(String username, UpdateProfileRequest request);
 
     UserProfileDto updateUserById(Long id, AdminUpdateUserRequest request);
+
+    UserStatsDto getUserStats();
 }

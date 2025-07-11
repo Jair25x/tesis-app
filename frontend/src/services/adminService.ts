@@ -1,3 +1,4 @@
+// src/services/adminService.ts
 import api from "./api";
 import type {
   AdminUserSummary,
@@ -17,13 +18,28 @@ export async function getUserById(id: number): Promise<AdminUserProfile> {
   return response.data;
 }
 
-export async function updateUser(id: number, data: AdminUpdateUserDto): Promise<AdminUserProfile> {
+export async function updateUser(
+  id: number,
+  data: AdminUpdateUserDto
+): Promise<AdminUserProfile> {
   const response = await api.put(`/api/auth/users/${id}`, data);
   return response.data;
 }
 
-export async function setUserEnabled(id: number, enabled: boolean): Promise<string> {
-  const response = await api.patch(`/api/auth/users/${id}/enabled`, enabled);
+export async function setUserEnabled(
+  id: number,
+  enabled: boolean
+): Promise<string> {
+  // Enviamos el booleano como JSON primitivo y forzamos el header application/json
+  const response = await api.patch(
+    `/api/auth/users/${id}/enabled`,
+    JSON.stringify(enabled),
+    {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    }
+  );
   return response.data;
 }
 
@@ -35,7 +51,7 @@ export async function fetchUsers(): Promise<AdminUser[]> {
 
 export async function adminUpdateUser(
   id: number,
-  data: AdminUpdateRequest,
+  data: AdminUpdateRequest
 ): Promise<AdminUser> {
   const response = await api.put(`/api/auth/users/${id}`, data);
   return response.data;
@@ -43,8 +59,27 @@ export async function adminUpdateUser(
 
 export async function toggleUserEnabled(
   id: number,
-  enabled: boolean,
+  enabled: boolean
 ): Promise<string> {
-  const response = await api.patch(`/api/auth/users/${id}/enabled`, enabled);
+  // Igual que setUserEnabled, enviamos JSON y header adecuado
+  const response = await api.patch(
+    `/api/auth/users/${id}/enabled`,
+    JSON.stringify(enabled),
+    {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    }
+  );
+  return response.data;
+}
+
+export async function getUserStats(): Promise<{
+  total: number;
+  active: number;
+  inactive: number;
+  byRole: Record<string, number>;
+}> {
+  const response = await api.get("/api/auth/users/stats");
   return response.data;
 }

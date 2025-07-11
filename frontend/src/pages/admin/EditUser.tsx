@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getUserById, updateUser } from "../../services/adminService";
 import type { AdminUpdateUserDto } from "../../types/AdminTypes";
-import LoadingScreen from "../../components/LoadingScreen";
 import { useApi } from "../../hooks/useApi";
 
 export default function EditUser() {
@@ -18,8 +17,8 @@ export default function EditUser() {
     apellidos?: string;
     email?: string;
   }>({});
-  const { execute: fetchUser, isLoading, error } = useApi(getUserById);
-  const { execute: saveUser, isLoading: saving } = useApi(updateUser);
+  const { execute: fetchUser, /* isLoading, */ error } = useApi(getUserById);
+  const { execute: saveUser /*, isLoading: saving*/ } = useApi(updateUser);
 
   useEffect(() => {
     if (!id) return;
@@ -44,7 +43,8 @@ export default function EditUser() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id) return;
-    const newErrors: { nombres?: string; apellidos?: string; email?: string } = {};
+    const newErrors: { nombres?: string; apellidos?: string; email?: string } =
+      {};
     if (!form.nombres.trim()) newErrors.nombres = "Ingresa los nombres.";
     if (!form.apellidos.trim()) newErrors.apellidos = "Ingresa los apellidos.";
     if (!form.email.trim()) {
@@ -65,7 +65,6 @@ export default function EditUser() {
     }
   };
 
-  if (isLoading || saving) return <LoadingScreen />;
   if (error) return <p className="text-center mt-10 text-red-500">{error}</p>;
 
   return (

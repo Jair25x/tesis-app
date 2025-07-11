@@ -4,6 +4,7 @@ import com.tesis.auth_service.dto.AdminUpdateUserRequest;
 import com.tesis.auth_service.dto.ChangePasswordRequest;
 import com.tesis.auth_service.dto.UpdateProfileRequest;
 import com.tesis.auth_service.dto.UserProfileDto;
+import com.tesis.auth_service.dto.UserStatsDto;
 import com.tesis.auth_service.dto.UserSummaryDto;
 import com.tesis.auth_service.model.User;
 import com.tesis.auth_service.repository.UserRepository;
@@ -13,6 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -30,7 +32,7 @@ public class UserServiceImpl implements UserService {
   @Override
   public List<UserSummaryDto> findAllUsers() {
     return userRepository.findAll().stream()
-        .filter(User::isEnabled) // Solo usuarios activos
+        // .filter(User::isEnabled) // Todos los usuarios
         .map(this::toDto)
         .collect(Collectors.toList());
   }
@@ -186,6 +188,20 @@ public class UserServiceImpl implements UserService {
     userRepository.save(user);
 
     return toDto(user);
+  }
+
+  @Override
+  public UserStatsDto getUserStats() {
+    long total = userRepository.count();
+    long active = userRepository.countByEnabledTrue();
+    long inactive = total - active;
+    // Contar por rol
+    Map<String, Long> byRole = userRepository.findAll().stream()
+        .flatMap(u -> u.getRoles().stream())
+        .map(r -> r.getName().name())
+        .collect(Collectors.groupingBy(roleName -> roleName, Collectors.counting()));
+
+    return new UserStatsDto(total, active, inactive, byRole);
   }
 
   private UserSummaryDto toDto(User user) {

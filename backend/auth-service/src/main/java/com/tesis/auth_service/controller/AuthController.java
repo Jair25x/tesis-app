@@ -12,6 +12,7 @@ import com.tesis.auth_service.dto.TokenRefreshRequest; // NUEVO: DTO para la sol
 import com.tesis.auth_service.dto.TokenRefreshResponse; // NUEVO: DTO para la respuesta de refresh token
 import com.tesis.auth_service.dto.UpdateProfileRequest;
 import com.tesis.auth_service.dto.UserProfileDto;
+import com.tesis.auth_service.dto.UserStatsDto;
 import com.tesis.auth_service.dto.UserSummaryDto;
 import com.tesis.auth_service.exception.ErrorResponse;
 import com.tesis.auth_service.exception.RoleNotFoundException;
@@ -62,7 +63,8 @@ import java.util.stream.Collectors; // Para operar con Streams de Java 8+
  * This controller exposes endpoints for clients to interact with the
  * authentication system.
  */
-// @CrossOrigin(origins = "*", maxAge = 3600) // CORS configuration: allows requests from any origin.
+// @CrossOrigin(origins = "*", maxAge = 3600) // CORS configuration: allows
+// requests from any origin.
 // In a production environment, this should be more restrictive (e.g., specify
 // domains).
 @RestController // Indicates that this class is a Spring controller that handles REST requests.
@@ -609,5 +611,18 @@ public class AuthController {
 
     userService.setUserEnabled(id, enabled);
     return ResponseEntity.ok("Estado de usuario actualizado correctamente.");
+  }
+
+  @PreAuthorize("hasRole('ADMIN')")
+  @Operation(summary = "Obtener estadísticas de usuarios", description = "Devuelve el total de usuarios, cuántos están activos/inactivos y el conteo por cada rol.")
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "Estadísticas obtenidas correctamente"),
+      @ApiResponse(responseCode = "401", description = "No autorizado", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+      @ApiResponse(responseCode = "403", description = "Prohibido – requiere rol ADMIN", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+  })
+  @GetMapping("/users/stats")
+  public ResponseEntity<UserStatsDto> getUserStats() {
+    UserStatsDto stats = userService.getUserStats();
+    return ResponseEntity.ok(stats);
   }
 }

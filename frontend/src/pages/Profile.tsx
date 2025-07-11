@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { getProfile } from "../services/profileService";
-import LoadingScreen from "../components/LoadingScreen";
 import { useApi } from "../hooks/useApi";
 import type { UserProfile } from "../types/ProfileTypes";
 import { useAuth } from "../context/useAuth";
@@ -8,19 +7,22 @@ import { useAuth } from "../context/useAuth";
 export default function Profile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const { isAuthenticated } = useAuth();
-  const { execute: fetchProfile, isLoading, error } = useApi(getProfile);
+  const { execute: fetchProfile, error } = useApi(getProfile);
 
   useEffect(() => {
     if (isAuthenticated) {
       fetchProfile().then(setProfile).catch(console.error);
     }
-  }, [isAuthenticated, fetchProfile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   if (!isAuthenticated)
     return <p className="text-center mt-10 text-red-500">No autorizado.</p>;
-  if (isLoading) return <LoadingScreen />;
+
   if (error) return <p className="text-center mt-10 text-red-500">{error}</p>;
-  if (!profile) return <LoadingScreen />;
+
+  // Ya no se muestra loader ni spinner
+  if (!profile) return null;
 
   const traducirRol = (rol: string): string => {
     switch (rol) {

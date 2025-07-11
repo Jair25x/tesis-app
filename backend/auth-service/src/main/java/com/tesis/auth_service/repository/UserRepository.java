@@ -16,4 +16,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
     List<User> findByEnabledTrue(); // Para listar usuarios activos
 
     Optional<User> findByUsernameAndEnabledTrue(String username); // Para login y validaciones
+
+    long countByEnabledTrue(); // Para contar los usuarios con enabled en true
 }

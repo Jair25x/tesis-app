@@ -10,6 +10,7 @@ export default function MainLayout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
 
   return (
     <div className="flex h-screen overflow-hidden bg-white dark:bg-[#1e2a34] text-black dark:text-white transition-colors duration-300">
@@ -62,18 +63,43 @@ export default function MainLayout() {
             </Link>
 
             {user && user.roles.includes("ROLE_ADMIN") && (
-              <Link
-                to="/admin"
-                className={cn(
-                  "block px-4 py-2 rounded-md text-sm font-medium transition",
-                  location.pathname.startsWith("/admin")
-                    ? "bg-green-500 text-white"
-                    : "hover:bg-gray-200 dark:hover:bg-gray-700"
-                )}
-                onClick={() => setSidebarOpen(false)}
+              <div
+                className="relative group"
+                onMouseEnter={() => setAdminOpen(true)}
+                onMouseLeave={() => setAdminOpen(false)}
               >
-                🛠 Administración
-              </Link>
+                <button
+                  className={cn(
+                    "w-full text-left px-4 py-2 rounded-md text-sm font-medium flex justify-between items-center transition hover:bg-gray-200 dark:hover:bg-gray-700",
+                    location.pathname.startsWith("/admin")
+                      ? "bg-green-500 text-white"
+                      : ""
+                  )}
+                  onClick={() => setAdminOpen((prev) => !prev)}
+                >
+                  🛠 Administración
+                  <span className="ml-2">{adminOpen ? "▴" : "▾"}</span>
+                </button>
+
+                {adminOpen && (
+                  <div className="ml-4 mt-1 space-y-1">
+                    <Link
+                      to="/admin"
+                      className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      📊 Dashboard
+                    </Link>
+                    <Link
+                      to="/admin/users"
+                      className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      🧑‍💼 Usuarios
+                    </Link>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Configuración con submenú */}
@@ -98,7 +124,7 @@ export default function MainLayout() {
               {settingsOpen && (
                 <div className="ml-4 mt-1 space-y-1">
                   <Link
-                    to="/profile"
+                    to="/settings/profile"
                     className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
                     onClick={() => setSidebarOpen(false)}
                   >

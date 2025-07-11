@@ -9,10 +9,7 @@ interface Props {
 
 function UserRowComponent({ user, onToggle }: Props) {
   return (
-    <tr
-      className="border-t border-gray-300 dark:border-gray-700"
-      role="row"
-    >
+    <tr className="border-t border-gray-300 dark:border-gray-700" role="row">
       <td role="cell" className="px-4 py-2">
         {user.username}
       </td>
@@ -47,5 +44,4 @@ function UserRowComponent({ user, onToggle }: Props) {
 }
 
 export const UserRow = memo(UserRowComponent);
-
 export default UserRow;

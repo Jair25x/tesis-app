@@ -1,12 +1,11 @@
 import { useCallback } from "react";
-import LoadingScreen from "../../components/LoadingScreen";
 import { setUserEnabled } from "../../services/adminService";
 import { useApi } from "../../hooks/useApi";
 import { useAdminUsers } from "../../hooks/useAdminUsers";
 import { UserRow } from "./UserRow";
 
 export default function UserList() {
-  const { users, loading, error, refresh } = useAdminUsers();
+  const { users, /* loading, */ error, refresh } = useAdminUsers();
   const { execute: toggleEnabledApi } = useApi(setUserEnabled);
 
   const toggleEnabled = useCallback(
@@ -21,7 +20,6 @@ export default function UserList() {
     [toggleEnabledApi, refresh]
   );
 
-  if (loading) return <LoadingScreen />;
   if (error) return <p className="text-center mt-10 text-red-500">{error}</p>;
 
   return (
@@ -35,11 +33,21 @@ export default function UserList() {
         >
           <thead role="rowgroup">
             <tr role="row">
-              <th role="columnheader" className="px-4 py-2 text-left">Usuario</th>
-              <th role="columnheader" className="px-4 py-2 text-left">Email</th>
-              <th role="columnheader" className="px-4 py-2 text-left">Roles</th>
-              <th role="columnheader" className="px-4 py-2 text-left">Estado</th>
-              <th role="columnheader" className="px-4 py-2 text-left">Acciones</th>
+              <th role="columnheader" className="px-4 py-2 text-left">
+                Usuario
+              </th>
+              <th role="columnheader" className="px-4 py-2 text-left">
+                Email
+              </th>
+              <th role="columnheader" className="px-4 py-2 text-left">
+                Roles
+              </th>
+              <th role="columnheader" className="px-4 py-2 text-left">
+                Estado
+              </th>
+              <th role="columnheader" className="px-4 py-2 text-left">
+                Acciones
+              </th>
             </tr>
           </thead>
           <tbody role="rowgroup">
