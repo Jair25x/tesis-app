@@ -9,6 +9,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -40,6 +41,9 @@ public class RegisterRequest {
     @NotBlank(message = "Los apellidos son obligatorios")
     @Size(max = 100, message = "Los apellidos no pueden exceder los 100 caracteres")
     private String apellidos;
+
+    private String profilePictureUrl;
+    private Map<String, Object> preferences;
 
     // Opcional: un conjunto de roles para asignar al usuario.
     // Si es nulo o vacío, se asignará un rol por defecto (ej. ROLE_STUDENT).

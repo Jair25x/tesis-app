@@ -106,6 +106,10 @@ public class UserServiceImpl implements UserService {
     user.setNombres(request.getNombres());
     user.setApellidos(request.getApellidos());
     user.setEmail(request.getEmail());
+    user.setProfilePictureUrl(request.getProfilePictureUrl());
+    user.setPreferences(request.getPreferences());
+    user.setProfilePictureUrl(request.getProfilePictureUrl());
+    user.setPreferences(request.getPreferences());
 
     userRepository.save(user);
 
@@ -145,6 +149,8 @@ public class UserServiceImpl implements UserService {
         .email(user.getEmail())
         .nombres(user.getNombres())
         .apellidos(user.getApellidos())
+        .profilePictureUrl(user.getProfilePictureUrl())
+        .preferences(user.getPreferences())
         .roles(roles)
         .enabled(user.isEnabled())
         .fechaRegistro(user.getFechaRegistro())
@@ -181,6 +187,8 @@ public class UserServiceImpl implements UserService {
         user.getId(),
         user.getUsername(),
         user.getEmail(),
+        user.getProfilePictureUrl(),
+        user.getPreferences(),
         roles,
         user.isEnabled(),
         user.getFechaRegistro());
