@@ -18,13 +18,13 @@ export default function SettingsLayout() {
     <div className="p-6 bg-white dark:bg-[#2d3b46] rounded-lg shadow-md max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">⚙️ Configuración</h1>
 
-      <div className="flex flex-wrap gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {tabs.map((tab) => (
           <Link
             key={tab.to}
             to={tab.to}
             className={cn(
-              "px-4 py-2 rounded text-sm font-medium transition",
+              "w-full text-center px-4 py-2 rounded text-sm font-medium transition",
               location.pathname === tab.to
                 ? "bg-green-500 text-white"
                 : "bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-900 dark:text-white"

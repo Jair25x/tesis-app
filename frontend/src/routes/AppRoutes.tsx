@@ -6,10 +6,10 @@ import SettingsLayout from "../layouts/SettingsLayout";
 import Login from "../pages/Login";
 import Register from "../pages/Register";
 import Dashboard from "../pages/Dashboard";
-import Profile from "../pages/Profile";
-import EditProfile from "../pages/EditProfile";
-import ChangePassword from "../pages/ChangePassword";
-import ThemeSettings from "../pages/ThemeSettings"; // Theme settings page
+import Profile from "../pages/user/Profile";
+import EditProfile from "../pages/user/EditProfile";
+import ChangePassword from "../pages/user/ChangePassword";
+import ThemeSettings from "../pages/user/ThemeSettings"; // Theme settings page
 import ProtectedRoute from "./ProtectedRoute";
 import PublicRoute from "./PublicRoute";
 import RoleRoute from "./RoleRoute";

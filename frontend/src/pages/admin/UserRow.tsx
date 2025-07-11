@@ -1,3 +1,4 @@
+// src/pages/admin/UserRow.tsx
 import { memo } from "react";
 import { Link } from "react-router-dom";
 import type { AdminUserSummary } from "../../types/AdminTypes";
@@ -9,20 +10,28 @@ interface Props {
 
 function UserRowComponent({ user, onToggle }: Props) {
   return (
-    <tr className="border-t border-gray-300 dark:border-gray-700" role="row">
-      <td role="cell" className="px-4 py-2">
+    <tr className="border-t border-gray-200 dark:border-gray-700">
+      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
         {user.username}
       </td>
-      <td role="cell" className="px-4 py-2">
+      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
         {user.email}
       </td>
-      <td role="cell" className="px-4 py-2">
+      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
         {user.roles.join(", ")}
       </td>
-      <td role="cell" className="px-4 py-2">
-        {user.enabled ? "Activo" : "Inactivo"}
+      <td className="px-6 py-4 whitespace-nowrap text-sm">
+        <span
+          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+            user.enabled
+              ? "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100"
+              : "bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100"
+          }`}
+        >
+          {user.enabled ? "Activo" : "Inactivo"}
+        </span>
       </td>
-      <td role="cell" className="px-4 py-2 space-x-2">
+      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex space-x-4">
         <Link
           to={`/admin/users/${user.id}`}
           className="text-blue-600 hover:underline"
@@ -32,9 +41,12 @@ function UserRowComponent({ user, onToggle }: Props) {
         </Link>
         <button
           onClick={() => onToggle(user.id, user.enabled)}
-          className="text-blue-600 hover:underline"
+          className={`text-sm font-medium ${
+            user.enabled
+              ? "text-red-600 hover:underline"
+              : "text-green-600 hover:underline"
+          }`}
           aria-label={user.enabled ? "Desactivar usuario" : "Activar usuario"}
-          role="button"
         >
           {user.enabled ? "Desactivar" : "Activar"}
         </button>

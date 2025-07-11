@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { changePassword } from "../services/profileService";
-import type { ChangePasswordDto } from "../types/ProfileTypes";
-import { useApi } from "../hooks/useApi";
+import { changePassword } from "../../services/profileService";
+import type { ChangePasswordDto } from "../../types/ProfileTypes";
+import { useApi } from "../../hooks/useApi";
 
 export default function ChangePassword() {
   const [form, setForm] = useState<ChangePasswordDto>({

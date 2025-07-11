@@ -1,50 +1,43 @@
-import { useEffect, useState } from "react";
-import { getProfile } from "../services/profileService";
-import { useApi } from "../hooks/useApi";
-import type { UserProfile } from "../types/ProfileTypes";
-import { useAuth } from "../context/useAuth";
+// src/pages/user/Profile.tsx
+import React, { useEffect, useState } from "react";
+import { getProfile } from "../../services/profileService";
+import { useApi } from "../../hooks/useApi";
+import type { UserProfile } from "../../types/ProfileTypes";
+import { useAuth } from "../../context/useAuth";
 
 export default function Profile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const { isAuthenticated } = useAuth();
-  const { execute: fetchProfile, error } = useApi(getProfile);
+  const { execute, error } = useApi(getProfile);
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchProfile().then(setProfile).catch(console.error);
+      execute().then(setProfile).catch(console.error);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [isAuthenticated, execute]);
 
-  if (!isAuthenticated)
-    return <p className="text-center mt-10 text-red-500">No autorizado.</p>;
-
-  if (error) return <p className="text-center mt-10 text-red-500">{error}</p>;
-
-  // Ya no se muestra loader ni spinner
+  if (!isAuthenticated) {
+    return <p className="text-center mt-12 text-red-500">No autorizado.</p>;
+  }
+  if (error) {
+    return <p className="text-center mt-12 text-red-500">{error}</p>;
+  }
   if (!profile) return null;
 
-  const traducirRol = (rol: string): string => {
-    switch (rol) {
-      case "ROLE_STUDENT":
-        return "ESTUDIANTE";
-      case "ROLE_TEACHER":
-        return "PROFESOR";
-      case "ROLE_ADMIN":
-        return "ADMINISTRADOR";
-      default:
-        return rol;
-    }
+  const rolesMap: Record<string, string> = {
+    ROLE_STUDENT: "ESTUDIANTE",
+    ROLE_TEACHER: "PROFESOR",
+    ROLE_ADMIN: "ADMINISTRADOR",
   };
 
   return (
-    <div className="flex items-center justify-center px-4 py-10 min-h-[calc(100vh-100px)] bg-gray-50 dark:bg-[#1e2a34]">
-      <div className="w-full max-w-xl bg-white dark:bg-[#2d3b46] p-8 rounded-2xl shadow-xl">
+    <div className="flex items-center justify-center w-full h-screen bg-gray-50 dark:bg-[#1e2a34]">
+      <div className="w-full max-w-xl bg-white dark:bg-[#2d3b46] p-8 mx-4 rounded-2xl shadow-xl">
         <div className="flex flex-col items-center gap-4 mb-6">
           <img
             src="https://cdn-icons-png.flaticon.com/512/7541/7541900.png"
-            alt="Avatar capibara"
-            className="w-32 h-32 rounded-full object-cover border-4 border-green-500 shadow-md"
+            alt="Avatar"
+            className="w-32 h-32 rounded-full border-4 border-green-500 shadow-md"
           />
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white text-center">
             👤 Perfil de Usuario
@@ -69,14 +62,14 @@ export default function Profile() {
             <span>{profile.username}</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="font-medium">Rol:</span>
+            <span className="font-medium">Rol(es):</span>
             <div className="flex flex-wrap gap-2">
-              {profile.roles.map((rol) => (
+              {profile.roles.map((r) => (
                 <span
-                  key={rol}
+                  key={r}
                   className="bg-green-100 dark:bg-green-700 text-green-800 dark:text-white px-2 py-1 rounded-md text-xs font-semibold"
                 >
-                  {traducirRol(rol)}
+                  {rolesMap[r] ?? r}
                 </span>
               ))}
             </div>
