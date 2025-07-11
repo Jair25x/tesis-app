@@ -15,10 +15,11 @@
 	<name>curriculum-service</name>
 	<description>Microservicio para gestionar el currículo escolar de matemática (6to grado)</description>
 
-	<properties>
-		<!-- Las propiedades como java.version y spring-cloud.version ya vienen del padre -->
-		<!-- Puedes definir aquí propiedades específicas de este módulo si las hubiera -->
-	</properties>
+        <properties>
+                <!-- Las propiedades como java.version y spring-cloud.version ya vienen del padre -->
+                <!-- Puedes definir aquí propiedades específicas de este módulo si las hubiera -->
+                <spring-boot-admin.version>3.5.1</spring-boot-admin.version>
+        </properties>
 
 	<dependencies>
 		<!-- Spring Boot Starters -->
@@ -129,12 +130,17 @@
 			<artifactId>h2</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<dependency>
-			<groupId>com.jayway.jsonpath</groupId>
-			<artifactId>json-path</artifactId>
-			<scope>test</scope>
-		</dependency>
-	</dependencies>
+                <dependency>
+                        <groupId>com.jayway.jsonpath</groupId>
+                        <artifactId>json-path</artifactId>
+                        <scope>test</scope>
+                </dependency>
+                <dependency>
+                        <groupId>de.codecentric</groupId>
+                        <artifactId>spring-boot-admin-starter-client</artifactId>
+                        <version>${spring-boot-admin.version}</version>
+                </dependency>
+        </dependencies>
 
 	<!-- La sección <dependencyManagement> NO es necesaria aquí, ya se hereda del padre -->
 
