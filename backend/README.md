@@ -72,6 +72,7 @@ Cada carpeta de servicio (auth-service/, curriculum-service/, etc.) contiene su 
 ### Requisitos Previos
 - Java 21 JDK
 - Maven 3.x
+- Node.js 18 o superior (para el frontend)
 - Docker y Docker Compose
 - Git
 
