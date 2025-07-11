@@ -72,6 +72,16 @@ public class UserServiceImpl implements UserService {
 
   @Override
   @Transactional
+  public void setUserEnabled(Long id, boolean enabled) {
+    User user = userRepository.findById(id)
+        .orElseThrow(() -> new RuntimeException("Usuario no encontrado con ID: " + id));
+
+    user.setEnabled(enabled);
+    userRepository.save(user);
+  }
+
+  @Override
+  @Transactional
   public void changePassword(String username, ChangePasswordRequest request) {
     User user = userRepository.findByUsername(username)
         .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + username));
