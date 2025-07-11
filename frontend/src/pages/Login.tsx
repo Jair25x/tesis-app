@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { login as loginRequest } from "../services/authService";
 import type { TypedAxiosError } from "../types/AxiosError";
 import { useAuth } from "../context/useAuth";
@@ -123,14 +123,6 @@ export default function Login() {
             >
               Regístrate aquí
             </button>
-          </p>
-          <p className="text-sm text-gray-300">
-            <Link
-              to="/forgot-password"
-              className="text-sm text-blue-500 hover:underline"
-            >
-              ¿Olvidaste tu contraseña?
-            </Link>
           </p>
         </div>
 
