@@ -1,5 +1,6 @@
 // src/routes/AppRoutes.tsx
 import { createBrowserRouter, Navigate } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import MainLayout from "../layouts/MainLayout";
 import SettingsLayout from "../layouts/SettingsLayout";
 import Login from "../pages/Login";
@@ -11,7 +12,11 @@ import ChangePassword from "../pages/ChangePassword";
 import ThemeSettings from "../pages/ThemeSettings"; // Theme settings page
 import ProtectedRoute from "./ProtectedRoute";
 import PublicRoute from "./PublicRoute";
+import RoleRoute from "./RoleRoute";
 import NotFound from "../pages/NotFound";
+import LoadingScreen from "../components/LoadingScreen";
+
+const AdminDashboard = lazy(() => import("../pages/admin/AdminDashboard"));
 
 export const router = createBrowserRouter([
   {
@@ -27,6 +32,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute>
             <Dashboard />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/profile",
+        element: (
+          <ProtectedRoute>
+            <Profile />
           </ProtectedRoute>
         ),
       },
@@ -55,6 +68,16 @@ export const router = createBrowserRouter([
             element: <ThemeSettings />,
           },
         ],
+      },
+      {
+        path: "/admin",
+        element: (
+          <RoleRoute roles={["ROLE_ADMIN"]}>
+            <Suspense fallback={<LoadingScreen />}>
+              <AdminDashboard />
+            </Suspense>
+          </RoleRoute>
+        ),
       },
       {
         path: "*",
