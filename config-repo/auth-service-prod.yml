@@ -1,0 +1,21 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+  flyway:
+    enabled: true
+    locations: classpath:db/migration,classpath:/config-repo/auth-service/db/migration
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://auth-prod-db:5432/tesisdb_auth}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:password}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+jwt:
+  secret-key: ${JWT_SECRET}
+  expirationMs: ${JWT_EXPIRATION_MS:3600000}
+  refreshExpirationMs: ${JWT_REFRESH_EXPIRATION_MS:86400000}

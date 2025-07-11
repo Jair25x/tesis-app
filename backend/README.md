@@ -103,6 +103,16 @@ POSTGRES_DB=auth_db
 # ... otras variables
 ```
 
+### Selección de perfiles de Spring
+Por defecto los microservicios usan el perfil `dev`. Al desplegar en
+producción puedes activar el perfil `prod` estableciendo la variable de
+entorno `SPRING_PROFILES_ACTIVE=prod` antes de iniciar cada servicio, por
+ejemplo:
+
+```bash
+SPRING_PROFILES_ACTIVE=prod java -jar auth-service.jar
+```
+
 3. Descargar Dockerize
 Los Dockerfiles requieren la herramienta [`dockerize`](https://github.com/jwilder/dockerize) para esperar a que los servicios dependientes estén disponibles. Puedes descargarla y colocarla en `backend/dockerize/` ejecutando:
 ```bash
