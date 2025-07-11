@@ -61,6 +61,21 @@ export default function MainLayout() {
               🏠 Dashboard
             </Link>
 
+            {user && user.roles.includes("ROLE_ADMIN") && (
+              <Link
+                to="/admin"
+                className={cn(
+                  "block px-4 py-2 rounded-md text-sm font-medium transition",
+                  location.pathname.startsWith("/admin")
+                    ? "bg-green-500 text-white"
+                    : "hover:bg-gray-200 dark:hover:bg-gray-700"
+                )}
+                onClick={() => setSidebarOpen(false)}
+              >
+                🛠 Administración
+              </Link>
+            )}
+
             {/* Configuración con submenú */}
             <div
               className="relative group"
@@ -83,7 +98,7 @@ export default function MainLayout() {
               {settingsOpen && (
                 <div className="ml-4 mt-1 space-y-1">
                   <Link
-                    to="/settings/profile"
+                    to="/profile"
                     className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
                     onClick={() => setSidebarOpen(false)}
                   >
