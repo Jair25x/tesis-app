@@ -145,6 +145,35 @@ Auth Service: http://localhost:8081
 
 (Otros servicios se accederán a través del Gateway, usando las rutas definidas en este)
 ```
+
+### Endpoints de administración de usuarios (Auth Service)
+
+Estas rutas están protegidas y solo pueden ser accedidas por usuarios con el rol `ROLE_ADMIN`.
+Para utilizarlas en desarrollo asegúrate de ejecutar el servicio con el perfil `dev`
+(valor por defecto). Este perfil activa el `DataInitializer` que crea un usuario
+administrador (`admin`/`admin123`).
+
+- `GET /api/auth/users` – Obtiene la lista completa de usuarios registrados.
+- `PUT /api/auth/users/{id}` – Actualiza los datos de un usuario específico.
+- `DELETE /api/auth/users/{id}` – Elimina un usuario por su ID.
+- `PUT /api/auth/users/reactivate/{id}` – Reactiva un usuario previamente desactivado.
+
+Ejemplos con `curl` (reemplaza `$TOKEN` con un token JWT válido de un administrador):
+
+```bash
+# Listar usuarios
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/auth/users
+
+# Actualizar usuario con id 5
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+     -d '{"nombres":"Nuevo Nombre"}' http://localhost:8081/api/auth/users/5
+
+# Eliminar usuario con id 5
+curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/auth/users/5
+
+# Reactivar usuario con id 5
+curl -X PUT -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/auth/users/reactivate/5
+```
 📈 Consideraciones de Escalabilidad y Costos
 
 - Este proyecto ha sido diseñado con la escalabilidad y la optimización de costes en mente, especialmente para un posible despliegue en plataformas como Railway.
