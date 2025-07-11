@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getUserById, updateUser } from "../../services/adminService";
 import type { AdminUpdateUserDto } from "../../types/AdminTypes";
+import LoadingScreen from "../../components/LoadingScreen";
+import { useApi } from "../../hooks/useApi";
 
 export default function EditUser() {
   const { id } = useParams<{ id: string }>();
@@ -16,10 +18,12 @@ export default function EditUser() {
     apellidos?: string;
     email?: string;
   }>({});
+  const { execute: fetchUser, isLoading, error } = useApi(getUserById);
+  const { execute: saveUser, isLoading: saving } = useApi(updateUser);
 
   useEffect(() => {
     if (!id) return;
-    getUserById(Number(id))
+    fetchUser(Number(id))
       .then((data) => {
         setForm({
           nombres: data.nombres,
@@ -30,7 +34,7 @@ export default function EditUser() {
         });
       })
       .catch(console.error);
-  }, [id]);
+  }, [id, fetchUser]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -53,13 +57,16 @@ export default function EditUser() {
       return;
     }
     try {
-      await updateUser(Number(id), form);
+      await saveUser(Number(id), form);
       alert("Usuario actualizado correctamente.");
       navigate("/admin/users");
     } catch (err) {
       console.error(err);
     }
   };
+
+  if (isLoading || saving) return <LoadingScreen />;
+  if (error) return <p className="text-center mt-10 text-red-500">{error}</p>;
 
   return (
     <div className="flex items-center justify-center px-4 py-10">

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { getProfile, updateProfile } from "../services/profileService";
+import LoadingScreen from "../components/LoadingScreen";
+import { useApi } from "../hooks/useApi";
 import type { UpdateProfileDto, UserProfile } from "../types/ProfileTypes";
 import { useNavigate } from "react-router-dom";
 
@@ -11,18 +13,20 @@ export default function EditProfile() {
   });
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const {
+    execute: fetchProfile,
+    isLoading,
+    error: fetchError,
+  } = useApi(getProfile);
+  const { execute: saveProfile, isLoading: saving } = useApi(updateProfile);
 
   useEffect(() => {
-    getProfile()
+    fetchProfile()
       .then((data: UserProfile) =>
-        setForm({
-          nombres: data.nombres,
-          apellidos: data.apellidos,
-          email: data.email,
-        })
+        setForm({ nombres: data.nombres, apellidos: data.apellidos, email: data.email })
       )
       .catch(console.error);
-  }, []);
+  }, [fetchProfile]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -31,7 +35,7 @@ export default function EditProfile() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateProfile(form);
+      await saveProfile(form);
       alert("✅ Perfil actualizado con éxito");
       navigate("/profile");
     } catch (err) {
@@ -39,6 +43,9 @@ export default function EditProfile() {
       setError("⚠️ Error al actualizar perfil");
     }
   };
+
+  if (isLoading || saving) return <LoadingScreen />;
+  if (fetchError) return <p className="text-center mt-10 text-red-500">{fetchError}</p>;
 
   return (
     <div className="flex items-center justify-center px-4 py-10 min-h-[calc(100vh-100px)] bg-gray-50 dark:bg-[#1e2a34]">

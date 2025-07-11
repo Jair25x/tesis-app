@@ -1,21 +1,26 @@
 import { useEffect, useState } from "react";
 import { getProfile } from "../services/profileService";
+import LoadingScreen from "../components/LoadingScreen";
+import { useApi } from "../hooks/useApi";
 import type { UserProfile } from "../types/ProfileTypes";
 import { useAuth } from "../context/useAuth";
 
 export default function Profile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const { isAuthenticated } = useAuth();
+  const { execute: fetchProfile, isLoading, error } = useApi(getProfile);
 
   useEffect(() => {
     if (isAuthenticated) {
-      getProfile().then(setProfile).catch(console.error);
+      fetchProfile().then(setProfile).catch(console.error);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchProfile]);
 
   if (!isAuthenticated)
     return <p className="text-center mt-10 text-red-500">No autorizado.</p>;
-  if (!profile) return <p className="text-center mt-10">Cargando perfil...</p>;
+  if (isLoading) return <LoadingScreen />;
+  if (error) return <p className="text-center mt-10 text-red-500">{error}</p>;
+  if (!profile) return <LoadingScreen />;
 
   const traducirRol = (rol: string): string => {
     switch (rol) {

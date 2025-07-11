@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { changePassword } from "../services/profileService";
 import type { ChangePasswordDto } from "../types/ProfileTypes";
+import LoadingScreen from "../components/LoadingScreen";
+import { useApi } from "../hooks/useApi";
 
 export default function ChangePassword() {
   const [form, setForm] = useState<ChangePasswordDto>({
@@ -9,6 +11,7 @@ export default function ChangePassword() {
   });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const { execute: changePasswordApi, isLoading } = useApi(changePassword);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -19,7 +22,7 @@ export default function ChangePassword() {
     setError("");
     setSuccess("");
     try {
-      await changePassword(form);
+      await changePasswordApi(form);
       setSuccess("✅ Contraseña cambiada correctamente.");
       setForm({ currentPassword: "", newPassword: "" });
     } catch (err) {
@@ -27,6 +30,8 @@ export default function ChangePassword() {
       setError("❌ Error al cambiar la contraseña. Intenta nuevamente.");
     }
   };
+
+  if (isLoading) return <LoadingScreen />;
 
   return (
     <div className="flex items-center justify-center px-4 py-10 min-h-[calc(100vh-100px)] bg-gray-50 dark:bg-[#1e2a34]">
