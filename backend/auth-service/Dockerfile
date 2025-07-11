@@ -18,7 +18,7 @@ RUN chmod +x /usr/local/bin/dockerize
 # Copiar el JAR compilado
 COPY --from=builder /app/target/auth-service-0.0.1-SNAPSHOT.jar app.jar
 
-EXPOSE 8080
+EXPOSE 8081
 
 # Esperar a que config-service y eureka estén listos
 ENTRYPOINT ["sh", "-c", "dockerize -wait http://config-service:8888/actuator/health -wait http://eureka-server:8761/eureka/apps -timeout 60s -- java -jar app.jar"]
