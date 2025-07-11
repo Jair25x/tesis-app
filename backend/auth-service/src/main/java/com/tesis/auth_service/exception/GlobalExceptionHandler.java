@@ -14,7 +14,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import javax.management.relation.RoleNotFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {

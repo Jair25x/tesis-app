@@ -13,7 +13,6 @@ import com.tesis.auth_service.dto.TokenRefreshResponse; // NUEVO: DTO para la re
 import com.tesis.auth_service.dto.UpdateProfileRequest;
 import com.tesis.auth_service.dto.UserProfileDto;
 import com.tesis.auth_service.dto.UserSummaryDto;
-import com.tesis.auth_service.dto.ProfileCreationRequest; // NUEVO
 import com.tesis.auth_service.exception.ErrorResponse;
 import com.tesis.auth_service.exception.RoleNotFoundException;
 import com.tesis.auth_service.exception.TokenRefreshException; // NUEVO: Tu excepción personalizada de refresh token
@@ -409,7 +408,7 @@ public class AuthController {
       return ResponseEntity.ok("Sesión cerrada correctamente.");
 
     } catch (Exception e) {
-      System.err.println("Error inesperado al cerrar sesión: " + e.getMessage());
+      logger.error("Error inesperado al cerrar sesión: " + e.getMessage());
       return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
           new ErrorResponse(
               "Error interno al cerrar sesión.",
@@ -524,7 +523,7 @@ public class AuthController {
     } catch (Exception e) {
       // Captura cualquier otra excepción inesperada durante el proceso de
       // reactivación
-      System.err.println("Error inesperado al reactivar usuario: " + e.getMessage());
+      logger.error("Error inesperado al reactivar usuario: " + e.getMessage());
       return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
           new ErrorResponse(
               "Error interno al reactivar usuario.",
