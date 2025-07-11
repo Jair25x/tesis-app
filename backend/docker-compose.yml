@@ -116,7 +116,7 @@ services:
       dockerfile: ./auth-service/Dockerfile
     container_name: auth-service
     ports:
-      - "8082:8082" # Mapea el puerto 8082
+      - "8081:8081" # Mapea el puerto 8081
     environment:
       - SPRING_PROFILES_ACTIVE=dev
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/

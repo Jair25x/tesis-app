@@ -130,6 +130,8 @@ Eureka Server: http://localhost:8761
 
 Gateway Service: http://localhost:8080 (o el puerto que hayas configurado en application.yml)
 
+Auth Service: http://localhost:8081
+
 (Otros servicios se accederán a través del Gateway, usando las rutas definidas en este)
 ```
 📈 Consideraciones de Escalabilidad y Costos
