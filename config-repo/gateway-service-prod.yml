@@ -1,0 +1,47 @@
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:https://eureka.miservidor.com/eureka/}
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    root: WARN
+    org.springframework.cloud.gateway: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+spring:
+  boot:
+    admin:
+      client:
+        url: https://admin.miservidor.com
+        instance:
+          metadata:
+            user:
+              name: admin
+              password: admin
+  cloud:
+    gateway:
+      globalcors:
+        add-to-simple-url-handler-mapping: true
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "https://tu-frontend-produccion.com" # ¡DOMINIO REAL DE TU FRONTEND EN PRODUCCIÓN!
+              - "https://otro-dominio-seguro.com"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders:
+              - "*"
+            allowCredentials: true
+            maxAge: 3600

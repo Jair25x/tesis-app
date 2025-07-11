@@ -1,3 +1,5 @@
+# auth-profile-service-prod.yml (Configuración específica para el perfil 'prod')
+
 spring:
   config:
     activate:
@@ -14,8 +16,37 @@ spring:
     hibernate:
       ddl-auto: validate
     show-sql: false
-
+    properties:
+      hibernate:
+        format_sql: false
+    
+  boot:
+  admin:
+    client:
+      url: ${ADMIN_MONITORING_URL} # URL del Admin Monitoring en producción
+      instance:
+        metadata:
+          user:
+            name: ${ADMIN_USER:admin} # Usuario desde variable de entorno (con default)
+            password: ${ADMIN_PASSWORD:admin} # Contraseña desde variable de entorno (con default)
 jwt:
   secret-key: ${JWT_SECRET}
   expirationMs: ${JWT_EXPIRATION_MS:3600000}
   refreshExpirationMs: ${JWT_REFRESH_EXPIRATION_MS:86400000}
+
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL} # URL de Eureka en producción (desde variable de entorno)
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info # Exponer solo endpoints esenciales en producción
+
+logging:
+  level:
+    root: INFO # Nivel de logging más bajo para producción
+    com.tesis: INFO # Ajusta el paquete raíz de tu aplicación

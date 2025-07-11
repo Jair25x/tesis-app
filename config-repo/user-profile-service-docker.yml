@@ -1,0 +1,29 @@
+# user-profile-service-docker.yml
+# Configuración específica para el perfil 'docker' del microservicio de perfiles de usuario.
+# Sobrescribe las propiedades de user-profile-service.yml cuando el perfil 'docker' está activo.
+
+spring:
+  profiles:
+      active: docker
+  datasource:
+    # La URL de la base de datos apunta al nombre del servicio de la base de datos en Docker Compose (o Kubernetes).
+    # 'postgresql_db' sería el nombre del servicio de PostgreSQL en tu docker-compose.yml.
+    url: jdbc:postgresql://postgresql_db:5432/tesisdb_user_profiles
+    # Las credenciales suelen ser las mismas que en el entorno local,
+    # pero podrían ser diferentes si usas variables de entorno o un secreto en Docker.
+    username: postgres
+    password: misan
+
+eureka:
+  client:
+    service-url:
+      # La URL de Eureka Server apunta al nombre del servicio de Eureka en Docker Compose.
+      # 'eureka-server' sería el nombre del servicio de Eureka en tu docker-compose.yml.
+      defaultZone: http://eureka-server:8761/eureka/
+  instance:
+    # Cuando se ejecuta en Docker, es crucial que Eureka use el nombre del contenedor
+    # o la IP interna del contenedor para que otros servicios en Docker puedan alcanzarlo.
+    # hostname: user-profile-service # Puedes usar el nombre del servicio Docker como hostname si lo deseas.
+    # prefer-ip-address: false # Generalmente se usa false en Docker si los nombres de servicio son resolubles.
+                             # Si tu red Docker permite resolución por nombre de servicio, preferir el hostname es mejor.
+                             # Si sigues teniendo problemas, puedes volver a true y verificar las IPs internas.

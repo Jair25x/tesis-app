@@ -1,0 +1,55 @@
+# src/main/resources/gateway-service-dev.yml
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    root: INFO
+    org.springframework.cloud.gateway: DEBUG
+    com.tesis.gateway_service: DEBUG
+    io.jsonwebtoken: DEBUG
+    org.springframework.cloud.gateway.route.RouteLocator: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+
+spring:
+  boot:
+    admin:
+      client:
+        url: http://admin-monitoring-service:9090
+        instance:
+          metadata:
+            user:
+              name: admin
+              password: admin
+  cloud:
+    gateway:
+      server:
+        webflux:
+          globalcors:
+            add-to-simple-url-handler-mapping: true
+            cors-configurations:
+              "[/**]":
+                allowedOrigins:
+                  - "http://localhost:5173" # Origen específico de tu frontend Vite
+                  - "http://localhost:3000" # Si usas React en 3000
+                  - "http://127.0.0.1:5173" # Otra forma de referirse a Vite
+                  - "http://host.docker.internal:5173" # Para Docker Desktop si el frontend está en el host
+                allowedMethods:
+                  - GET
+                  - POST
+                  - PUT
+                  - DELETE
+                  - OPTIONS
+                allowedHeaders:
+                  - "*"
+                allowCredentials: true
+                maxAge: 3600

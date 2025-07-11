@@ -1,0 +1,17 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    gateway:
+      server:
+        webflux:
+          discovery:
+            locator:
+              enabled: false
+
+jwt: # Sección de configuración para los JSON Web Tokens.
+  secret-key: N/B9yH7L5A8t/Q2Z0X0Vw6M8vJ9Y4N1T3S2R1Q0P5O6N7M8L9K0J1I2H3G4F5E6D7C8B9A0B1C2D3E4F5G6H7I8J9K0L1M2N3O4P5Q6R7S8T9U0V1W2X3Y4ZabCdEfGhIjKlMnOpQrStUvWxYzABcDeFg==
+

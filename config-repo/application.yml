@@ -1,0 +1,14 @@
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+
+spring:
+  config:
+    activate:
+      on-profile: default
+
+logging:
+  level:
+    root: INFO

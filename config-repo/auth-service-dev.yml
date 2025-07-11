@@ -1,0 +1,29 @@
+# auth-profile-service-dev.yml (Configuración específica para el perfil 'dev')
+
+spring:
+  datasource:
+    url: jdbc:postgresql://auth-profile-db:5432/tesisdb_auth # URL de conexión a tu BD PostgreSQL en Docker Compose
+    username: postgres # Usuario de la base de datos
+    password: misan # Contraseña del usuario
+  boot: # Configuración para el registro en Admin Monitoring Service
+    admin:
+      client:
+        url: http://admin-monitoring-service:9090 # URL del Admin Monitoring Service dentro de la red Docker
+        instance:
+          metadata:
+            user:
+              name: admin
+              password: admin # Credenciales para el Admin Monitoring 
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+        
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/ # URL del servidor Eureka dentro de la red Docker
+
+

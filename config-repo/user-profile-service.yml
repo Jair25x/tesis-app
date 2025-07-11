@@ -1,0 +1,61 @@
+# user-profile-service.yml
+# Configuración por defecto para el microservicio de gestión de perfiles de usuario.
+# Utilizado para el entorno de desarrollo local si no se especifica otro perfil.
+
+server:
+  port: 8083 # Puerto en el que user-profile-service escuchará las peticiones HTTP.
+            # Asegúrate de que sea diferente de otros servicios (ej. auth-service: 8082, gateway: 8080).
+
+spring:
+  application:
+    name: user-profile-service # Nombre de la aplicación, usado para Eureka y para el Config Server.
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/tesisdb_user_profiles # URL de conexión a tu base de datos PostgreSQL local.
+    username: postgres # Usuario de la base de datos (ajústalo si es diferente).
+    password: misan # Contraseña del usuario de la base de datos (ajústala si es diferente).
+
+  jpa:
+    hibernate:
+      ddl-auto: update # Estrategia de Hibernate para la creación/actualización del esquema de la BD.
+                       # 'update' intentará actualizar el esquema existente.
+                       # Para producción, considera 'validate' o 'none'.
+    show-sql: true # Muestra las sentencias SQL ejecutadas por Hibernate en la consola. Útil para depuración.
+    properties:
+      hibernate:
+        format_sql: true # Formatea las sentencias SQL mostradas para una mejor legibilidad.
+    database-platform: org.hibernate.dialect.PostgreSQLDialect # Especifica el dialecto de Hibernate para PostgreSQL.
+
+# Configuración de JWT para validar tokens recibidos de auth-service.
+# La clave secreta DEBE ser la misma que la configurada en auth-service.
+jwt:
+  secret-key: N/B9yH7L5A8t/Q2Z0X0Vw6M8vJ9Y4N1T3S2R1Q0P5O6N7M8L9K0J1I2H3G4F5E6D7C8B9A0B1C2D3E4F5G6H7I8J9K0L1M2N3O4P5Q6R7S8T9U0V1W2X3Y4ZabCdEfGhIjKlMnOpQrStUvWxYzABcDeFg==
+  # Los tiempos de expiración no son directamente usados por este servicio para validar (solo la clave),
+  # pero es buena práctica tenerlos definidos si los vas a usar en algún contexto.
+  # Podrías eliminarlos si solo usas el secret-key para validación.
+  expirationMs: 3600000 # Tiempo de expiración del Access Token JWT en milisegundos (1 hora).
+  refreshExpirationMs: 86400000 # Tiempo de expiración del Refresh Token en milisegundos (24 horas).
+
+eureka: # Configuración para el cliente Eureka (para registrar este microservicio).
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/ # URL del servidor Eureka.
+  instance:
+    prefer-ip-address: true # Registra la dirección IP en lugar del hostname con Eureka.
+    instance-id: ${spring.application.name}:${random.uuid} # Genera un ID de instancia único para Eureka.
+    lease-renewal-interval-in-seconds: 10 # Frecuencia con la que el cliente renueva su "lease" (contrato) con Eureka.
+    lease-expiration-duration-in-seconds: 30 # Tiempo que Eureka espera antes de quitar una instancia si no se renueva el lease.
+
+management: # Configuración de Spring Boot Actuator.
+  endpoints:
+    web:
+      exposure:
+        include: "*" # Expone todos los endpoints de Actuator a través de HTTP.
+                     # ¡Precaución! En producción, expón solo los necesarios para seguridad.
+
+# Configuración para SpringDoc OpenAPI (Swagger UI)
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html # Ruta para acceder a la interfaz de Swagger UI
+  api-docs:
+    path: /v3/api-docs # Ruta para acceder al archivo JSON de la especificación OpenAPI
