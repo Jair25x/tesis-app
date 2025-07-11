@@ -11,6 +11,11 @@ export default function EditUser() {
     apellidos: "",
     email: "",
   });
+  const [errors, setErrors] = useState<{
+    nombres?: string;
+    apellidos?: string;
+    email?: string;
+  }>({});
 
   useEffect(() => {
     if (!id) return;
@@ -29,11 +34,24 @@ export default function EditUser() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
+    setErrors({ ...errors, [e.target.name]: "" });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id) return;
+    const newErrors: { nombres?: string; apellidos?: string; email?: string } = {};
+    if (!form.nombres.trim()) newErrors.nombres = "Ingresa los nombres.";
+    if (!form.apellidos.trim()) newErrors.apellidos = "Ingresa los apellidos.";
+    if (!form.email.trim()) {
+      newErrors.email = "Ingresa un email.";
+    } else if (!/\S+@\S+\.\S+/.test(form.email)) {
+      newErrors.email = "Email inválido.";
+    }
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
     try {
       await updateUser(Number(id), form);
       alert("Usuario actualizado correctamente.");
@@ -54,9 +72,16 @@ export default function EditUser() {
               name="nombres"
               value={form.nombres}
               onChange={handleChange}
+              aria-invalid={Boolean(errors.nombres)}
               className="w-full p-2 border rounded bg-transparent"
               required
+              minLength={2}
             />
+            {errors.nombres && (
+              <p className="text-sm text-red-600" aria-live="polite">
+                {errors.nombres}
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-sm mb-1">Apellidos</label>
@@ -64,9 +89,16 @@ export default function EditUser() {
               name="apellidos"
               value={form.apellidos}
               onChange={handleChange}
+              aria-invalid={Boolean(errors.apellidos)}
               className="w-full p-2 border rounded bg-transparent"
               required
+              minLength={2}
             />
+            {errors.apellidos && (
+              <p className="text-sm text-red-600" aria-live="polite">
+                {errors.apellidos}
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-sm mb-1">Email</label>
@@ -75,12 +107,20 @@ export default function EditUser() {
               type="email"
               value={form.email}
               onChange={handleChange}
+              aria-invalid={Boolean(errors.email)}
               className="w-full p-2 border rounded bg-transparent"
               required
             />
+            {errors.email && (
+              <p className="text-sm text-red-600" aria-live="polite">
+                {errors.email}
+              </p>
+            )}
           </div>
           <button
             type="submit"
+            aria-label="Guardar cambios"
+            role="button"
             className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded"
           >
             Guardar
