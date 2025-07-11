@@ -108,8 +108,6 @@ public class UserServiceImpl implements UserService {
     user.setEmail(request.getEmail());
     user.setProfilePictureUrl(request.getProfilePictureUrl());
     user.setPreferences(request.getPreferences());
-    user.setProfilePictureUrl(request.getProfilePictureUrl());
-    user.setPreferences(request.getPreferences());
 
     userRepository.save(user);
 
@@ -172,6 +170,8 @@ public class UserServiceImpl implements UserService {
     user.setNombres(request.getNombres());
     user.setApellidos(request.getApellidos());
     user.setEmail(request.getEmail());
+    user.setProfilePictureUrl(request.getProfilePictureUrl());
+    user.setPreferences(request.getPreferences());
 
     userRepository.save(user);
 
