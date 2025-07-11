@@ -593,4 +593,21 @@ public class AuthController {
     UserProfileDto updatedUser = userService.updateUserById(id, request);
     return ResponseEntity.ok(updatedUser);
   }
+
+  @PreAuthorize("hasRole('ADMIN')")
+  @PatchMapping("/users/{id}/enabled")
+  @Operation(summary = "Set user enabled status", description = "Enable or disable a user account by ID. Accessible only by ADMIN role.")
+  @ApiResponses(value = {
+      @ApiResponse(responseCode = "200", description = "User enabled status updated."),
+      @ApiResponse(responseCode = "401", description = "Unauthorized", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+      @ApiResponse(responseCode = "403", description = "Forbidden", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+      @ApiResponse(responseCode = "404", description = "User not found", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+  })
+  public ResponseEntity<String> setUserEnabled(
+      @PathVariable Long id,
+      @RequestBody boolean enabled) {
+
+    userService.setUserEnabled(id, enabled);
+    return ResponseEntity.ok("Estado de usuario actualizado correctamente.");
+  }
 }

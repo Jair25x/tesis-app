@@ -20,6 +20,8 @@ public interface UserService {
 
     void reactivateUser(Long id);
 
+    void setUserEnabled(Long id, boolean enabled);
+
     void changePassword(String username, ChangePasswordRequest request);
 
     UserSummaryDto getCurrentUserProfile(String username);
