@@ -1,12 +1,16 @@
 package com.tesis.auth_service.model;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -38,6 +42,13 @@ public class User {
 
     @Column(nullable = false)
     private String apellidos;
+
+    @Column(name = "profile_picture_url")
+    private String profilePictureUrl;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, Object> preferences = new HashMap<>();
 
     private boolean enabled = true; // Por defecto habilitado
     private boolean accountNonLocked = true; // Por defecto no bloqueado

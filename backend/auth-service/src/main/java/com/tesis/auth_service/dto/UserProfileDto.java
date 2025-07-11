@@ -1,6 +1,7 @@
 package com.tesis.auth_service.dto;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Set;
 
 import lombok.AllArgsConstructor;
@@ -16,6 +17,8 @@ public class UserProfileDto {
   private String email;
   private String nombres;
   private String apellidos;
+  private String profilePictureUrl;
+  private Map<String, Object> preferences;
   private Set<String> roles;
   private boolean enabled;
   private LocalDateTime fechaRegistro;

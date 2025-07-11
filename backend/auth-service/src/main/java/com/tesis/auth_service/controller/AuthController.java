@@ -210,6 +210,8 @@ public class AuthController {
         .email(registerRequest.getEmail()) // Email registration
         .nombres(registerRequest.getNombres())
         .apellidos(registerRequest.getApellidos())
+        .profilePictureUrl(registerRequest.getProfilePictureUrl())
+        .preferences(registerRequest.getPreferences())
         .fechaRegistro(LocalDateTime.now())
         .enabled(true) // Account enabled
         .accountNonLocked(true) // Account not locked
