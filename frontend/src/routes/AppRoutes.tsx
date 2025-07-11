@@ -17,6 +17,8 @@ import NotFound from "../pages/NotFound";
 import LoadingScreen from "../components/LoadingScreen";
 
 const AdminDashboard = lazy(() => import("../pages/admin/AdminDashboard"));
+const UserList = lazy(() => import("../pages/admin/UserList"));
+const EditUser = lazy(() => import("../pages/admin/EditUser"));
 
 export const router = createBrowserRouter([
   {
@@ -75,6 +77,26 @@ export const router = createBrowserRouter([
           <RoleRoute roles={["ROLE_ADMIN"]}>
             <Suspense fallback={<LoadingScreen />}>
               <AdminDashboard />
+            </Suspense>
+          </RoleRoute>
+        ),
+      },
+      {
+        path: "/admin/users",
+        element: (
+          <RoleRoute roles={["ROLE_ADMIN"]}>
+            <Suspense fallback={<LoadingScreen />}>
+              <UserList />
+            </Suspense>
+          </RoleRoute>
+        ),
+      },
+      {
+        path: "/admin/users/:id",
+        element: (
+          <RoleRoute roles={["ROLE_ADMIN"]}>
+            <Suspense fallback={<LoadingScreen />}>
+              <EditUser />
             </Suspense>
           </RoleRoute>
         ),
