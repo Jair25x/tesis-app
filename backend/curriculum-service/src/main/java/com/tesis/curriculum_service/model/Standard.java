@@ -1,88 +1,119 @@
 package com.tesis.curriculum_service.model;
 
-import jakarta.persistence.*; // Importa todas las anotaciones JPA necesarias
-import lombok.AllArgsConstructor; // Genera un constructor con todos los argumentos
-import lombok.Builder; // Permite usar el patrón Builder para crear instancias
-import lombok.Data; // Genera getters, setters, toString, equals y hashCode automáticamente
-import lombok.NoArgsConstructor; // Genera un constructor sin argumentos
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
-import java.time.LocalDateTime; // Para manejar fechas y horas
-import java.util.HashSet; // Para la colección de objetivos de aprendizaje
-import java.util.Set; // Para la colección de objetivos de aprendizaje
-import java.util.UUID; // Para usar UUIDs como IDs
+import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
 
 /**
- * Entidad que representa un estándar de aprendizaje.
- * Un estándar desglosa una competencia y, a su vez, puede tener múltiples
- * objetivos de aprendizaje.
+ * Entidad JPA que representa un Estándar de aprendizaje dentro de una
+ * Competencia.
+ * Soporta soft-delete: al borrar, marca active=false y pone deletedAt.
+ * Usa SQLRestriction para filtrar automáticamente sólo los registros activos.
  */
-@Entity // Indica que esta clase es una entidad JPA y se mapeará a una tabla de base de
-        // datos.
-@Table(name = "standards") // Especifica el nombre de la tabla en la base de datos (plural).
-@Data // Anotación de Lombok para generar automáticamente getters, setters, toString,
-      // equals y hashCode.
-@NoArgsConstructor // Genera un constructor sin argumentos, necesario para JPA.
-@AllArgsConstructor // Genera un constructor con todos los campos como argumentos.
-@Builder // Permite la creación de instancias utilizando el patrón de diseño Builder.
+@Entity
+@Table(name = "standards")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@SQLDelete(sql = "UPDATE standards SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
+@SQLRestriction("active = true")
 public class Standard {
 
-  @Id // Marca el campo 'id' como la clave primaria de la entidad.
-  @GeneratedValue(strategy = GenerationType.UUID) // Genera automáticamente un UUID como ID.
-  @Column(name = "id", updatable = false, nullable = false) // Mapea a la columna 'id', no actualizable y no nula.
+  /**
+   * Identificador UUID generado automáticamente.
+   */
+  @Id
+  @GeneratedValue(strategy = GenerationType.UUID)
+  @Column(name = "id", nullable = false, updatable = false, columnDefinition = "UUID")
   private UUID id;
 
-  @Column(name = "name", nullable = false, length = 500) // Nombre o descripción breve del estándar.
+  /**
+   * Nombre o título breve del estándar.
+   */
+  @Column(name = "name", nullable = false, length = 500)
   private String name;
 
-  @Column(name = "description", columnDefinition = "TEXT") // Descripción detallada del estándar.
+  /**
+   * Descripción detallada del estándar.
+   */
+  @Column(name = "description", columnDefinition = "TEXT")
   private String description;
 
-  @Column(name = "code", unique = true, length = 50) // Código único para el estándar (ej. "S.01.01").
+  /**
+   * Código único del estándar (ej. "S.01.01").
+   */
+  @Column(name = "code", nullable = false, unique = true, length = 50)
   private String code;
 
-  @Column(name = "created_at", nullable = false, updatable = false) // Fecha y hora de creación.
+  /**
+   * Marca si el estándar está activo (soft-delete).
+   */
+  @Column(name = "active", nullable = false)
+  @Builder.Default
+  private Boolean active = true;
+
+  /**
+   * Fecha y hora de creación (no actualizable).
+   */
+  @Column(name = "created_at", nullable = false, updatable = false)
   private LocalDateTime createdAt;
 
-  @Column(name = "updated_at") // Fecha y hora de la última actualización.
+  /**
+   * Fecha y hora de última actualización.
+   */
+  @Column(name = "updated_at", nullable = false)
   private LocalDateTime updatedAt;
 
-  // Relación Many-to-One con Competency: Muchos estándares pueden pertenecer a
-  // una competencia.
-  // '@JoinColumn(name = "competency_id", nullable = false)' especifica la columna
-  // de clave foránea
-  // en la tabla 'standards' que referenciará al ID de la tabla 'competencies'.
-  // 'nullable = false' asegura que un estándar siempre debe estar asociado a una
-  // competencia.
-  @ManyToOne(fetch = FetchType.LAZY) // FetchType.LAZY mejora el rendimiento.
+  /**
+   * Fecha y hora del borrado lógico.
+   */
+  @Column(name = "deleted_at")
+  private LocalDateTime deletedAt;
+
+  /**
+   * Relación Many-To-One con Competency: cada Estándar pertenece a una
+   * Competencia.
+   * LAZY para optimizar carga.
+   */
+  @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "competency_id", nullable = false)
   private Competency competency;
 
-  // Relación One-to-Many con LearningObjective: Un estándar puede tener muchos
-  // objetivos de aprendizaje.
-  // 'mappedBy = "standard"' indica que el lado propietario de la relación es el
-  // campo 'standard' en la entidad LearningObjective.
-  // 'cascade = CascadeType.ALL' propaga las operaciones de persistencia.
-  // 'orphanRemoval = true' asegura la eliminación de objetivos si se desvinculan
-  // de un estándar.
+  /**
+   * Relación One-To-Many con LearningObjective: un Estándar puede tener múltiples
+   * objetivos.
+   * Cascade ALL y orphanRemoval para gestionar la colección.
+   */
   @OneToMany(mappedBy = "standard", cascade = CascadeType.ALL, orphanRemoval = true)
-  @Builder.Default // Inicializa la colección con un HashSet vacío por defecto cuando se usa el
-                   // Builder.
+  @Builder.Default
   private Set<LearningObjective> learningObjectives = new HashSet<>();
 
   /**
-   * Método de callback de JPA que se ejecuta antes de persistir la entidad por
-   * primera vez.
-   * Se usa para establecer automáticamente la fecha de creación.
+   * Callback JPA: al persistir por primera vez, fija createdAt, updatedAt y
+   * active=true.
    */
   @PrePersist
   protected void onCreate() {
-    this.createdAt = LocalDateTime.now();
-    this.updatedAt = LocalDateTime.now();
+    LocalDateTime now = LocalDateTime.now();
+    this.createdAt = now;
+    this.updatedAt = now;
+    if (this.active == null) {
+      this.active = true;
+    }
   }
 
   /**
-   * Método de callback de JPA que se ejecuta antes de actualizar la entidad.
-   * Se usa para establecer automáticamente la fecha de última actualización.
+   * Callback JPA: al actualizar, fija updatedAt.
    */
   @PreUpdate
   protected void onUpdate() {

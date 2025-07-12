@@ -78,6 +78,7 @@
     <module>config-service</module>
     <module>gateway-service</module>
     <module>auth-service</module>
+    <module>curriculum-service</module>
   </modules>
 
   <build>

@@ -1,77 +1,98 @@
+// src/main/java/com/tesis/curriculum_service/service/StandardService.java
 package com.tesis.curriculum_service.service;
 
-import com.tesis.curriculum_service.dto.StandardRequest; // DTO de entrada para crear/actualizar estándares.
-import com.tesis.curriculum_service.dto.StandardResponse; // DTO de salida para devolver estándares.
-import com.tesis.curriculum_service.exception.ResourceNotFoundException; // Excepción para recursos no encontrados.
+import com.tesis.curriculum_service.dto.StandardRequest;
+import com.tesis.curriculum_service.dto.StandardResponse;
+import com.tesis.curriculum_service.exception.ResourceNotFoundException;
 
-import java.util.List; // Para listas de estándares.
-import java.util.UUID; // Para identificadores únicos.
+import java.util.List;
+import java.util.UUID;
 
 /**
- * Interfaz de servicio para las operaciones de negocio relacionadas con la
- * entidad {@link com.tesis.curriculum_service.model.Standard}.
- * Define el contrato de la capa de lógica de negocio para la gestión de
- * estándares.
+ * Servicio de negocio para la entidad Standard.
+ * Define operaciones CRUD y soporta soft-delete y reactivación en cascada.
  */
 public interface StandardService {
 
   /**
-   * Crea un nuevo estándar asociado a una competencia específica.
-   * 
-   * @param request DTO que contiene los datos para la creación del estándar,
-   *                incluyendo el ID de la competencia padre.
-   * @return El DTO de respuesta del estándar creado.
-   * @throws ResourceNotFoundException si la competencia padre no es encontrada.
-   * @throws IllegalArgumentException  si el nombre o el código del estándar ya
-   *                                   existen.
+   * Crea un nuevo estándar dentro de una competencia de un currículo.
+   *
+   * @param curriculumId UUID del currículo padre.
+   * @param competencyId UUID de la competencia a la que pertenece.
+   * @param request      DTO con los datos de creación.
+   * @return DTO con la entidad creada.
+   * @throws ResourceNotFoundException si la competencia o currículo no existen.
    */
-  StandardResponse createStandard(StandardRequest request);
+  StandardResponse create(UUID curriculumId,
+      UUID competencyId,
+      StandardRequest request)
+      throws ResourceNotFoundException;
 
   /**
-   * Obtiene un estándar por su identificador único.
-   * 
-   * @param id El ID del estándar a buscar.
-   * @return El DTO de respuesta del estándar encontrado.
-   * @throws ResourceNotFoundException si el estándar no es encontrado.
+   * Lista todos los estándares de una competencia dada.
+   *
+   * @param curriculumId UUID del currículo padre.
+   * @param competencyId UUID de la competencia.
+   * @return Lista de DTOs.
+   * @throws ResourceNotFoundException si la competencia o currículo no existen.
    */
-  StandardResponse getStandardById(UUID id);
+  List<StandardResponse> getAllByCompetency(UUID curriculumId,
+      UUID competencyId)
+      throws ResourceNotFoundException;
 
   /**
-   * Obtiene una lista de todos los estándares existentes.
-   * 
-   * @return Una lista de DTOs de respuesta de estándares.
+   * Obtiene un estándar concreto por sus IDs.
+   *
+   * @param curriculumId UUID del currículo padre.
+   * @param competencyId UUID de la competencia.
+   * @param id           UUID del estándar a recuperar.
+   * @return DTO con la información del estándar.
+   * @throws ResourceNotFoundException si no existe.
    */
-  List<StandardResponse> getAllStandards();
-
-  /**
-   * Obtiene una lista de estándares asociados a una competencia específica.
-   * 
-   * @param competencyId El ID de la competencia padre.
-   * @return Una lista de DTOs de respuesta de estándares. Puede estar vacía si no
-   *         hay estándares para esa competencia.
-   * @throws ResourceNotFoundException si la competencia padre no es encontrada.
-   */
-  List<StandardResponse> getStandardsByCompetencyId(UUID competencyId);
+  StandardResponse getById(UUID curriculumId,
+      UUID competencyId,
+      UUID id)
+      throws ResourceNotFoundException;
 
   /**
    * Actualiza un estándar existente.
-   * 
-   * @param id      El ID del estándar a actualizar.
-   * @param request DTO que contiene los nuevos datos para la actualización del
-   *                estándar.
-   * @return El DTO de respuesta del estándar actualizado.
-   * @throws ResourceNotFoundException si el estándar no es encontrado o si la
-   *                                   competencia padre no es encontrada.
-   * @throws IllegalArgumentException  si el nombre o código actualizado ya existe
-   *                                   en otro estándar.
+   *
+   * @param curriculumId UUID del currículo padre.
+   * @param competencyId UUID de la competencia.
+   * @param id           UUID del estándar a actualizar.
+   * @param request      DTO con los nuevos datos.
+   * @return DTO con la información actualizada.
+   * @throws ResourceNotFoundException si no existe.
    */
-  StandardResponse updateStandard(UUID id, StandardRequest request);
+  StandardResponse update(UUID curriculumId,
+      UUID competencyId,
+      UUID id,
+      StandardRequest request)
+      throws ResourceNotFoundException;
 
   /**
-   * Elimina lógicamente un estándar por su identificador único.
-   * 
-   * @param id El ID del estándar a eliminar lógicamente.
-   * @throws ResourceNotFoundException si el estándar no es encontrado.
+   * Realiza un borrado lógico de un estándar.
+   *
+   * @param curriculumId UUID del currículo padre.
+   * @param competencyId UUID de la competencia.
+   * @param id           UUID del estándar a borrar.
+   * @throws ResourceNotFoundException si no existe.
    */
-  void deleteStandard(UUID id);
+  void delete(UUID curriculumId,
+      UUID competencyId,
+      UUID id)
+      throws ResourceNotFoundException;
+
+  /**
+   * Reactiva un estándar borrado lógicamente.
+   *
+   * @param curriculumId UUID del currículo padre.
+   * @param competencyId UUID de la competencia.
+   * @param id           UUID del estándar a reactivar.
+   * @throws ResourceNotFoundException si no existe (ni siquiera inactivo).
+   */
+  void reactivate(UUID curriculumId,
+      UUID competencyId,
+      UUID id)
+      throws ResourceNotFoundException;
 }

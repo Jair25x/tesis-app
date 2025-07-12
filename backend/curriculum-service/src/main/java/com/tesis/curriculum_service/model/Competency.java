@@ -1,45 +1,62 @@
-// curriculum-service/src/main/java/com/tesis/curriculum_service/model/Competency.java
 package com.tesis.curriculum_service.model;
 
-import jakarta.persistence.*; // Anotaciones JPA
-import lombok.AllArgsConstructor; // Constructor con todos los argumentos
-import lombok.Builder; // Patrón Builder para construir objetos
-import lombok.Data; // Getters, Setters, toString, equals, hashCode
-import lombok.NoArgsConstructor; // Constructor sin argumentos
-import org.hibernate.annotations.SQLDelete; // Para Hibernate: Interceptar delete y ejecutar SQL custom
-import org.hibernate.annotations.Where; // Para Hibernate: Filtrar resultados automáticamente
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
-import java.time.LocalDateTime; // Para manejar fechas y horas
-import java.util.UUID; // Para IDs únicos universales
+import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
 
+/**
+ * Entidad JPA que representa una Competencia dentro de un Currículo.
+ * Soporta soft-delete: al borrar, marca active=false y registra deletedAt.
+ * Usa SQLRestriction para filtrar automáticamente sólo las competencias
+ * activas.
+ */
 @Entity
 @Table(name = "competencies")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@SQLDelete(sql = "UPDATE competencies SET active = false, deleted_at = NOW() WHERE id = ?") // SQL para el borrado
-                                                                                            // lógico
-@org.hibernate.annotations.SQLRestriction("active = true") // Filtra automáticamente solo registros activos
+@SQLDelete(sql = "UPDATE competencies SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
+@SQLRestriction("active = true")
 public class Competency {
 
+  /** UUID generado automáticamente como clave primaria. */
   @Id
-  @GeneratedValue // ✅ Modificación: Quitamos @GenericGenerator para consistencia con Curriculum
-  @Column(name = "id", updatable = false, nullable = false)
+  @GeneratedValue(strategy = GenerationType.UUID)
+  @Column(name = "id", nullable = false, updatable = false, columnDefinition = "UUID")
   private UUID id;
 
+  /** Nombre descriptivo de la competencia. */
   @Column(nullable = false, length = 255)
   private String name;
 
-  @Column(nullable = false, length = 1000)
+  /** Descripción detallada de la competencia. */
+  @Column(nullable = false, length = 1000, columnDefinition = "TEXT")
   private String description;
 
+  /** Código único de la competencia (ej. "C.01.02"). */
   @Column(nullable = false, unique = true, length = 50)
   private String code;
 
-  @ManyToOne(fetch = FetchType.LAZY) // Relación Muchos a Uno con Curriculum
-  @JoinColumn(name = "curriculum_id", nullable = false) // Columna de la clave foránea
+  /** Relación Many-To-One con Curriculum. */
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "curriculum_id", nullable = false)
   private Curriculum curriculum;
+
+  /**
+   * Relación One-To-Many con Standard.
+   * Permite soft-delete en cascada y reactivación de estándares al
+   * borrar/reactivar una competencia.
+   */
+  @OneToMany(mappedBy = "competency", cascade = CascadeType.ALL, orphanRemoval = true)
+  @Builder.Default
+  private Set<Standard> standards = new HashSet<>();
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private LocalDateTime createdAt;
@@ -47,18 +64,19 @@ public class Competency {
   @Column(name = "updated_at", nullable = false)
   private LocalDateTime updatedAt;
 
-  @Column(name = "active", nullable = false) // Campo para el borrado lógico
-  @Builder.Default // Para que al usar el builder, el valor por defecto sea true
-  private Boolean active = true; // Por defecto, una nueva competencia está activa
+  @Column(nullable = false)
+  @Builder.Default
+  private Boolean active = true;
 
-  @Column(name = "deleted_at") // Campo para registrar la fecha de borrado lógico
+  @Column(name = "deleted_at")
   private LocalDateTime deletedAt;
 
   @PrePersist
   protected void onCreate() {
-    this.createdAt = LocalDateTime.now();
-    this.updatedAt = LocalDateTime.now();
-    if (this.active == null) { // Asegura que 'active' sea true al crear, aunque Builder.Default ya lo hace
+    LocalDateTime now = LocalDateTime.now();
+    this.createdAt = now;
+    this.updatedAt = now;
+    if (this.active == null) {
       this.active = true;
     }
   }

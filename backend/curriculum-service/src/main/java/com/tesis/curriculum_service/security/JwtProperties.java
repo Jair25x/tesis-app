@@ -1,44 +1,39 @@
+// src/main/java/com/tesis/curriculum_service/config/JwtProperties.java
 package com.tesis.curriculum_service.security;
 
-import lombok.Getter; // Genera automáticamente los métodos getter.
-import lombok.Setter; // Genera automáticamente los métodos setter.
-import org.springframework.boot.context.properties.ConfigurationProperties; // Anotación para mapear propiedades externas a un bean.
-import org.springframework.stereotype.Component; // Marca esta clase como un componente de Spring.
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
 
 /**
- * Clase para cargar propiedades relacionadas con JWT desde la configuración de la aplicación.
- * Las propiedades se mapearán desde el prefijo 'jwt' en los archivos de configuración
- * (ej., application.properties, o auth-service.yml/user-profile-service.yml desde Config Server).
+ * Carga desde `application.properties` (o tu Config Server) bajo el prefijo
+ * `jwt.*`:
+ * jwt.secret-key=...
+ * jwt.expiration-ms=...
+ * jwt.refresh-expiration-ms=...
  */
-@Component // ✅ Propósito: Indica que esta clase es un componente de Spring y debe ser gestionada por el contexto de Spring.
-@ConfigurationProperties(prefix = "jwt") // ✅ Propósito: Mapea las propiedades que comienzan con 'jwt.'
-                                         // a los campos de esta clase (ej., 'jwt.secret-key' a 'secretKey').
-@Getter // ✅ Propósito: Genera automáticamente todos los métodos getter para los campos.
-@Setter // ✅ Propósito: Genera automáticamente todos los métodos setter para los campos.
+@Component
+@ConfigurationProperties(prefix = "jwt")
+@Getter
+@Setter
 public class JwtProperties {
 
     /**
-     * Clave secreta utilizada para firmar y verificar los JWTs.
-     * Esta propiedad se mapea desde 'jwt.secret-key' en la configuración.
-     * DEBE ser la misma clave utilizada en auth-service y gateway-service.
+     * Clave secreta (Base64) para firmar/verificar JWTs.
+     * Debe ser la misma en auth-service, gateway y aquí.
      */
     private String secretKey;
 
     /**
-     * Tiempo de expiración del Access Token JWT en milisegundos.
-     * Esta propiedad se mapea desde 'jwt.expirationMs' en la configuración.
+     * Tiempo de expiración del Access Token (en milisegundos).
+     * Opcional en este servicio, pero cargado para consistencia.
      */
     private long expirationMs;
 
     /**
-     * Tiempo de expiración del Refresh Token JWT en milisegundos.
-     * Aunque curriculum-service no genera refresh tokens, la mantenemos
-     * para consistencia o si en el futuro se requiriera esta información.
-     * Esta propiedad se mapea desde 'jwt.refreshExpirationMs' en la configuración.
+     * Tiempo de expiración del Refresh Token (en milisegundos).
+     * No usado aquí, pero mantenido para posible extensión.
      */
     private long refreshExpirationMs;
-
-    // Nota: Aunque jwt.secret podría existir en auth-service.yml, aquí usamos
-    // secret-key para uniformidad. Asegúrate de que el valor en el Config Server
-    // para curriculum-service sea consistente con esta propiedad.
 }

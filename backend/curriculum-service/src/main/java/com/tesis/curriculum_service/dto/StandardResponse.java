@@ -1,37 +1,43 @@
+// src/main/java/com/tesis/curriculum_service/dto/StandardResponse.java
 package com.tesis.curriculum_service.dto;
 
-import lombok.AllArgsConstructor; // Genera un constructor con todos los argumentos.
-import lombok.Builder; // Permite usar el patrón Builder para crear instancias.
-import lombok.Data; // Genera getters, setters, toString, equals y hashCode automáticamente.
-import lombok.NoArgsConstructor; // Genera un constructor sin argumentos.
+import java.time.LocalDateTime;
+import java.util.UUID;
 
-import java.time.LocalDateTime; // Para manejar fechas de creación/actualización.
-import java.util.UUID; // Para el ID del estándar y de la competencia.
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-/**
- * DTO (Data Transfer Object) para la respuesta de una entidad
- * {@link com.tesis.curriculum_service.model.Standard}.
- * Contiene los campos que se enviarán al cliente, incluyendo el ID del
- * estándar,
- * el ID de la competencia padre y metadatos de tiempo.
- */
-@Data // Anotación de Lombok para generar automáticamente getters, setters, toString,
-      // equals y hashCode.
-@NoArgsConstructor // Genera un constructor sin argumentos, necesario para deserialización.
-@AllArgsConstructor // Genera un constructor con todos los campos como argumentos.
-@Builder // Permite la creación de instancias utilizando el patrón de diseño Builder.
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@Schema(name = "StandardResponse", description = "Información detallada de un estándar de aprendizaje")
 public class StandardResponse {
 
-  private UUID id; // ✅ Propósito: El identificador único del estándar.
+  @Schema(description = "Identificador único del estándar", example = "7c3e4a85-6789-1234-abcd-9f8e7d6c5b4a")
+  private UUID id;
 
+  @Schema(description = "Nombre o título breve del estándar", example = "Ecuaciones Lineales")
   private String name;
 
+  @Schema(description = "Descripción detallada del estándar", example = "Resolver ecuaciones de primer grado con una incógnita")
   private String description;
 
+  @Schema(description = "Código único del estándar", example = "STD-ALG-01")
   private String code;
 
-  private UUID competencyId; // ✅ Propósito: El ID de la competencia a la que este estándar está asociado.
+  @Schema(description = "ID de la competencia a la que pertenece este estándar", example = "5b2d3f74-1234-4a2b-9cde-1a2b3c4d5e6f")
+  private UUID competencyId;
 
-  private LocalDateTime createdAt; // ✅ Propósito: Fecha y hora de creación del estándar.
-  private LocalDateTime updatedAt; // ✅ Propósito: Fecha y hora de la última actualización del estándar.
+  @Schema(description = "Fecha y hora de creación del estándar", example = "2025-07-12T10:15:30.000")
+  private LocalDateTime createdAt;
+
+  @Schema(description = "Fecha y hora de la última actualización", example = "2025-07-13T14:20:45.000")
+  private LocalDateTime updatedAt;
+
+  @Schema(description = "Indica si el estandar está activo")
+  private Boolean active;
 }

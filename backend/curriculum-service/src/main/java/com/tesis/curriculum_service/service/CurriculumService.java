@@ -1,92 +1,65 @@
 package com.tesis.curriculum_service.service;
 
-import com.tesis.curriculum_service.dto.CurriculumRequest; // DTO de entrada para crear/actualizar currículos.
-import com.tesis.curriculum_service.dto.CurriculumResponse; // DTO de salida para devolver currículos.
-import com.tesis.curriculum_service.dto.CurriculumStatsResponse;
+import com.tesis.curriculum_service.dto.CurriculumRequest;
+import com.tesis.curriculum_service.dto.CurriculumResponse;
+import com.tesis.curriculum_service.exception.ResourceNotFoundException;
 
-import java.util.List; // Para listas de currículos.
-import java.util.UUID; // Para identificadores únicos.
+import java.util.List;
+import java.util.UUID;
 
 /**
- * Interfaz de servicio para las operaciones de negocio relacionadas con la
- * entidad {@link com.tesis.curriculum_service.model.Curriculum}.
- * Define el contrato de la capa de lógica de negocio para la gestión de
- * currículos.
+ * Servicio de negocio para la entidad Curriculum:
+ * define operaciones CRUD y lanza ResourceNotFoundException si no existe.
  */
 public interface CurriculumService {
 
   /**
-   * Crea un nuevo currículo en el sistema.
+   * Crea un nuevo currículo.
    * 
-   * @param request DTO que contiene los datos para la creación del currículo.
-   * @return El DTO de respuesta del currículo creado.
+   * @param request DTO con datos de creación.
+   * @return DTO con la entidad creada.
    */
-  CurriculumResponse createCurriculum(CurriculumRequest request);
+  CurriculumResponse create(CurriculumRequest request);
 
   /**
-   * Obtiene un currículo por su identificador único.
+   * Recupera todos los currículos activos.
    * 
-   * @param id El ID del currículo a buscar.
-   * @return El DTO de respuesta del currículo encontrado.
-   * @throws com.tesis.curriculum_service.exception.ResourceNotFoundException si
-   *                                                                          el
-   *                                                                          currículo
-   *                                                                          no
-   *                                                                          es
-   *                                                                          encontrado.
+   * @return Lista de DTOs.
    */
-  CurriculumResponse getCurriculumById(UUID id);
+  List<CurriculumResponse> getAll();
 
   /**
-   * Obtiene una lista de todos los currículos existentes.
+   * Recupera un currículo por su ID.
    * 
-   * @return Una lista de DTOs de respuesta de currículos.
+   * @param id UUID del currículo.
+   * @throws ResourceNotFoundException si no existe.
+   * @return DTO con datos del currículo.
    */
-  List<CurriculumResponse> getAllCurriculums();
+  CurriculumResponse getById(UUID id) throws ResourceNotFoundException;
 
   /**
    * Actualiza un currículo existente.
    * 
-   * @param id      El ID del currículo a actualizar.
-   * @param request DTO que contiene los nuevos datos para la actualización del
-   *                currículo.
-   * @return El DTO de respuesta del currículo actualizado.
-   * @throws com.tesis.curriculum_service.exception.ResourceNotFoundException si
-   *                                                                          el
-   *                                                                          currículo
-   *                                                                          no
-   *                                                                          es
-   *                                                                          encontrado.
-   * @throws IllegalArgumentException                                         si
-   *                                                                          el
-   *                                                                          nombre
-   *                                                                          o
-   *                                                                          código
-   *                                                                          actualizado
-   *                                                                          ya
-   *                                                                          existe
-   *                                                                          en
-   *                                                                          otro
-   *                                                                          currículo.
+   * @param id      UUID del currículo.
+   * @param request DTO con datos nuevos.
+   * @throws ResourceNotFoundException si no existe.
+   * @return DTO con datos actualizados.
    */
-  CurriculumResponse updateCurriculum(UUID id, CurriculumRequest request); // Usamos CurriculumRequest también para
-                                                                           // update, puedes tener un UpdateRequest si
-                                                                           // los campos son diferentes
+  CurriculumResponse update(UUID id, CurriculumRequest request) throws ResourceNotFoundException;
 
   /**
-   * Elimina lógicamente un currículo por su identificador único.
+   * Realiza un borrado lógico de un currículo.
    * 
-   * @param id El ID del currículo a eliminar lógicamente.
-   * @throws com.tesis.curriculum_service.exception.ResourceNotFoundException si
-   *                                                                          el
-   *                                                                          currículo
-   *                                                                          no
-   *                                                                          es
-   *                                                                          encontrado.
+   * @param id UUID del currículo.
+   * @throws ResourceNotFoundException si no existe.
    */
-  void deleteCurriculum(UUID id); // Consideramos un borrado lógico (marcar como inactivo en la entidad)
+  void delete(UUID id) throws ResourceNotFoundException;
 
-  List<CurriculumResponse> getCurriculaByGrade(String grade);
-
-  CurriculumStatsResponse getCurriculumStats();
+  /**
+   * Reactiva un currículo eliminado lógicamente (soft-delete).
+   *
+   * @param id UUID del currículo a reactivar.
+   * @throws ResourceNotFoundException si no existe.
+   */
+  void reactivate(UUID id) throws ResourceNotFoundException;
 }

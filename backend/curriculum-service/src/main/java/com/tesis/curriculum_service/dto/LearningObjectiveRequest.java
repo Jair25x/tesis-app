@@ -1,45 +1,36 @@
+// src/main/java/com/tesis/curriculum_service/dto/LearningObjectiveRequest.java
 package com.tesis.curriculum_service.dto;
 
-import jakarta.validation.constraints.NotBlank; // Importa anotación para validar que un campo no es nulo y no está vacío/solo espacios.
-import jakarta.validation.constraints.NotNull; // Importa anotación para validar que un campo no es nulo.
-import jakarta.validation.constraints.Size; // Importa anotación para validar la longitud de un campo.
-import lombok.AllArgsConstructor; // Genera un constructor con todos los argumentos.
-import lombok.Builder; // Permite usar el patrón Builder para crear instancias.
-import lombok.Data; // Genera getters, setters, toString, equals y hashCode automáticamente.
-import lombok.NoArgsConstructor; // Genera un constructor sin argumentos.
+import java.util.UUID;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
-import java.util.UUID; // Para el ID del estándar padre.
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-/**
- * DTO (Data Transfer Object) para la creación y actualización de una entidad
- * {@link com.tesis.curriculum_service.model.LearningObjective}.
- * Contiene los campos necesarios que el cliente enviará al servidor, incluyendo
- * el ID del estándar padre.
- * Las anotaciones de validación de Jakarta Bean Validation aseguran la
- * integridad de los datos de entrada.
- */
-@Data // Anotación de Lombok para generar automáticamente getters, setters, toString,
-      // equals y hashCode.
-@NoArgsConstructor // Genera un constructor sin argumentos, necesario para deserialización.
-@AllArgsConstructor // Genera un constructor con todos los campos como argumentos.
-@Builder // Permite la creación de instancias utilizando el patrón de diseño Builder.
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@Schema(name = "LearningObjectiveRequest", description = "Datos necesarios para crear o actualizar un objetivo de aprendizaje")
 public class LearningObjectiveRequest {
 
-  @NotBlank(message = "Name cannot be blank") // ✅ Propósito: Asegura que el nombre no sea nulo, ni una cadena vacía, ni
-                                              // solo espacios en blanco.
-  @Size(max = 500, message = "Name must not exceed 500 characters") // ✅ Propósito: Limita la longitud máxima del
-                                                                    // nombre.
+  @Schema(description = "Nombre o título del objetivo de aprendizaje", example = "Resolver ecuaciones de segundo grado")
+  @NotBlank
   private String name;
 
-  @Size(max = 2000, message = "Description must not exceed 2000 characters") // ✅ AGREGADO: Limita la longitud máxima de
-                                                                             // la descripción (opcional).
+  @Schema(description = "Descripción detallada del objetivo de aprendizaje", example = "Identificar coeficientes y raíces de una ecuación cuadrática")
+  @NotBlank
   private String description;
 
-  @NotBlank(message = "Code cannot be blank") // ✅ Propósito: El código del objetivo no puede ser nulo o vacío.
-  @Size(max = 50, message = "Code must not exceed 50 characters") // ✅ Propósito: Limita la longitud máxima del código.
+  @Schema(description = "Código único del objetivo (p.ej. LO.02.01)", example = "LO.02.01")
+  @NotBlank
   private String code;
 
-  @NotNull(message = "Standard ID cannot be null") // ✅ Propósito: Asegura que el ID del estándar padre no sea nulo.
-  private UUID standardId; // ✅ Propósito: El ID del estándar al que pertenece este objetivo de
-                           // aprendizaje.
+  @Schema(description = "ID del estándar al que pertenece este objetivo", example = "9f7e6d5c-4b3a-21f0-9e8d-7c6b5a4f3e2d")
+  @NotNull
+  private UUID standardId;
 }

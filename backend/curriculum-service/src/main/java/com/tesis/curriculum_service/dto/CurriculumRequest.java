@@ -1,42 +1,34 @@
 package com.tesis.curriculum_service.dto;
 
-import jakarta.validation.constraints.NotBlank; // Importa anotación para validar que un campo no es nulo y no está vacío/solo espacios.
-import jakarta.validation.constraints.Size; // Importa anotación para validar la longitud de un campo.
-import lombok.AllArgsConstructor; // Genera un constructor con todos los argumentos.
-import lombok.Builder; // Permite usar el patrón Builder para crear instancias.
-import lombok.Data; // Genera getters, setters, toString, equals y hashCode automáticamente.
-import lombok.NoArgsConstructor; // Genera un constructor sin argumentos.
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
- * DTO (Data Transfer Object) para la creación y actualización de una entidad
- * {@link com.tesis.curriculum_service.model.Curriculum}.
- * Contiene los campos necesarios que el cliente enviará al servidor.
- * Las anotaciones de validación de Jakarta Bean Validation aseguran la
- * integridad de los datos de entrada.
+ * DTO para crear o actualizar un Currículo.
+ * Se valida automáticamente con @Valid en el controlador.
  */
-@Data // Anotación de Lombok para generar automáticamente getters, setters, toString,
-      // equals y hashCode.
-@NoArgsConstructor // Genera un constructor sin argumentos, necesario para deserialización.
-@AllArgsConstructor // Genera un constructor con todos los campos como argumentos.
-@Builder // Permite la creación de instancias utilizando el patrón de diseño Builder,
-         // mejorando la legibilidad.
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class CurriculumRequest {
 
-  @NotBlank(message = "Name cannot be blank") // ✅ Propósito: Asegura que el nombre no sea nulo, ni una cadena vacía, ni
-                                              // solo espacios en blanco.
-  @Size(max = 100, message = "Name must not exceed 100 characters") // ✅ Propósito: Limita la longitud máxima del
-                                                                    // nombre.
+  @NotBlank(message = "El nombre del currículo no puede estar vacío")
+  @Size(max = 255, message = "El nombre no puede exceder 255 caracteres")
   private String name;
 
-  @Size(max = 1000, message = "Description must not exceed 1000 characters") // ✅ Propósito: Limita la longitud máxima
-                                                                             // de la descripción.
+  @Size(max = 1000, message = "La descripción no puede exceder 1000 caracteres")
   private String description;
 
-  @NotBlank(message = "Code cannot be blank")
-  @Size(max = 50, message = "Code must not exceed 50 characters")
+  @NotBlank(message = "El código del currículo es obligatorio")
+  @Size(max = 50, message = "El código no puede exceder 50 caracteres")
   private String code;
 
-  @NotBlank(message = "Grade cannot be blank")
-  @Size(max = 20, message = "Grade must not exceed 20 characters")
+  @NotBlank(message = "El grado es obligatorio")
+  @Size(max = 100, message = "El grado no puede exceder 100 caracteres")
   private String grade;
 }

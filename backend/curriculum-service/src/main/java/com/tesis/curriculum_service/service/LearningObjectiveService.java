@@ -1,81 +1,96 @@
 package com.tesis.curriculum_service.service;
 
-import com.tesis.curriculum_service.dto.LearningObjectiveRequest; // DTO de entrada para crear/actualizar objetivos de aprendizaje.
-import com.tesis.curriculum_service.dto.LearningObjectiveResponse; // DTO de salida para devolver objetivos de aprendizaje.
-import com.tesis.curriculum_service.exception.ResourceNotFoundException; // Excepción para recursos no encontrados.
-
-import java.util.List; // Para listas de objetivos de aprendizaje.
-import java.util.UUID; // Para identificadores únicos.
+import com.tesis.curriculum_service.dto.LearningObjectiveRequest;
+import com.tesis.curriculum_service.dto.LearningObjectiveResponse;
+import com.tesis.curriculum_service.exception.ResourceNotFoundException;
+import java.util.List;
+import java.util.UUID;
 
 /**
- * Interfaz de servicio para las operaciones de negocio relacionadas con la
- * entidad {@link com.tesis.curriculum_service.model.LearningObjective}.
- * Define el contrato de la capa de lógica de negocio para la gestión de
- * objetivos de aprendizaje.
+ * Servicio de negocio para la entidad LearningObjective.
+ * Proporciona operaciones CRUD, soft‐delete y reactivación.
  */
 public interface LearningObjectiveService {
 
   /**
-   * Crea un nuevo objetivo de aprendizaje asociado a un estándar específico.
-   * 
-   * @param request DTO que contiene los datos para la creación del objetivo de
-   *                aprendizaje, incluyendo el ID del estándar padre.
-   * @return El DTO de respuesta del objetivo de aprendizaje creado.
-   * @throws ResourceNotFoundException si el estándar padre no es encontrado.
-   * @throws IllegalArgumentException  si el nombre o el código del objetivo de
-   *                                   aprendizaje ya existen.
+   * Crea un nuevo objetivo de aprendizaje bajo un estándar.
+   *
+   * @param competencyId UUID de la competencia padre.
+   * @param standardId   UUID del estándar padre.
+   * @param request      DTO con los datos de creación.
+   * @return DTO con el objetivo creado.
+   * @throws ResourceNotFoundException si la competencia o el estándar no existen.
    */
-  LearningObjectiveResponse createLearningObjective(LearningObjectiveRequest request);
+  LearningObjectiveResponse create(UUID competencyId,
+      UUID standardId,
+      LearningObjectiveRequest request)
+      throws ResourceNotFoundException;
 
   /**
-   * Obtiene un objetivo de aprendizaje por su identificador único.
-   * 
-   * @param id El ID del objetivo de aprendizaje a buscar.
-   * @return El DTO de respuesta del objetivo de aprendizaje encontrado.
-   * @throws ResourceNotFoundException si el objetivo de aprendizaje no es
-   *                                   encontrado.
+   * Lista todos los objetivos activos de un estándar.
+   *
+   * @param competencyId UUID de la competencia padre.
+   * @param standardId   UUID del estándar padre.
+   * @return Lista de DTOs de objetivos.
+   * @throws ResourceNotFoundException si la competencia o el estándar no existen.
    */
-  LearningObjectiveResponse getLearningObjectiveById(UUID id);
+  List<LearningObjectiveResponse> getAllByStandard(UUID competencyId,
+      UUID standardId)
+      throws ResourceNotFoundException;
 
   /**
-   * Obtiene una lista de todos los objetivos de aprendizaje existentes.
-   * 
-   * @return Una lista de DTOs de respuesta de objetivos de aprendizaje.
+   * Obtiene un objetivo activo por su ID.
+   *
+   * @param competencyId UUID de la competencia padre.
+   * @param standardId   UUID del estándar padre.
+   * @param id           UUID del objetivo.
+   * @return DTO con los datos del objetivo.
+   * @throws ResourceNotFoundException si no existe.
    */
-  List<LearningObjectiveResponse> getAllLearningObjectives();
+  LearningObjectiveResponse getById(UUID competencyId,
+      UUID standardId,
+      UUID id)
+      throws ResourceNotFoundException;
 
   /**
-   * Obtiene una lista de objetivos de aprendizaje asociados a un estándar
-   * específico.
-   * 
-   * @param standardId El ID del estándar padre.
-   * @return Una lista de DTOs de respuesta de objetivos de aprendizaje. Puede
-   *         estar vacía si no hay objetivos para ese estándar.
-   * @throws ResourceNotFoundException si el estándar padre no es encontrado.
+   * Actualiza un objetivo existente.
+   *
+   * @param competencyId UUID de la competencia padre.
+   * @param standardId   UUID del estándar padre.
+   * @param id           UUID del objetivo.
+   * @param request      DTO con los nuevos datos.
+   * @return DTO con los datos actualizados.
+   * @throws ResourceNotFoundException si no existe.
    */
-  List<LearningObjectiveResponse> getLearningObjectivesByStandardId(UUID standardId);
+  LearningObjectiveResponse update(UUID competencyId,
+      UUID standardId,
+      UUID id,
+      LearningObjectiveRequest request)
+      throws ResourceNotFoundException;
 
   /**
-   * Actualiza un objetivo de aprendizaje existente.
-   * 
-   * @param id      El ID del objetivo de aprendizaje a actualizar.
-   * @param request DTO que contiene los nuevos datos para la actualización del
-   *                objetivo de aprendizaje.
-   * @return El DTO de respuesta del objetivo de aprendizaje actualizado.
-   * @throws ResourceNotFoundException si el objetivo de aprendizaje no es
-   *                                   encontrado o si el estándar padre no es
-   *                                   encontrado.
-   * @throws IllegalArgumentException  si el nombre o código actualizado ya existe
-   *                                   en otro objetivo de aprendizaje.
+   * Realiza un borrado lógico (soft‐delete) de un objetivo.
+   *
+   * @param competencyId UUID de la competencia padre.
+   * @param standardId   UUID del estándar padre.
+   * @param id           UUID del objetivo.
+   * @throws ResourceNotFoundException si no existe.
    */
-  LearningObjectiveResponse updateLearningObjective(UUID id, LearningObjectiveRequest request);
+  void delete(UUID competencyId,
+      UUID standardId,
+      UUID id)
+      throws ResourceNotFoundException;
 
   /**
-   * Elimina lógicamente un objetivo de aprendizaje por su identificador único.
-   * 
-   * @param id El ID del objetivo de aprendizaje a eliminar lógicamente.
-   * @throws ResourceNotFoundException si el objetivo de aprendizaje no es
-   *                                   encontrado.
+   * Reactiva un objetivo (y limpia deletedAt).
+   *
+   * @param competencyId UUID de la competencia padre.
+   * @param standardId   UUID del estándar padre.
+   * @param id           UUID del objetivo.
+   * @throws ResourceNotFoundException si no existe (ni siquiera inactivo).
    */
-  void deleteLearningObjective(UUID id);
+  void reactivate(UUID competencyId,
+      UUID standardId,
+      UUID id)
+      throws ResourceNotFoundException;
 }

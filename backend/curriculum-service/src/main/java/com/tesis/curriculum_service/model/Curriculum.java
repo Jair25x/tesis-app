@@ -1,89 +1,86 @@
+// src/main/java/com/tesis/curriculum_service/model/Curriculum.java
 package com.tesis.curriculum_service.model;
 
-import jakarta.persistence.*; // Anotaciones JPA
-import lombok.AllArgsConstructor; // Constructor con todos los argumentos
-import lombok.Builder; // Patrón Builder para construir objetos
-import lombok.Data; // Getters, Setters, toString, equals, hashCode
-import lombok.NoArgsConstructor; // Constructor sin argumentos
-import org.hibernate.annotations.SQLDelete; // Para Hibernate: Interceptar delete y ejecutar SQL custom
-import org.hibernate.annotations.Where; // Para Hibernate: Filtrar resultados automáticamente
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
-import java.time.LocalDateTime; // Para manejar fechas y horas
-import java.util.UUID; // Para IDs únicos universales
+import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Entidad JPA que representa un Currículo escolar.
- * Utiliza soft delete para preservar la información en lugar de eliminarla
- * físicamente.
+ * <p>
+ * - Soft-delete: al invocar delete(), Hibernate ejecuta el UPDATE de
+ * active=false y deleted_at.
+ * - @SQLRestriction (clase) filtra automáticamente todas las consultas SELECT
+ * para incluir solo active=true.
  */
-@Entity // Marca la clase como una entidad JPA mapeada a una tabla de base de datos.
-@Table(name = "curricula") // Define el nombre de la tabla en la base de datos.
-@Data // Anotación de Lombok: Genera getters, setters, toString(), equals() y
-      // hashCode().
-@NoArgsConstructor // Anotación de Lombok: Genera un constructor sin argumentos.
-@AllArgsConstructor // Anotación de Lombok: Genera un constructor con todos los argumentos.
-@Builder // Anotación de Lombok: Permite construir instancias de la clase usando el
-         // patrón Builder.
-@SQLDelete(sql = "UPDATE curricula SET active = false WHERE id = ?") // ✅ MODIFICACIÓN CLAVE: Intercepta las operaciones
-                                                                     // de DELETE
-                                                                     // y en su lugar ejecuta un UPDATE para marcar
-                                                                     // 'active' como falso.
-@org.hibernate.annotations.SQLRestriction("active = true") // ✅ MODIFICACIÓN CLAVE: FILTRA AUTOMÁTICAMENTE todas las
-                                                           // consultas SELECT
-// para incluir solo los registros donde 'active' es TRUE.
-// Esto asegura que los currículos "borrados" lógicamente no aparezcan en
-// búsquedas normales.
+@Entity
+@Table(name = "curricula")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@SQLDelete(sql = "UPDATE curricula SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
+@SQLRestriction("active = true")
 public class Curriculum {
 
-  @Id // Marca el campo como la clave primaria de la entidad.
-  @GeneratedValue // Permite que el proveedor de persistencia genere el valor de la clave
-                  // primaria.
-  private UUID id; // Identificador único del currículo.
+  @Id
+  @GeneratedValue(strategy = GenerationType.UUID)
+  @Column(name = "id", updatable = false, nullable = false, columnDefinition = "UUID")
+  private UUID id;
 
-  @Column(nullable = false, unique = true) // Columna no nula y única.
-  private String name; // Nombre del currículo.
+  @Column(nullable = false, unique = true, length = 100)
+  private String code;
 
-  @Column(nullable = true) // Columna opcional.
-  private String description; // Descripción del currículo.
+  @Column(nullable = false, unique = true, length = 255)
+  private String name;
 
-  @Column(nullable = false, unique = true) // Columna no nula y única.
-  private String code; // Código único del currículo.
+  @Column(columnDefinition = "TEXT")
+  private String description;
 
-  @Column(nullable = false) // Columna no nula.
-  private String grade; // Grado escolar al que aplica el currículo (ej., "1er grado", "Secundaria").
+  @Column(nullable = false, length = 50)
+  private String grade;
 
-  @Column(nullable = false, updatable = false) // No nulo y no actualizable después de la creación.
-  private LocalDateTime createdAt; // Fecha y hora de creación del registro.
+  @Column(name = "created_at", nullable = false, updatable = false)
+  private LocalDateTime createdAt;
 
-  @Column(nullable = false) // No nulo.
-  private LocalDateTime updatedAt; // Fecha y hora de la última actualización del registro.
+  @Column(name = "updated_at", nullable = false)
+  private LocalDateTime updatedAt;
 
   @Column(nullable = false)
-  @Builder.Default // ✅ NUEVO CAMPO: Por defecto, un currículo recién creado está activo.
-  private Boolean active = true; // Indica si el currículo está activo (true) o ha sido borrado lógicamente
-                                 // (false).
+  @Builder.Default
+  private Boolean active = true;
 
-  @Column(nullable = true) // ✅ NUEVO CAMPO (opcional): Fecha y hora en que el currículo fue lógicamente
-                           // eliminado.
-  private LocalDateTime deletedAt; // Se usará cuando 'active' se establezca en 'false'.
+  @Column(name = "deleted_at")
+  private LocalDateTime deletedAt;
 
   /**
-   * Callback que se ejecuta antes de persistir (insertar) un nuevo registro.
-   * Establece `createdAt` y `updatedAt` a la fecha y hora actuales.
+   * Relación 1–N con Competency.
+   * <ul>
+   * <li>cascade PERSIST/MERGE para insertar/actualizar hijos junto al padre.</li>
+   * <li>Sin orphanRemoval ni REMOVE: el borrado lógico se gestiona en
+   * servicio.</li>
+   * </ul>
    */
+  @OneToMany(mappedBy = "curriculum", cascade = { CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH })
+  @Builder.Default
+  private Set<Competency> competencies = new HashSet<>();
+
   @PrePersist
   protected void onCreate() {
-    createdAt = LocalDateTime.now();
-    updatedAt = LocalDateTime.now();
-    active = true; // Asegura que active sea true al crear
+    var now = LocalDateTime.now();
+    this.createdAt = now;
+    this.updatedAt = now;
+    this.active = true;
   }
 
-  /**
-   * Callback que se ejecuta antes de actualizar un registro existente.
-   * Actualiza `updatedAt` a la fecha y hora actuales.
-   */
   @PreUpdate
   protected void onUpdate() {
-    updatedAt = LocalDateTime.now();
+    this.updatedAt = LocalDateTime.now();
   }
 }

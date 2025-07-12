@@ -2,73 +2,78 @@ package com.tesis.curriculum_service.service;
 
 import com.tesis.curriculum_service.dto.CompetencyRequest;
 import com.tesis.curriculum_service.dto.CompetencyResponse;
+import com.tesis.curriculum_service.exception.ResourceNotFoundException;
 
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Servicio de negocio para la entidad Competency.
+ * Define operaciones CRUD y lanza ResourceNotFoundException si no existe.
+ */
 public interface CompetencyService {
-  /**
-   * Crea una nueva competencia.
-   * 
-   * @param competencyRequest El DTO de solicitud de la competencia.
-   * @return El DTO de respuesta de la competencia creada.
-   */
-  CompetencyResponse createCompetency(CompetencyRequest competencyRequest);
 
   /**
-   * Obtiene una competencia por su ID.
-   * 
-   * @param id El ID de la competencia.
-   * @return El DTO de respuesta de la competencia encontrada.
-   * @throws com.tesis.curriculum_service.exception.ResourceNotFoundException si
-   *                                                                          la
-   *                                                                          competencia
-   *                                                                          no
-   *                                                                          es
-   *                                                                          encontrada.
+   * Crea una nueva competencia dentro de un currículo dado.
+   *
+   * @param curriculumId UUID del currículo al cual pertenece.
+   * @param request      DTO con datos de creación.
+   * @return DTO con la entidad creada.
+   * @throws ResourceNotFoundException si el currículo no existe.
    */
-  CompetencyResponse getCompetencyById(UUID id);
+  CompetencyResponse create(UUID curriculumId, CompetencyRequest request)
+      throws ResourceNotFoundException;
 
   /**
-   * Obtiene todas las competencias.
-   * 
-   * @return Una lista de DTOs de respuesta de competencias.
+   * Recupera todas las competencias activas de un currículo.
+   *
+   * @param curriculumId UUID del currículo.
+   * @return Lista de DTOs.
+   * @throws ResourceNotFoundException si el currículo no existe.
    */
-  List<CompetencyResponse> getAllCompetencies();
+  List<CompetencyResponse> getAllByCurriculum(UUID curriculumId)
+      throws ResourceNotFoundException;
 
   /**
-   * Obtiene todas las competencias asociadas a un currículo específico.
-   * 
-   * @param curriculumId El ID del currículo padre.
-   * @return Una lista de DTOs de respuesta de competencias.
+   * Recupera una competencia por su ID y currículo.
+   *
+   * @param curriculumId UUID del currículo.
+   * @param id           UUID de la competencia.
+   * @return DTO con datos de la competencia.
+   * @throws ResourceNotFoundException si no existe.
    */
-  List<CompetencyResponse> getCompetenciesByCurriculumId(UUID curriculumId);
+  CompetencyResponse getById(UUID curriculumId, UUID id)
+      throws ResourceNotFoundException;
 
   /**
    * Actualiza una competencia existente.
-   * 
-   * @param id                El ID de la competencia a actualizar.
-   * @param competencyRequest El DTO de solicitud con los datos actualizados.
-   * @return El DTO de respuesta de la competencia actualizada.
-   * @throws com.tesis.curriculum_service.exception.ResourceNotFoundException si
-   *                                                                          la
-   *                                                                          competencia
-   *                                                                          no
-   *                                                                          es
-   *                                                                          encontrada.
+   *
+   * @param curriculumId UUID del currículo.
+   * @param id           UUID de la competencia.
+   * @param request      DTO con datos nuevos.
+   * @return DTO con datos actualizados.
+   * @throws ResourceNotFoundException si no existe.
    */
-  CompetencyResponse updateCompetency(UUID id, CompetencyRequest competencyRequest);
+  CompetencyResponse update(UUID curriculumId, UUID id, CompetencyRequest request)
+      throws ResourceNotFoundException;
 
   /**
-   * Elimina una competencia por su ID.
-   * 
-   * @param id El ID de la competencia a eliminar.
-   * @throws com.tesis.curriculum_service.exception.ResourceNotFoundException si
-   *                                                                          la
-   *                                                                          competencia
-   *                                                                          no
-   *                                                                          es
-   *                                                                          encontrada.
+   * Realiza un borrado lógico de una competencia.
+   *
+   * @param curriculumId UUID del currículo.
+   * @param id           UUID de la competencia.
+   * @throws ResourceNotFoundException si no existe.
    */
-  void deleteCompetency(UUID id);
+  void delete(UUID curriculumId, UUID id)
+      throws ResourceNotFoundException;
+
+  /**
+   * Reactiva una competencia (y en cascada sus estándares y objetivos).
+   *
+   * @param curriculumId UUID del currículo padre
+   * @param id           UUID de la competencia
+   * @throws ResourceNotFoundException si no existe (ni siquiera como inactiva)
+   */
+  void reactivate(UUID curriculumId, UUID id)
+      throws ResourceNotFoundException;
 }

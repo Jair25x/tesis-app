@@ -1,38 +1,45 @@
 package com.tesis.curriculum_service.dto;
 
-import lombok.AllArgsConstructor; // Genera un constructor con todos los argumentos.
-import lombok.Builder; // Permite usar el patrón Builder para crear instancias.
-import lombok.Data; // Genera getters, setters, toString, equals y hashCode automáticamente.
-import lombok.NoArgsConstructor; // Genera un constructor sin argumentos.
+import java.time.LocalDateTime;
+import java.util.UUID;
 
-import java.time.LocalDateTime; // Para manejar fechas de creación/actualización.
-import java.util.UUID; // Para el ID del currículo.
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
- * DTO (Data Transfer Object) para la respuesta de una entidad
- * {@link com.tesis.curriculum_service.model.Curriculum}.
- * Contiene los campos que se enviarán al cliente, incluyendo el ID y metadatos
- * como fechas.
+ * DTO de salida para representar un Currículo.
  */
-@Data // Anotación de Lombok para generar automáticamente getters, setters, toString,
-      // equals y hashCode.
-@NoArgsConstructor // Genera un constructor sin argumentos, necesario para deserialización.
-@AllArgsConstructor // Genera un constructor con todos los campos como argumentos.
-@Builder // Permite la creación de instancias utilizando el patrón de diseño Builder,
-         // mejorando la legibilidad.
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@Schema(name = "CurriculumResponse", description = "Representación de un currículo con sus metadatos")
 public class CurriculumResponse {
 
-  private UUID id; // ✅ Propósito: El identificador único del currículo. Es crucial para el
-                   // cliente.
+  @Schema(description = "Identificador único del currículo", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+  private UUID id;
 
+  @Schema(description = "Nombre del currículo", example = "Matemáticas Básicas")
   private String name;
 
+  @Schema(description = "Descripción opcional del currículo", example = "Currículo de matemáticas para 1er grado")
   private String description;
 
+  @Schema(description = "Código único del currículo", example = "CURR-MAT-1")
   private String code;
 
+  @Schema(description = "Grado escolar al que aplica", example = "1er grado")
   private String grade;
 
-  private LocalDateTime createdAt; // ✅ Propósito: Fecha y hora de creación del currículo.
-  private LocalDateTime updatedAt; // ✅ Propósito: Fecha y hora de la última actualización del currículo.
+  @Schema(description = "Fecha y hora de creación del registro")
+  private LocalDateTime createdAt;
+
+  @Schema(description = "Fecha y hora de la última actualización")
+  private LocalDateTime updatedAt;
+
+  @Schema(description = "Indica si el currículo está activo")
+  private Boolean active;
 }

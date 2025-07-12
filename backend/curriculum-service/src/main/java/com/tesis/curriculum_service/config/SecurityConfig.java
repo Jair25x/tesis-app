@@ -12,26 +12,17 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-/**
- * Configuración principal de Spring Security para el microservicio
- * curriculum-service.
- * - Habilita la seguridad web y a nivel de método con @PreAuthorize.
- * - Configura el filtro JWT para procesar las cabeceras de autenticación.
- * - Deshabilita CSRF y la gestión de sesiones con estado (stateless API).
- * - Proporciona manejadores de errores personalizados para autenticación (401)
- * y autorización (403).
- */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
@@ -40,6 +31,7 @@ public class SecurityConfig {
 
   private static final Logger logger = LoggerFactory.getLogger(SecurityConfig.class);
   private final ObjectMapper objectMapper;
+  private final JwtAuthenticationFilter jwtAuthFilter;
 
   @Bean
   public PasswordEncoder passwordEncoder() {
@@ -47,72 +39,108 @@ public class SecurityConfig {
   }
 
   @Bean
-  public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
-      throws Exception {
-    return authenticationConfiguration.getAuthenticationManager();
-  }
-
-  @Bean
-  public JwtAuthenticationFilter jwtAuthenticationFilter() { // ✅ Ahora público
-    return new JwtAuthenticationFilter();
+  public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
+    return authConfig.getAuthenticationManager();
   }
 
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
     http
-        .csrf(AbstractHttpConfigurer::disable)
-        .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        // 1) CORS y CSRF
+        .cors(Customizer.withDefaults())
+        .csrf(csrf -> csrf.disable())
+
+        // 2) Stateless
+        .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+        // 3) Reglas de autorización
         .authorizeHttpRequests(auth -> auth
-            // Rutas de Swagger/OpenAPI - Siempre públicas y sin autenticación
+
+            // 3.1) Documentación y Actuator
             .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+            .requestMatchers("/actuator/**").permitAll()
 
-            // GET /api/curriculum (getAllCurricula) - Público, no requiere autenticación
-            .requestMatchers(HttpMethod.GET, "/api/curriculum").permitAll()
+            // 3.2) GETs públicos (sin prefijo /api, porque el Gateway hace stripPrefix(1))
+            .requestMatchers(HttpMethod.GET, "/curricula/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/curricula/*/competencies/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/competencies/*/standards/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/standards/*/learning-objectives/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/learning-objectives/*/exercises/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/exercises/*/solution-steps/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/exercises/*/hints/**").permitAll()
 
-            // POST /api/curriculum (createCurriculum) - Solo ADMIN
-            .requestMatchers(HttpMethod.POST, "/api/curriculum").hasRole("ADMIN")
+            // 3.3) Curricula CRUD
+            .requestMatchers(HttpMethod.POST, "/curricula").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.PUT, "/curricula/**").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.DELETE, "/curricula/**").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.PATCH, "/curricula/**/reactivate").hasRole("ADMIN")
 
-            // GET /api/curriculum/{id} (getCurriculumById) - Requiere autenticación
-            .requestMatchers(HttpMethod.GET, "/api/curriculum/{id}").authenticated()
+            // 3.4) Competencies CRUD (anidado en curricula)
+            .requestMatchers(HttpMethod.POST, "/curricula/*/competencies").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.PUT, "/curricula/*/competencies/**").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.DELETE, "/curricula/*/competencies/**").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.PATCH, "/curricula/*/competencies/**/reactivate")
+            .hasAnyRole("ADMIN", "TEACHER")
 
-            // GET /api/curriculum/grade/** (getCurriculaByGrade) - Requiere autenticación
-            .requestMatchers(HttpMethod.GET, "/api/curriculum/grade/**").authenticated()
+            // 3.5) Standards CRUD (anidado en competencies)
+            .requestMatchers(HttpMethod.POST, "/competencies/*/standards").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.PUT, "/competencies/*/standards/**").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.DELETE, "/competencies/*/standards/**").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.PATCH, "/competencies/*/standards/**/reactivate")
+            .hasAnyRole("ADMIN", "TEACHER")
 
-            // GET /api/curriculum/stats (getCurriculumStats) - Solo ADMIN o TEACHER
-            .requestMatchers(HttpMethod.GET, "/api/curriculum/stats").hasAnyRole("ADMIN", "TEACHER")
+            // 3.6) LearningObjectives CRUD (anidado en standards)
+            .requestMatchers(HttpMethod.POST, "/standards/*/learning-objectives").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.PUT, "/standards/*/learning-objectives/**").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.DELETE, "/standards/*/learning-objectives/**").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.PATCH, "/standards/*/learning-objectives/**/reactivate")
+            .hasAnyRole("ADMIN", "TEACHER")
 
-            // PUT /api/curriculum/{id} (updateCurriculum) - Solo ADMIN
-            .requestMatchers(HttpMethod.PUT, "/api/curriculum/{id}").hasRole("ADMIN")
+            // 3.7) Exercises CRUD (anidado en learning-objectives)
+            .requestMatchers(HttpMethod.POST, "/learning-objectives/*/exercises").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.PUT, "/learning-objectives/*/exercises/**").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.DELETE, "/learning-objectives/*/exercises/**").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.PATCH, "/learning-objectives/*/exercises/**/reactivate")
+            .hasAnyRole("ADMIN", "TEACHER")
 
-            // DELETE /api/curriculum/{id} (deleteCurriculum) - Solo ADMIN
-            .requestMatchers(HttpMethod.DELETE, "/api/curriculum/{id}").hasRole("ADMIN")
+            // 3.8) SolutionSteps CRUD (anidado en exercises)
+            .requestMatchers(HttpMethod.POST, "/exercises/*/solution-steps").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.PUT, "/exercises/*/solution-steps/**").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.DELETE, "/exercises/*/solution-steps/**").hasAnyRole("ADMIN", "TEACHER")
 
-            // Para cualquier otra petición no cubierta explícitamente, requiere
-            // autenticación
+            // 3.9) Hints CRUD (anidado en exercises)
+            .requestMatchers(HttpMethod.POST, "/exercises/*/hints").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.PUT, "/exercises/*/hints/**").hasAnyRole("ADMIN", "TEACHER")
+            .requestMatchers(HttpMethod.DELETE, "/exercises/*/hints/**").hasAnyRole("ADMIN", "TEACHER")
+
+            // 3.10) el resto, autenticado
             .anyRequest().authenticated())
-        .exceptionHandling(exceptions -> exceptions
-            .authenticationEntryPoint((request, response, authException) -> {
-              logger.error("Unauthorized error: {}", authException.getMessage());
-              response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-              response.setContentType("application/json");
-              ErrorResponse errorResponse = new ErrorResponse(
-                  "No autorizado: Se requiere autenticación.",
+
+        // 4) Manejadores de error
+        .exceptionHandling(ex -> ex
+            .authenticationEntryPoint((req, res, authEx) -> {
+              logger.error("Unauthorized: {}", authEx.getMessage());
+              res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+              res.setContentType("application/json");
+              ErrorResponse err = new ErrorResponse(
+                  "No autorizado: se requiere autenticación.",
                   HttpStatus.UNAUTHORIZED.value(),
                   System.currentTimeMillis());
-              response.getWriter().write(objectMapper.writeValueAsString(errorResponse));
+              res.getWriter().write(objectMapper.writeValueAsString(err));
             })
-            .accessDeniedHandler((request, response, accessDeniedException) -> {
-              logger.error("Access Denied: {}", accessDeniedException.getMessage());
-              response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-              response.setContentType("application/json");
-              ErrorResponse errorResponse = new ErrorResponse(
-                  "Acceso denegado: No tiene los permisos necesarios.",
+            .accessDeniedHandler((req, res, denyEx) -> {
+              logger.error("Forbidden: {}", denyEx.getMessage());
+              res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+              res.setContentType("application/json");
+              ErrorResponse err = new ErrorResponse(
+                  "Acceso denegado: no tiene permisos.",
                   HttpStatus.FORBIDDEN.value(),
                   System.currentTimeMillis());
-              response.getWriter().write(objectMapper.writeValueAsString(errorResponse));
+              res.getWriter().write(objectMapper.writeValueAsString(err));
             }));
 
-    http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
+    // 5) Inyectamos nuestro filtro JWT
+    http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
     return http.build();
   }
