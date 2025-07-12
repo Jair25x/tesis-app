@@ -4,24 +4,25 @@ package com.tesis.curriculum_service.model;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-import org.hibernate.annotations.SQLDelete;
-import org.hibernate.annotations.SQLRestriction;
-
 /**
  * Entidad JPA que representa un paso de solución para un ejercicio.
- * Soporta soft-delete: al borrado actualiza active=false y deleted_at.
- * SQLRestriction filtra automáticamente solo los registros activos.
+ * Soporta soft-delete y filtra automáticamente solo activos.
  */
 @Entity
 @Table(name = "solution_steps")
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@ToString(onlyExplicitlyIncluded = true)
 @SQLDelete(sql = "UPDATE solution_steps SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
 @SQLRestriction("active = true")
 public class SolutionStep {
@@ -30,28 +31,31 @@ public class SolutionStep {
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
   @Column(name = "id", updatable = false, nullable = false, columnDefinition = "UUID")
+  @EqualsAndHashCode.Include
+  @ToString.Include
   private UUID id;
 
   /** Paso dentro de la solución (orden). */
   @Column(name = "step_number", nullable = false)
+  @ToString.Include
   private Integer stepNumber;
 
   /** Texto explicativo de este paso. */
   @Column(name = "explanation", nullable = false, columnDefinition = "TEXT")
+  @ToString.Include
   private String explanation;
 
   /**
    * Many-to-One con Exercise.
    * 
-   * @JsonBackReference evita ciclos al serializar Exercise → solutionSteps →
-   *                    exercise.
+   * @JsonBackReference evita ciclos en la serialización.
    */
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "exercise_id", nullable = false)
   @JsonBackReference
   private Exercise exercise;
 
-  /** Soft-delete flag. */
+  /** Flag de soft-delete. */
   @Column(name = "active", nullable = false)
   @Builder.Default
   private Boolean active = true;

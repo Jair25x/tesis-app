@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
  * Solo en perfiles: dev, docker o local.
  */
 @Component
-@Profile({ "dev", "docker", "local" })
+@Profile({ "dev", "docker" })
 @RequiredArgsConstructor
 public class DataInitializer {
 

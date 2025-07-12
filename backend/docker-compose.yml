@@ -87,7 +87,7 @@ services:
 
   # --- SERVICIO DE BASE DE DATOS PARA AUTH-PROFILE-SERVICE ---
   auth-profile-db:
-    image: postgres:13.21-alpine # Imagen de PostgreSQL, versión 13, ligera
+    image: postgres:17.5-alpine3.22 # Imagen de PostgreSQL, versión 13, ligera
     container_name: auth-profile-db # Nombre del contenedor para fácil identificación
     ports:
       - "5432:5432" # Mapea el puerto 5432 del host al contenedor
@@ -143,7 +143,7 @@ services:
       - tesis-network
 
   content-db:
-    image: postgres:13.21-alpine
+    image: postgres:17.5-alpine3.22
     container_name: content-db
     environment:
       - POSTGRES_DB=contentdb

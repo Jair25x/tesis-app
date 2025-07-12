@@ -1,3 +1,4 @@
+// src/main/java/com/tesis/curriculum_service/model/Hint.java
 package com.tesis.curriculum_service.model;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
@@ -9,35 +10,39 @@ import java.util.UUID;
 
 /**
  * Entidad JPA que representa una pista (hint) para un ejercicio.
- * Cada pista tiene un texto explicativo y un “coste” en puntos que
- * podrá descontarse del alumno al pedirla.
  */
 @Entity
 @Table(name = "hints")
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@ToString(onlyExplicitlyIncluded = true)
 public class Hint {
 
   /** UUID autogenerado como clave primaria. */
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
   @Column(name = "id", updatable = false, nullable = false, columnDefinition = "UUID")
+  @EqualsAndHashCode.Include
   private UUID id;
 
   /** Texto de la pista. */
   @Column(name = "hint_text", nullable = false, columnDefinition = "TEXT")
+  @ToString.Include
   private String hintText;
 
   /** Coste en puntos al solicitar esta pista. */
   @Column(name = "cost", nullable = false)
+  @ToString.Include
   private Integer cost;
 
   /**
    * Relación Many-To-One con Exercise.
    * 
-   * @JsonBackReference evita ciclos al serializar Exercise → hints → exercise.
+   * @JsonBackReference evita ciclos al serializar bidireccionalmente.
    */
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "exercise_id", nullable = false)
@@ -52,7 +57,6 @@ public class Hint {
   @Column(name = "updated_at", nullable = false)
   private LocalDateTime updatedAt;
 
-  /** Se fija createdAt y updatedAt al persistir por primera vez. */
   @PrePersist
   protected void onCreate() {
     LocalDateTime now = LocalDateTime.now();
@@ -60,7 +64,6 @@ public class Hint {
     this.updatedAt = now;
   }
 
-  /** Se actualiza updatedAt antes de cada modificación. */
   @PreUpdate
   protected void onUpdate() {
     this.updatedAt = LocalDateTime.now();

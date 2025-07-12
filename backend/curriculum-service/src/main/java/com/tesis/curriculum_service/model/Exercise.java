@@ -1,6 +1,6 @@
+// src/main/java/com/tesis/curriculum_service/model/Exercise.java
 package com.tesis.curriculum_service.model;
 
-import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.SQLDelete;
@@ -13,28 +13,33 @@ import java.util.UUID;
 
 /**
  * Entidad JPA que representa un ejercicio matemático.
- * 
- * Soft-delete: al borrar, marca `active=false` y fija `deletedAt`.
- * SQLRestriction filtra automáticamente solo los registros activos.
+ *
+ * - Soft-delete: al borrar, marca active=false y fija deletedAt.
+ * - @SQLRestriction filtra automáticamente solo los registros activos.
  */
 @Entity
 @Table(name = "exercises")
-@Data
+@SQLDelete(sql = "UPDATE exercises SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
+@SQLRestriction("active = true")
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@SQLDelete(sql = "UPDATE exercises SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
-@SQLRestriction("active = true")
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@ToString(onlyExplicitlyIncluded = true)
 public class Exercise {
 
   /** UUID generado automáticamente como clave primaria. */
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
-  @Column(name = "id", nullable = false, updatable = false, columnDefinition = "UUID")
+  @Column(name = "id", updatable = false, nullable = false, columnDefinition = "UUID")
+  @EqualsAndHashCode.Include
   private UUID id;
 
   /** Enunciado o texto completo del problema. */
   @Column(name = "statement", nullable = false, columnDefinition = "TEXT")
+  @ToString.Include
   private String statement;
 
   /** Dificultad del ejercicio: BASIC, INTERMEDIATE o ADVANCED. */
@@ -76,7 +81,6 @@ public class Exercise {
    * Serán devueltos en el JSON bajo “solutionSteps”.
    */
   @OneToMany(mappedBy = "exercise", cascade = CascadeType.ALL, orphanRemoval = true)
-  @JsonManagedReference
   @Builder.Default
   private Set<SolutionStep> solutionSteps = new LinkedHashSet<>();
 
@@ -85,25 +89,22 @@ public class Exercise {
    * El frontend podrá mostrarlas de forma progresiva.
    */
   @OneToMany(mappedBy = "exercise", cascade = CascadeType.ALL, orphanRemoval = true)
-  @JsonManagedReference
   @Builder.Default
   private Set<Hint> hints = new LinkedHashSet<>();
 
-  /** Fija timestamps y activa el ejercicio al crearlo. */
   @PrePersist
   protected void onCreate() {
     LocalDateTime now = LocalDateTime.now();
-    createdAt = now;
-    updatedAt = now;
-    if (active == null) {
-      active = true;
+    this.createdAt = now;
+    this.updatedAt = now;
+    if (this.active == null) {
+      this.active = true;
     }
   }
 
-  /** Actualiza updatedAt antes de cada modificación. */
   @PreUpdate
   protected void onUpdate() {
-    updatedAt = LocalDateTime.now();
+    this.updatedAt = LocalDateTime.now();
   }
 
   /**
