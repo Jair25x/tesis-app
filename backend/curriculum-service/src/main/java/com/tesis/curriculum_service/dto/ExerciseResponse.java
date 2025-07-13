@@ -3,8 +3,10 @@ package com.tesis.curriculum_service.dto;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
+import com.tesis.curriculum_service.dto.TemplateSchema.TemplateType; // ← aquí
 import com.tesis.curriculum_service.model.Exercise.Difficulty;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -17,7 +19,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Schema(name = "ExerciseResponse", description = "Detalle de un ejercicio incluyendo pasos de solución y pistas")
+@Schema(name = "ExerciseResponse", description = "Detalle de un ejercicio incluyendo pasos de solución, pistas y plantilla")
 public class ExerciseResponse {
 
   @Schema(description = "ID único del ejercicio", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
@@ -31,6 +33,12 @@ public class ExerciseResponse {
 
   @Schema(description = "Tipo de ejercicio", example = "OPEN")
   private String type;
+
+  @Schema(description = "Tipo de plantilla asignada", example = "TBL_MATCH")
+  private TemplateType templateType;
+
+  @Schema(description = "Parámetros usados para la plantilla", example = "{\"pairs\": [[\"a\",\"1\"],[\"b\",\"2\"]]}")
+  private Map<String, Object> parameters;
 
   @Schema(description = "ID del objetivo de aprendizaje asociado", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
   private UUID learningObjectiveId;
@@ -47,6 +55,6 @@ public class ExerciseResponse {
   @Schema(description = "Fecha de última actualización", example = "2025-07-13T12:45:20")
   private LocalDateTime updatedAt;
 
-  @Schema(description = "Indica si el Ejercicio está activo")
+  @Schema(description = "Indica si el ejercicio está activo")
   private Boolean active;
 }

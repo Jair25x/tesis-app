@@ -1,13 +1,17 @@
 // src/main/java/com/tesis/curriculum_service/model/Exercise.java
 package com.tesis.curriculum_service.model;
 
+import com.tesis.curriculum_service.dto.TemplateSchema.TemplateType; // << importamos el enum compartido
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -47,9 +51,27 @@ public class Exercise {
   @Column(name = "difficulty", nullable = false, length = 20)
   private Difficulty difficulty;
 
-  /** Tipo de ejercicio (por ejemplo: "CHOICE", "OPEN", etc.). */
+  /** Tipo de ejercicio (p.ej. CHOICE, OPEN) para tu lógica de negocio. */
   @Column(name = "type", nullable = false, length = 50)
   private String type;
+
+  // --- Ya no tienes enum interno TemplateType aquí ---
+
+  /**
+   * Tipo de plantilla a usar para generar el enunciado.
+   * Usamos el enum compartido en TemplateSchema.
+   */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "template_type", length = 50)
+  private TemplateType templateType;
+
+  /**
+   * Parámetros JSON que la plantilla necesita (min, max, choices, etc.).
+   * Se almacena en PostgreSQL como JSONB.
+   */
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "parameters", columnDefinition = "jsonb")
+  private Map<String, Object> parameters;
 
   /** Soft-delete flag. */
   @Column(name = "active", nullable = false)
@@ -68,26 +90,17 @@ public class Exercise {
   @Column(name = "deleted_at")
   private LocalDateTime deletedAt;
 
-  /**
-   * Relación Many-To-One con LearningObjective.
-   * Cada ejercicio pertenece a un objetivo de aprendizaje.
-   */
+  /** Relación Many-To-One con LearningObjective. */
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "learning_objective_id", nullable = false)
   private LearningObjective learningObjective;
 
-  /**
-   * Pasos de solución ordenados.
-   * Serán devueltos en el JSON bajo “solutionSteps”.
-   */
+  /** Pasos de solución ordenados. */
   @OneToMany(mappedBy = "exercise", cascade = CascadeType.ALL, orphanRemoval = true)
   @Builder.Default
   private Set<SolutionStep> solutionSteps = new LinkedHashSet<>();
 
-  /**
-   * Pistas asociadas al ejercicio.
-   * El frontend podrá mostrarlas de forma progresiva.
-   */
+  /** Pistas asociadas al ejercicio. */
   @OneToMany(mappedBy = "exercise", cascade = CascadeType.ALL, orphanRemoval = true)
   @Builder.Default
   private Set<Hint> hints = new LinkedHashSet<>();

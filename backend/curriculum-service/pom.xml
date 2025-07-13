@@ -140,6 +140,13 @@
 			<artifactId>spring-boot-admin-starter-client</artifactId>
 			<version>${spring-boot-admin.version}</version>
 		</dependency>
+
+		<!-- Mustache para plantillas -->
+		<dependency>
+			<groupId>com.github.spullara.mustache.java</groupId>
+			<artifactId>compiler</artifactId>
+			<version>0.9.14</version>
+		</dependency>
 	</dependencies>
 
 	<!-- La sección <dependencyManagement> NO es necesaria aquí, ya se hereda del padre -->

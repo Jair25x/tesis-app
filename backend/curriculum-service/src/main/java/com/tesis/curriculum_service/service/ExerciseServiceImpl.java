@@ -1,59 +1,73 @@
-// src/main/java/com/tesis/curriculum_service/service/ExerciseServiceImpl.java
 package com.tesis.curriculum_service.service;
 
+import com.github.mustachejava.Mustache;
+import com.github.mustachejava.MustacheFactory;
 import com.tesis.curriculum_service.dto.ExerciseRequest;
 import com.tesis.curriculum_service.dto.ExerciseResponse;
 import com.tesis.curriculum_service.dto.HintResponse;
 import com.tesis.curriculum_service.dto.SolutionStepResponse;
+import com.tesis.curriculum_service.dto.FieldDescriptor.FieldType;
+import com.tesis.curriculum_service.dto.TemplateSchema.TemplateType;
+import com.tesis.curriculum_service.dto.TemplateSchema;
+import com.tesis.curriculum_service.exception.BadRequestException;
 import com.tesis.curriculum_service.exception.ResourceNotFoundException;
 import com.tesis.curriculum_service.model.Exercise;
 import com.tesis.curriculum_service.model.LearningObjective;
-import com.tesis.curriculum_service.model.SolutionStep;
 import com.tesis.curriculum_service.repository.ExerciseRepository;
 import com.tesis.curriculum_service.repository.LearningObjectiveRepository;
+import com.tesis.curriculum_service.service.template.ExerciseTemplateService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/**
- * Implementación de {@link ExerciseService} usando JPA.
- */
 @Service
 @RequiredArgsConstructor
 public class ExerciseServiceImpl implements ExerciseService {
 
   private final ExerciseRepository exerciseRepo;
   private final LearningObjectiveRepository loRepo;
+  private final ExerciseTemplateService templateService;
+  private final MustacheFactory mustacheFactory;
 
   @Override
   @Transactional
   public ExerciseResponse create(UUID loId, ExerciseRequest req) {
-    // 1. Verificar existencia del LearningObjective
     LearningObjective lo = loRepo.findById(loId)
         .orElseThrow(() -> new ResourceNotFoundException("LearningObjective", "id", loId));
 
-    // 2. Construir y guardar la entidad
+    // 1) Validar params
+    validateParameters(req.getTemplateType(), req.getParameters());
+
+    // 2) Render statement
+    String stmt = renderStatement(req.getStatement(), req.getTemplateType(), req.getParameters());
+
+    // 3) Persistir
     Exercise ex = Exercise.builder()
-        .statement(req.getStatement())
+        .statement(stmt)
         .difficulty(req.getDifficulty())
         .type(req.getType())
+        .templateType(req.getTemplateType())
+        .parameters(req.getParameters())
         .learningObjective(lo)
         .build();
-    Exercise saved = exerciseRepo.save(ex);
 
+    Exercise saved = exerciseRepo.save(ex);
     return toDto(saved);
   }
 
   @Override
   @Transactional(readOnly = true)
   public List<ExerciseResponse> getAllByLearningObjective(UUID loId) {
-    // Verifica LO
     if (!loRepo.existsById(loId)) {
       throw new ResourceNotFoundException("LearningObjective", "id", loId);
     }
@@ -75,10 +89,20 @@ public class ExerciseServiceImpl implements ExerciseService {
   public ExerciseResponse update(UUID loId, UUID id, ExerciseRequest req) {
     Exercise ex = exerciseRepo.findByIdAndLearningObjectiveId(id, loId)
         .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", id));
-    ex.setStatement(req.getStatement());
+
+    // 1) Validar params
+    validateParameters(req.getTemplateType(), req.getParameters());
+
+    // 2) Render nuevo enunciado
+    String stmt = renderStatement(req.getStatement(), req.getTemplateType(), req.getParameters());
+
+    // 3) Actualizar campos
+    ex.setStatement(stmt);
     ex.setDifficulty(req.getDifficulty());
     ex.setType(req.getType());
-    // updatedAt se fija en @PreUpdate
+    ex.setTemplateType(req.getTemplateType());
+    ex.setParameters(req.getParameters());
+
     Exercise updated = exerciseRepo.save(ex);
     return toDto(updated);
   }
@@ -96,7 +120,6 @@ public class ExerciseServiceImpl implements ExerciseService {
   public void reactivate(UUID loId, UUID id) {
     Exercise ex = exerciseRepo.findByIdIncludingInactive(id)
         .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", id));
-    // Solo si pertenece al LO correcto
     if (!ex.getLearningObjective().getId().equals(loId)) {
       throw new ResourceNotFoundException("Exercise", "id", id);
     }
@@ -107,7 +130,79 @@ public class ExerciseServiceImpl implements ExerciseService {
   }
 
   // --------------------------------------------------
-  // Map de entidad → DTO
+  // Validación de parámetros contra TemplateSchema
+  // --------------------------------------------------
+  private void validateParameters(TemplateType tplType, Map<String, Object> params) {
+    if (tplType == null) {
+      return;
+    }
+    TemplateSchema schema = templateService.schemaFor(tplType)
+        .orElseThrow(() -> new BadRequestException("Plantilla no encontrada: " + tplType));
+
+    for (var fd : schema.getFields()) {
+      String name = fd.getName();
+      Object raw = params.get(name);
+      if (raw == null) {
+        throw new BadRequestException("Falta parámetro requerido: " + name);
+      }
+      switch (fd.getType()) {
+        case NUMBER -> {
+          if (!(raw instanceof Number)) {
+            throw new BadRequestException(
+                String.format("Parámetro '%s' debe ser numérico, no %s", name, raw.getClass().getSimpleName()));
+          }
+          double value = ((Number) raw).doubleValue();
+          if (fd.getMin() != null && value < fd.getMin()) {
+            throw new BadRequestException(
+                String.format("Parámetro '%s' (%.2f) menor que mínimo (%d)", name, value, fd.getMin()));
+          }
+          if (fd.getMax() != null && value > fd.getMax()) {
+            throw new BadRequestException(
+                String.format("Parámetro '%s' (%.2f) mayor que máximo (%d)", name, value, fd.getMax()));
+          }
+        }
+        case CHOICE -> {
+          String s = raw.toString();
+          if (fd.getChoices() == null || !fd.getChoices().contains(s)) {
+            throw new BadRequestException(
+                String.format("Parámetro '%s' debe ser uno de %s", name, fd.getChoices()));
+          }
+        }
+        case TEXT -> {
+          if (!(raw instanceof String)) {
+            throw new BadRequestException(
+                String.format("Parámetro '%s' debe ser texto, no %s", name, raw.getClass().getSimpleName()));
+          }
+        }
+      }
+    }
+  }
+
+  // --------------------------------------------------
+  // Renderizado Mustache con manejo de IOException
+  // --------------------------------------------------
+  private String renderStatement(String rawStatement,
+      TemplateType tplType,
+      Map<String, Object> params) {
+    if (tplType != null) {
+      TemplateSchema schema = templateService.schemaFor(tplType)
+          .orElseThrow(() -> new IllegalArgumentException("Plantilla no encontrada: " + tplType));
+      Mustache mustache = mustacheFactory.compile(
+          new StringReader(schema.getPattern()),
+          tplType.name());
+      try {
+        StringWriter writer = new StringWriter();
+        mustache.execute(writer, params).flush();
+        return writer.toString();
+      } catch (IOException e) {
+        throw new RuntimeException("Error al renderizar plantilla " + tplType, e);
+      }
+    }
+    return rawStatement;
+  }
+
+  // --------------------------------------------------
+  // Mapeo entidad → DTO
   // --------------------------------------------------
   private ExerciseResponse toDto(Exercise e) {
     return ExerciseResponse.builder()
@@ -115,28 +210,28 @@ public class ExerciseServiceImpl implements ExerciseService {
         .statement(e.getStatement())
         .difficulty(e.getDifficulty())
         .type(e.getType())
+        .templateType(e.getTemplateType())
+        .parameters(e.getParameters())
         .learningObjectiveId(e.getLearningObjective().getId())
-        .solutionSteps(
-            e.getSolutionSteps().stream()
-                .sorted(Comparator.comparingInt(SolutionStep::getStepNumber)) // opcional: asegurar orden
-                .map(ss -> SolutionStepResponse.builder()
-                    .id(ss.getId())
-                    .stepNumber(ss.getStepNumber())
-                    .explanation(ss.getExplanation())
-                    .createdAt(ss.getCreatedAt())
-                    .updatedAt(ss.getUpdatedAt())
-                    .build())
-                .collect(Collectors.toList()))
-        .hints(
-            e.getHints().stream()
-                .map(h -> HintResponse.builder()
-                    .id(h.getId())
-                    .hintText(h.getHintText())
-                    .cost(h.getCost())
-                    .createdAt(h.getCreatedAt())
-                    .updatedAt(h.getUpdatedAt())
-                    .build())
-                .collect(Collectors.toList()))
+        .solutionSteps(e.getSolutionSteps().stream()
+            .sorted(Comparator.comparingInt(s -> s.getStepNumber()))
+            .map(ss -> SolutionStepResponse.builder()
+                .id(ss.getId())
+                .stepNumber(ss.getStepNumber())
+                .explanation(ss.getExplanation())
+                .createdAt(ss.getCreatedAt())
+                .updatedAt(ss.getUpdatedAt())
+                .build())
+            .collect(Collectors.toList()))
+        .hints(e.getHints().stream()
+            .map(h -> HintResponse.builder()
+                .id(h.getId())
+                .hintText(h.getHintText())
+                .cost(h.getCost())
+                .createdAt(h.getCreatedAt())
+                .updatedAt(h.getUpdatedAt())
+                .build())
+            .collect(Collectors.toList()))
         .createdAt(e.getCreatedAt())
         .updatedAt(e.getUpdatedAt())
         .active(e.getActive())
