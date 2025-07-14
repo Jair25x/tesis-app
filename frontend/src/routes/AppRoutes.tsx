@@ -2,46 +2,43 @@
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import { lazy, Suspense } from "react";
 
-// Layouts
+/* Layouts */
 import MainLayout from "../layouts/MainLayout";
 import SettingsLayout from "../layouts/SettingsLayout";
 
-// Páginas públicas
+/* Páginas públicas */
 import Login from "../pages/Login";
 import Register from "../pages/Register";
 import NotFound from "../pages/NotFound";
 
-// Sección “student”
+/* Sección student */
 import StudentDashboard from "../pages/student/StudentDashboard";
 import Practice from "../pages/student/Practice";
 import Roadmap from "../pages/student/Roadmap";
 import StudentProfile from "../pages/student/Profile";
 import Achievements from "../pages/student/Achievements";
 
-// Perfil genérico y ajustes
+/* Perfil genérico y ajustes */
 import ProfileDashboard from "../pages/user/ProfileDashboard";
 import Profile from "../pages/user/Profile";
 import EditProfile from "../pages/user/EditProfile";
 import ChangePassword from "../pages/user/ChangePassword";
 import ThemeSettings from "../pages/user/ThemeSettings";
 
-// Protección y roles
+/* Protección y roles */
 import ProtectedRoute from "./ProtectedRoute";
 import PublicRoute from "./PublicRoute";
 import RoleRoute from "./RoleRoute";
 
-// Loading skeleton
+/* Skeleton */
 import LoadingScreen from "../components/LoadingScreen";
 
-// Lazy-load para admin
+/* Lazy-load admin */
 const AdminDashboard = lazy(() => import("../pages/admin/AdminDashboard"));
 const UserList = lazy(() => import("../pages/admin/UserList"));
 const EditUser = lazy(() => import("../pages/admin/EditUser"));
 
 export const router = createBrowserRouter([
-  // -------------------------------
-  // Rutas protegidas con MainLayout
-  // -------------------------------
   {
     path: "/",
     element: (
@@ -50,34 +47,32 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      // Cuando el usuario va a “/” lo llevamos a su dashboard de estudiante
       { index: true, element: <Navigate to="student/dashboard" replace /> },
 
-      // --- Sección Student ---
+      /* --- Student --- */
       {
         path: "student",
         element: (
           <RoleRoute roles={["ROLE_STUDENT"]}>
-            <Outlet /> {/* ⬅️  hijos heredarán la protección */}
+            <Outlet />
           </RoleRoute>
         ),
         children: [
           { path: "dashboard", element: <StudentDashboard /> },
-          { path: "practice", element: <Practice /> },
+
+          /*  ⬇ nueva ruta con :objectiveId */
+          { path: "practice/:objectiveId", element: <Practice /> },
+
           { path: "roadmap", element: <Roadmap /> },
           { path: "profile", element: <StudentProfile /> },
           { path: "achievements", element: <Achievements /> },
         ],
       },
 
-      // --- Dashboard de perfil “genérico” ---
-      {
-        path: "profile-dashboard",
-        element: <ProfileDashboard />,
-      },
+      /* --- Perfil genérico --- */
+      { path: "profile-dashboard", element: <ProfileDashboard /> },
 
-      // --- Perfil y Ajustes ---
-      { path: "profile", element: <Profile /> },
+      /* --- Configuración --- */
       {
         path: "settings",
         element: <SettingsLayout />,
@@ -89,7 +84,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // --- Administración (solo ROLE_ADMIN) ---
+      /* --- Administración --- */
       {
         path: "admin",
         element: (
@@ -121,14 +116,11 @@ export const router = createBrowserRouter([
         ),
       },
 
-      // Cualquier otra ruta dentro de MainLayout
       { path: "*", element: <NotFound /> },
     ],
   },
 
-  // --------------------------
-  // Rutas públicas (sin MainLayout)
-  // --------------------------
+  /* Públicas */
   {
     path: "/login",
     element: (
@@ -146,8 +138,5 @@ export const router = createBrowserRouter([
     ),
   },
 
-  // --------------------------
-  // Fallback global
-  // --------------------------
   { path: "*", element: <NotFound /> },
 ]);
