@@ -1,4 +1,4 @@
-import { useAuth } from "../context/useAuth";
+import { useAuth } from "../../context/useAuth";
 import { Link } from "react-router-dom";
 
 export default function Dashboard() {

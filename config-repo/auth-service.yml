@@ -1,7 +1,7 @@
 # auth-service.yml (Configuración base para todos los perfiles)
 
 server:
-  port: 8080 # Puerto interno del contenedor. El mapeo externo se define en docker-compose.yml (8081:8080)
+  port: 8081 # Puerto interno del contenedor. El mapeo externo se define en docker-compose.yml (8081)
 
 spring:
   flyway:
