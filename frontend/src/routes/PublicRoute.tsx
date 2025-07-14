@@ -11,7 +11,7 @@ const PublicRoute: React.FC<Props> = ({ children }) => {
 
   // Si ya está autenticado, lo redirigimos al Home o Dashboard
   if (isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/profile-dashboard" replace />;
   }
 
   return children;

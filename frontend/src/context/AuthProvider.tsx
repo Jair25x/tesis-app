@@ -8,6 +8,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true); // Track loading state
 
+  const [impersonateStudentView, setImpersonateStudentView] = useState<boolean>(
+    () => {
+      return JSON.parse(
+        sessionStorage.getItem("impersonateStudentView") || "false"
+      );
+    }
+  );
+
   useEffect(() => {
     const token =
       localStorage.getItem("accessToken") ||
@@ -23,6 +31,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Simular carga breve
     setTimeout(() => setLoading(false), 3000);
   }, []);
+
+  useEffect(() => {
+    sessionStorage.setItem(
+      "impersonateStudentView",
+      JSON.stringify(impersonateStudentView)
+    );
+  }, [impersonateStudentView]);
 
   const login = (
     userData: User,
@@ -57,14 +72,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     sessionStorage.removeItem("accessToken");
     sessionStorage.removeItem("refreshToken");
     sessionStorage.removeItem("user");
+    sessionStorage.removeItem("impersonateStudentView");
     setUser(null);
     setIsAuthenticated(false);
+    setImpersonateStudentView(false);
   };
 
   if (loading) return <LoadingScreen />; // Show a spinner while validating the session
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        isAuthenticated,
+        user,
+        login,
+        logout,
+        impersonateStudentView, // 👈 NUEVO
+        setImpersonateStudentView, // 👈 NUEVO
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -1,29 +1,42 @@
-// src/layouts/MainLayout.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { useStudentView } from "../context/useStudentView";
 import { cn } from "../utils/cn";
 import { Menu, X } from "lucide-react";
 
 export default function MainLayout() {
   const { user, isAuthenticated, logout } = useAuth();
+  const { isStudentView, impersonateStudentView, setImpersonateStudentView } =
+    useStudentView();
   const location = useLocation();
 
-  // Ocultar sidebar y topbar cuando estemos en la pantalla de práctica
+  useEffect(() => {
+    if (isStudentView) {
+      setStudentOpen(true); // Abre el submenú estudiante automáticamente
+    }
+  }, [isStudentView]);
+
   const hideSidebar = location.pathname.startsWith("/student/practice");
 
-  // Estados de menús desplegables
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [studentOpen, setStudentOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Roles del usuario actual
   const roles = user?.roles || [];
+
+  const toggleStudentView = () => {
+    setImpersonateStudentView(!impersonateStudentView);
+    setStudentOpen(true); // Abrir submenú al activar vista estudiante
+  };
+  // Verificacion de como llegan los roles No te olvides de borrarlo al terminar
+  // console.log("user.roles:", user?.roles);
+  // console.log("impersonateStudentView:", impersonateStudentView);
+  // console.log("isStudentView:", isStudentView);
 
   return (
     <div className="flex h-screen overflow-hidden bg-white dark:bg-[#1e2a34] text-black dark:text-white transition-colors duration-300">
-      {/* Sidebar + Overlay móvil */}
       {!hideSidebar && (
         <>
           {sidebarOpen && (
@@ -43,7 +56,6 @@ export default function MainLayout() {
           >
             <div className="flex flex-col justify-between h-full">
               <div className="space-y-6">
-                {/* Logo + cerrar en móvil */}
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-bold text-[#2d3b46] dark:text-white">
                     TesisApp
@@ -56,7 +68,6 @@ export default function MainLayout() {
                   </button>
                 </div>
 
-                {/* Saludo */}
                 {isAuthenticated && user && (
                   <p className="text-sm italic text-gray-700 dark:text-gray-300">
                     👋 Hola,&nbsp;
@@ -64,9 +75,7 @@ export default function MainLayout() {
                   </p>
                 )}
 
-                {/* Navegación */}
                 <nav className="space-y-2">
-                  {/* Dashboard Perfil */}
                   <Link
                     to="/profile-dashboard"
                     className={cn(
@@ -80,53 +89,79 @@ export default function MainLayout() {
                     🏠 Mi Perfil
                   </Link>
 
+                  {/* VER COMO ESTUDIANTE DOCENTE Y ADMIN OJO */}
+                  {(roles.includes("ROLE_TEACHER") ||
+                    roles.includes("ROLE_ADMIN")) && (
+                    <div className="relative">
+                      <button
+                        className={cn(
+                          "w-full text-left px-4 py-2 rounded-md text-sm font-medium flex justify-between items-center transition hover:bg-gray-200 dark:hover:bg-gray-700",
+                          impersonateStudentView
+                            ? "bg-green-500 text-white"
+                            : ""
+                        )}
+                        onClick={toggleStudentView}
+                      >
+                        🎭{" "}
+                        {impersonateStudentView
+                          ? "Salir de vista estudiante"
+                          : "Ver como estudiante"}
+                        <span className="ml-2">
+                          {impersonateStudentView ? "▴" : "▾"}
+                        </span>
+                      </button>
+                    </div>
+                  )}
+
                   {/* Submenú Estudiante */}
-                  <div className="relative">
-                    <button
-                      className={cn(
-                        "w-full text-left px-4 py-2 rounded-md text-sm font-medium flex justify-between items-center transition hover:bg-gray-200 dark:hover:bg-gray-700",
-                        location.pathname.startsWith("/student")
-                          ? "bg-green-500 text-white"
-                          : ""
+                  {isStudentView && (
+                    <div className="relative">
+                      <button
+                        className={cn(
+                          "w-full text-left px-4 py-2 rounded-md text-sm font-medium flex justify-between items-center transition hover:bg-gray-200 dark:hover:bg-gray-700",
+                          location.pathname.startsWith("/student")
+                            ? "bg-green-500 text-white"
+                            : ""
+                        )}
+                        onClick={() => setStudentOpen((v) => !v)}
+                      >
+                        📚 Estudiante
+                        <span className="ml-2">{studentOpen ? "▴" : "▾"}</span>
+                      </button>
+                      {studentOpen && (
+                        <div className="ml-4 mt-1 space-y-1">
+                          <Link
+                            to="/student/dashboard"
+                            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+                            onClick={() => setSidebarOpen(false)}
+                          >
+                            🏠 Dashboard
+                          </Link>
+                          <Link
+                            to="/student/practice"
+                            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+                            onClick={() => setSidebarOpen(false)}
+                          >
+                            📝 Práctica
+                          </Link>
+                          <Link
+                            to="/student/roadmap"
+                            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+                            onClick={() => setSidebarOpen(false)}
+                          >
+                            🗺️ Mapa
+                          </Link>
+                          <Link
+                            to="/student/achievements"
+                            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+                            onClick={() => setSidebarOpen(false)}
+                          >
+                            🏆 Logros
+                          </Link>
+                        </div>
                       )}
-                      onClick={() => setStudentOpen((v) => !v)}
-                    >
-                      📚 Estudiante
-                      <span className="ml-2">{studentOpen ? "▴" : "▾"}</span>
-                    </button>
-                    {studentOpen && (
-                      <div className="ml-4 mt-1 space-y-1">
-                        <Link
-                          to="/student/dashboard"
-                          className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
-                          onClick={() => setSidebarOpen(false)}
-                        >
-                          🏠 Dashboard
-                        </Link>
-                        <Link
-                          to="/student/practice"
-                          className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
-                          onClick={() => setSidebarOpen(false)}
-                        >
-                          📝 Práctica
-                        </Link>
-                        <Link
-                          to="/student/roadmap"
-                          className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
-                          onClick={() => setSidebarOpen(false)}
-                        >
-                          🗺️ Mapa
-                        </Link>
-                        <Link
-                          to="/student/achievements"
-                          className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
-                          onClick={() => setSidebarOpen(false)}
-                        >
-                          🏆 Logros
-                        </Link>
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Submenú Admin */}
                   {roles.includes("ROLE_ADMIN") && (
@@ -214,7 +249,6 @@ export default function MainLayout() {
                 </nav>
               </div>
 
-              {/* Logout */}
               {isAuthenticated && (
                 <button
                   onClick={logout}
@@ -239,13 +273,25 @@ export default function MainLayout() {
         </>
       )}
 
-      {/* Contenido principal */}
       <div
         className={cn(
           "flex-1 flex flex-col h-full transition-margin duration-300",
           hideSidebar ? "ml-0" : "md:ml-64"
         )}
       >
+        {impersonateStudentView &&
+          (roles.includes("ROLE_TEACHER") || roles.includes("ROLE_ADMIN")) && (
+            <div className="bg-yellow-100 text-yellow-800 text-center py-2 text-sm">
+              Estás viendo la plataforma como estudiante.{" "}
+              <button
+                onClick={toggleStudentView}
+                className="underline font-medium text-yellow-900 ml-2"
+              >
+                Salir
+              </button>
+            </div>
+          )}
+
         <main className="flex-1 overflow-y-auto p-6 bg-gray-50 dark:bg-[#1e2a34]">
           <Outlet />
         </main>

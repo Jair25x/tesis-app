@@ -1,5 +1,5 @@
 // src/routes/AppRoutes.tsx
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import { lazy, Suspense } from "react";
 
 // Layouts
@@ -56,6 +56,11 @@ export const router = createBrowserRouter([
       // --- Sección Student ---
       {
         path: "student",
+        element: (
+          <RoleRoute roles={["ROLE_STUDENT"]}>
+            <Outlet /> {/* ⬅️  hijos heredarán la protección */}
+          </RoleRoute>
+        ),
         children: [
           { path: "dashboard", element: <StudentDashboard /> },
           { path: "practice", element: <Practice /> },

@@ -19,6 +19,9 @@ export interface AuthContextProps {
     remember: boolean
   ) => void;
   logout: () => void;
+
+  impersonateStudentView: boolean;
+  setImpersonateStudentView: (value: boolean) => void;
 }
 
 export const AuthContext = createContext<AuthContextProps | undefined>(
