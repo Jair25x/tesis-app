@@ -31,6 +31,9 @@ public class StandardResponse {
 
   @Schema(description = "ID de la competencia a la que pertenece este estándar", example = "5b2d3f74-1234-4a2b-9cde-1a2b3c4d5e6f")
   private UUID competencyId;
+  
+  @Schema(description = "Nombre de la competencia asociada", example = "Pensamiento algebraico")
+  private String competencyName;
 
   @Schema(description = "Fecha y hora de creación del estándar", example = "2025-07-12T10:15:30.000")
   private LocalDateTime createdAt;

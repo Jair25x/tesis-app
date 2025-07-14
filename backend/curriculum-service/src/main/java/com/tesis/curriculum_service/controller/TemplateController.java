@@ -3,6 +3,7 @@ package com.tesis.curriculum_service.controller;
 import com.tesis.curriculum_service.dto.TemplateSchema;
 import com.tesis.curriculum_service.exception.ErrorResponse;
 import com.tesis.curriculum_service.service.template.ExerciseTemplateService;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -10,6 +11,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,10 +19,11 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @Tag(name = "Templates", description = "Plantillas parametrizables para generación de ejercicios")
 @RestController
-@RequestMapping("/api/exercises/templates")
+@RequestMapping("/api/curricula/{curriculumId}/exercise-templates")
 @RequiredArgsConstructor
 public class TemplateController {
 
@@ -33,7 +36,8 @@ public class TemplateController {
   })
   @GetMapping
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
-  public ResponseEntity<List<TemplateSchema>> listAll() {
+  public ResponseEntity<List<TemplateSchema>> listAll(
+      @PathVariable UUID curriculumId) {
     List<TemplateSchema> schemas = templateService.listAll();
     return ResponseEntity.ok(schemas);
   }
@@ -46,7 +50,10 @@ public class TemplateController {
   })
   @GetMapping("/{type}")
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
-  public ResponseEntity<?> getByType(@PathVariable TemplateSchema.TemplateType type) {
+  public ResponseEntity<?> getByType(
+      @PathVariable UUID curriculumId,
+      @PathVariable TemplateSchema.TemplateType type) {
+
     return templateService.schemaFor(type)
         .<ResponseEntity<?>>map(ResponseEntity::ok)
         .orElseGet(() -> {

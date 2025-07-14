@@ -16,6 +16,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid; // Para validación de DTOs
+import lombok.RequiredArgsConstructor;
 
 import java.util.List;
 import java.util.UUID;
@@ -23,13 +24,10 @@ import java.util.UUID;
 @Tag(name = "Standards", description = "Gestión de estándares por currículo y competencia")
 @RestController
 @RequestMapping("/api/curricula/{curriculumId}/competencies/{competencyId}/standards")
+@RequiredArgsConstructor
 public class StandardController {
 
     private final StandardService standardService;
-
-    public StandardController(StandardService standardService) {
-        this.standardService = standardService;
-    }
 
     @Operation(summary = "Listar estándares", description = "Obtiene todos los estándares activos de una competencia dentro de un currículo.")
     @ApiResponses({

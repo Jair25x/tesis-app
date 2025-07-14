@@ -1,13 +1,14 @@
-// src/main/java/com/tesis/curriculum_service/service/LearningObjectiveServiceImpl.java
 package com.tesis.curriculum_service.service;
 
 import com.tesis.curriculum_service.dto.LearningObjectiveRequest;
 import com.tesis.curriculum_service.dto.LearningObjectiveResponse;
 import com.tesis.curriculum_service.exception.ResourceNotFoundException;
 import com.tesis.curriculum_service.model.Competency;
+import com.tesis.curriculum_service.model.Curriculum;
 import com.tesis.curriculum_service.model.LearningObjective;
 import com.tesis.curriculum_service.model.Standard;
 import com.tesis.curriculum_service.repository.CompetencyRepository;
+import com.tesis.curriculum_service.repository.CurriculumRepository;
 import com.tesis.curriculum_service.repository.LearningObjectiveRepository;
 import com.tesis.curriculum_service.repository.StandardRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +22,7 @@ import java.util.stream.Collectors;
 
 /**
  * Implementación de {@link LearningObjectiveService} usando JPA.
- * Soporta soft‐delete y reactivación en cascada.
+ * Incluye validación jerárquica Curriculum ➜ Competency ➜ Standard.
  */
 @Service
 @RequiredArgsConstructor
@@ -30,102 +31,133 @@ public class LearningObjectiveServiceImpl implements LearningObjectiveService {
   private final LearningObjectiveRepository loRepo;
   private final StandardRepository standardRepo;
   private final CompetencyRepository compRepo;
+  private final CurriculumRepository curriculumRepo;
 
+  /*-------------------------------------------------------
+   * CREATE
+   *-----------------------------------------------------*/
   @Override
   @Transactional
-  public LearningObjectiveResponse create(UUID competencyId,
+  public LearningObjectiveResponse create(UUID curriculumId,
+      UUID competencyId,
       UUID standardId,
       LearningObjectiveRequest req)
       throws ResourceNotFoundException {
-    // 1) Verificar Competency
+
+    // 1) Curriculum
+    Curriculum curriculum = curriculumRepo.findById(curriculumId)
+        .orElseThrow(() -> new ResourceNotFoundException("Curriculum", "id", curriculumId));
+
+    // 2) Competency dentro del Curriculum
     Competency comp = compRepo.findById(competencyId)
+        .filter(c -> c.getCurriculum().getId().equals(curriculum.getId()))
         .orElseThrow(() -> new ResourceNotFoundException("Competency", "id", competencyId));
 
-    // 2) Verificar Standard dentro de esa Competency
+    // 3) Standard dentro de la Competency
     Standard std = standardRepo.findById(standardId)
-        .filter(s -> s.getCompetency().getId().equals(competencyId))
+        .filter(s -> s.getCompetency().getId().equals(comp.getId()))
         .orElseThrow(() -> new ResourceNotFoundException("Standard", "id", standardId));
 
-    // 3) Mapear y guardar
+    // 4) Persistimos el LearningObjective
     LearningObjective lo = LearningObjective.builder()
         .name(req.getName())
         .description(req.getDescription())
         .code(req.getCode())
         .standard(std)
         .build();
-    LearningObjective saved = loRepo.save(lo);
-    return toDto(saved);
+
+    return toDto(loRepo.save(lo));
   }
 
+  /*-------------------------------------------------------
+   * READ – list & get
+   *-----------------------------------------------------*/
   @Override
   @Transactional(readOnly = true)
-  public List<LearningObjectiveResponse> getAllByStandard(UUID competencyId,
+  public List<LearningObjectiveResponse> getAllByStandard(UUID curriculumId,
+      UUID competencyId,
       UUID standardId)
       throws ResourceNotFoundException {
-    // Validar existencia de Standard bajo Competency
-    if (!compRepo.existsById(competencyId) ||
-        !standardRepo.findById(standardId)
-            .filter(s -> s.getCompetency().getId().equals(competencyId))
-            .isPresent()) {
-      throw new ResourceNotFoundException("Standard", "id", standardId);
-    }
-    return loRepo.findByStandardId(standardId).stream()
+
+    validateHierarchy(curriculumId, competencyId, standardId);
+
+    return loRepo.findByStandardId(standardId)
+        .stream()
         .map(this::toDto)
         .collect(Collectors.toList());
   }
 
   @Override
   @Transactional(readOnly = true)
-  public LearningObjectiveResponse getById(UUID competencyId,
+  public LearningObjectiveResponse getById(UUID curriculumId,
+      UUID competencyId,
       UUID standardId,
       UUID id)
       throws ResourceNotFoundException {
+
+    validateHierarchy(curriculumId, competencyId, standardId);
+
     LearningObjective lo = loRepo.findByIdAndStandardId(id, standardId)
-        .filter(o -> o.getStandard().getCompetency().getId().equals(competencyId))
         .orElseThrow(() -> new ResourceNotFoundException("LearningObjective", "id", id));
+
     return toDto(lo);
   }
 
+  /*-------------------------------------------------------
+   * UPDATE
+   *-----------------------------------------------------*/
   @Override
   @Transactional
-  public LearningObjectiveResponse update(UUID competencyId,
+  public LearningObjectiveResponse update(UUID curriculumId,
+      UUID competencyId,
       UUID standardId,
       UUID id,
       LearningObjectiveRequest req)
       throws ResourceNotFoundException {
+
+    validateHierarchy(curriculumId, competencyId, standardId);
+
     LearningObjective lo = loRepo.findByIdAndStandardId(id, standardId)
-        .filter(o -> o.getStandard().getCompetency().getId().equals(competencyId))
         .orElseThrow(() -> new ResourceNotFoundException("LearningObjective", "id", id));
 
     lo.setName(req.getName());
     lo.setDescription(req.getDescription());
     lo.setCode(req.getCode());
-    // updatedAt se actualiza en @PreUpdate
-    LearningObjective updated = loRepo.save(lo);
-    return toDto(updated);
+
+    return toDto(loRepo.save(lo));
   }
 
+  /*-------------------------------------------------------
+   * DELETE (soft)
+   *-----------------------------------------------------*/
   @Override
   @Transactional
-  public void delete(UUID competencyId,
+  public void delete(UUID curriculumId,
+      UUID competencyId,
       UUID standardId,
-      UUID id)
-      throws ResourceNotFoundException {
+      UUID id) throws ResourceNotFoundException {
+
+    validateHierarchy(curriculumId, competencyId, standardId);
+
     LearningObjective lo = loRepo.findByIdAndStandardId(id, standardId)
-        .filter(o -> o.getStandard().getCompetency().getId().equals(competencyId))
         .orElseThrow(() -> new ResourceNotFoundException("LearningObjective", "id", id));
-    // Hibernate aplicará soft-delete (@SQLDelete)
-    loRepo.delete(lo);
+
+    loRepo.delete(lo); // aplica @SQLDelete
   }
 
+  /*-------------------------------------------------------
+   * REACTIVATE
+   *-----------------------------------------------------*/
   @Override
   @Transactional
-  public void reactivate(UUID competencyId,
+  public void reactivate(UUID curriculumId,
+      UUID competencyId,
       UUID standardId,
-      UUID id)
-      throws ResourceNotFoundException {
+      UUID id) throws ResourceNotFoundException {
+
+    validateHierarchy(curriculumId, competencyId, standardId);
+
     LearningObjective lo = loRepo.findIncludingInactiveByIdAndStandardId(id, standardId)
-        .filter(o -> o.getStandard().getCompetency().getId().equals(competencyId))
         .orElseThrow(() -> new ResourceNotFoundException("LearningObjective", "id", id));
 
     lo.setActive(true);
@@ -134,15 +166,38 @@ public class LearningObjectiveServiceImpl implements LearningObjectiveService {
     loRepo.save(lo);
   }
 
-  // ----------------------------
-  // Mapeo entidad → DTO
-  // ----------------------------
+  /*-------------------------------------------------------
+   * Helpers
+   *-----------------------------------------------------*/
+  private void validateHierarchy(UUID curriculumId, UUID competencyId, UUID standardId)
+      throws ResourceNotFoundException {
+
+    // Curriculum
+    if (!curriculumRepo.existsById(curriculumId)) {
+      throw new ResourceNotFoundException("Curriculum", "id", curriculumId);
+    }
+
+    // Competency dentro del Curriculum
+    Competency comp = compRepo.findById(competencyId)
+        .filter(c -> c.getCurriculum().getId().equals(curriculumId))
+        .orElseThrow(() -> new ResourceNotFoundException("Competency", "id", competencyId));
+
+    // Standard dentro de la Competency
+    standardRepo.findById(standardId)
+        .filter(s -> s.getCompetency().getId().equals(comp.getId()))
+        .orElseThrow(() -> new ResourceNotFoundException("Standard", "id", standardId));
+  }
+
   private LearningObjectiveResponse toDto(LearningObjective lo) {
     return LearningObjectiveResponse.builder()
         .id(lo.getId())
         .name(lo.getName())
         .description(lo.getDescription())
         .code(lo.getCode())
+        .curriculumId(lo.getStandard().getCompetency().getCurriculum().getId())
+        .competencyId(lo.getStandard().getCompetency().getId())
+        .standardId(lo.getStandard().getId())
+        .standardName(lo.getStandard().getName())
         .createdAt(lo.getCreatedAt())
         .updatedAt(lo.getUpdatedAt())
         .active(lo.getActive())

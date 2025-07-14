@@ -1,4 +1,3 @@
-// src/main/java/com/tesis/curriculum_service/dto/LearningObjectiveResponse.java
 package com.tesis.curriculum_service.dto;
 
 import java.time.LocalDateTime;
@@ -29,8 +28,17 @@ public class LearningObjectiveResponse {
   @Schema(description = "Código único del objetivo (p.ej. LO.02.01)", example = "LO.02.01")
   private String code;
 
+  @Schema(description = "ID del currículo al que pertenece este objetivo", example = "fbc9f142-bc58-41ef-9913-1f398812c0f0")
+  private UUID curriculumId;
+
+  @Schema(description = "ID de la competencia a la que pertenece este objetivo", example = "a93bc2e0-f8d5-4c64-9c74-1e4d96df9fc1")
+  private UUID competencyId;
+
   @Schema(description = "ID del estándar al que pertenece este objetivo", example = "9f7e6d5c-4b3a-21f0-9e8d-7c6b5a4f3e2d")
   private UUID standardId;
+
+  @Schema(description = "Nombre del estándar asociado", example = "Organizar datos en tablas")
+  private String standardName;
 
   @Schema(description = "Fecha y hora de creación del objetivo", example = "2025-07-12T15:30:00.000")
   private LocalDateTime createdAt;

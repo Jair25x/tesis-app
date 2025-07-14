@@ -205,6 +205,11 @@ public class ExerciseServiceImpl implements ExerciseService {
   // Mapeo entidad → DTO
   // --------------------------------------------------
   private ExerciseResponse toDto(Exercise e) {
+    var lo = e.getLearningObjective();
+    var std = lo.getStandard();
+    var comp = std.getCompetency();
+    var cur = comp.getCurriculum();
+
     return ExerciseResponse.builder()
         .id(e.getId())
         .statement(e.getStatement())
@@ -212,7 +217,13 @@ public class ExerciseServiceImpl implements ExerciseService {
         .type(e.getType())
         .templateType(e.getTemplateType())
         .parameters(e.getParameters())
-        .learningObjectiveId(e.getLearningObjective().getId())
+        .learningObjectiveId(lo.getId())
+        .learningObjectiveName(lo.getName())
+        .standardId(std.getId())
+        .standardName(std.getName())
+        .competencyId(comp.getId())
+        .competencyName(comp.getName())
+        .curriculumId(cur.getId())
         .solutionSteps(e.getSolutionSteps().stream()
             .sorted(Comparator.comparingInt(s -> s.getStepNumber()))
             .map(ss -> SolutionStepResponse.builder()

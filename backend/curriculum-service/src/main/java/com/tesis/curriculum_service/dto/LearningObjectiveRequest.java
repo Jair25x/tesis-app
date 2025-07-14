@@ -1,9 +1,6 @@
-// src/main/java/com/tesis/curriculum_service/dto/LearningObjectiveRequest.java
 package com.tesis.curriculum_service.dto;
 
-import java.util.UUID;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
@@ -29,8 +26,4 @@ public class LearningObjectiveRequest {
   @Schema(description = "Código único del objetivo (p.ej. LO.02.01)", example = "LO.02.01")
   @NotBlank
   private String code;
-
-  @Schema(description = "ID del estándar al que pertenece este objetivo", example = "9f7e6d5c-4b3a-21f0-9e8d-7c6b5a4f3e2d")
-  @NotNull
-  private UUID standardId;
 }

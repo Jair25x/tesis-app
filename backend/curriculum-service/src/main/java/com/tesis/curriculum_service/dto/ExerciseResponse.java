@@ -1,4 +1,3 @@
-// src/main/java/com/tesis/curriculum_service/dto/ExerciseResponse.java
 package com.tesis.curriculum_service.dto;
 
 import java.time.LocalDateTime;
@@ -6,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import com.tesis.curriculum_service.dto.TemplateSchema.TemplateType; // ← aquí
+import com.tesis.curriculum_service.dto.TemplateSchema.TemplateType;
 import com.tesis.curriculum_service.model.Exercise.Difficulty;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -40,8 +39,26 @@ public class ExerciseResponse {
   @Schema(description = "Parámetros usados para la plantilla", example = "{\"pairs\": [[\"a\",\"1\"],[\"b\",\"2\"]]}")
   private Map<String, Object> parameters;
 
-  @Schema(description = "ID del objetivo de aprendizaje asociado", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+  @Schema(description = "ID del objetivo de aprendizaje asociado")
   private UUID learningObjectiveId;
+
+  @Schema(description = "Nombre del objetivo de aprendizaje asociado")
+  private String learningObjectiveName;
+
+  @Schema(description = "ID del estándar asociado")
+  private UUID standardId;
+
+  @Schema(description = "Nombre del estándar asociado")
+  private String standardName;
+
+  @Schema(description = "ID de la competencia asociada")
+  private UUID competencyId;
+
+  @Schema(description = "Nombre de la competencia asociada")
+  private String competencyName;
+
+  @Schema(description = "ID del currículo asociado")
+  private UUID curriculumId;
 
   @Schema(description = "Pasos de la solución ordenados")
   private List<SolutionStepResponse> solutionSteps;

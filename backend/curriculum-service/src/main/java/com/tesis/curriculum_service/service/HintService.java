@@ -61,4 +61,6 @@ public interface HintService {
    * @throws ResourceNotFoundException si no existe.
    */
   void delete(UUID exerciseId, UUID id) throws ResourceNotFoundException;
+
+  void reactivate(UUID exerciseId, UUID id);
 }

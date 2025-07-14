@@ -12,85 +12,17 @@ import java.util.UUID;
  */
 public interface LearningObjectiveService {
 
-  /**
-   * Crea un nuevo objetivo de aprendizaje bajo un estándar.
-   *
-   * @param competencyId UUID de la competencia padre.
-   * @param standardId   UUID del estándar padre.
-   * @param request      DTO con los datos de creación.
-   * @return DTO con el objetivo creado.
-   * @throws ResourceNotFoundException si la competencia o el estándar no existen.
-   */
-  LearningObjectiveResponse create(UUID competencyId,
-      UUID standardId,
-      LearningObjectiveRequest request)
-      throws ResourceNotFoundException;
+    LearningObjectiveResponse create(UUID curriculumId, UUID competencyId, UUID standardId,
+            LearningObjectiveRequest req);
 
-  /**
-   * Lista todos los objetivos activos de un estándar.
-   *
-   * @param competencyId UUID de la competencia padre.
-   * @param standardId   UUID del estándar padre.
-   * @return Lista de DTOs de objetivos.
-   * @throws ResourceNotFoundException si la competencia o el estándar no existen.
-   */
-  List<LearningObjectiveResponse> getAllByStandard(UUID competencyId,
-      UUID standardId)
-      throws ResourceNotFoundException;
+    List<LearningObjectiveResponse> getAllByStandard(UUID curriculumId, UUID competencyId, UUID standardId);
 
-  /**
-   * Obtiene un objetivo activo por su ID.
-   *
-   * @param competencyId UUID de la competencia padre.
-   * @param standardId   UUID del estándar padre.
-   * @param id           UUID del objetivo.
-   * @return DTO con los datos del objetivo.
-   * @throws ResourceNotFoundException si no existe.
-   */
-  LearningObjectiveResponse getById(UUID competencyId,
-      UUID standardId,
-      UUID id)
-      throws ResourceNotFoundException;
+    LearningObjectiveResponse getById(UUID curriculumId, UUID competencyId, UUID standardId, UUID id);
 
-  /**
-   * Actualiza un objetivo existente.
-   *
-   * @param competencyId UUID de la competencia padre.
-   * @param standardId   UUID del estándar padre.
-   * @param id           UUID del objetivo.
-   * @param request      DTO con los nuevos datos.
-   * @return DTO con los datos actualizados.
-   * @throws ResourceNotFoundException si no existe.
-   */
-  LearningObjectiveResponse update(UUID competencyId,
-      UUID standardId,
-      UUID id,
-      LearningObjectiveRequest request)
-      throws ResourceNotFoundException;
+    LearningObjectiveResponse update(UUID curriculumId, UUID competencyId, UUID standardId, UUID id,
+            LearningObjectiveRequest req);
 
-  /**
-   * Realiza un borrado lógico (soft‐delete) de un objetivo.
-   *
-   * @param competencyId UUID de la competencia padre.
-   * @param standardId   UUID del estándar padre.
-   * @param id           UUID del objetivo.
-   * @throws ResourceNotFoundException si no existe.
-   */
-  void delete(UUID competencyId,
-      UUID standardId,
-      UUID id)
-      throws ResourceNotFoundException;
+    void delete(UUID curriculumId, UUID competencyId, UUID standardId, UUID id);
 
-  /**
-   * Reactiva un objetivo (y limpia deletedAt).
-   *
-   * @param competencyId UUID de la competencia padre.
-   * @param standardId   UUID del estándar padre.
-   * @param id           UUID del objetivo.
-   * @throws ResourceNotFoundException si no existe (ni siquiera inactivo).
-   */
-  void reactivate(UUID competencyId,
-      UUID standardId,
-      UUID id)
-      throws ResourceNotFoundException;
+    void reactivate(UUID curriculumId, UUID competencyId, UUID standardId, UUID id);
 }

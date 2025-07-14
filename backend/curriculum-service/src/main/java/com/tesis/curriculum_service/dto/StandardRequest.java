@@ -1,9 +1,6 @@
-// src/main/java/com/tesis/curriculum_service/dto/StandardRequest.java
 package com.tesis.curriculum_service.dto;
 
-import java.util.UUID;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
@@ -29,8 +26,4 @@ public class StandardRequest {
   @Schema(description = "Código único del estándar", example = "STD-ALG-01")
   @NotBlank
   private String code;
-
-  @Schema(description = "ID de la competencia a la que pertenece este estándar", example = "5b2d3f74-1234-4a2b-9cde-1a2b3c4d5e6f")
-  @NotNull
-  private UUID competencyId;
 }

@@ -23,7 +23,7 @@ import java.util.UUID;
 
 @Tag(name = "Hints", description = "Operaciones CRUD sobre pistas asociadas a ejercicios")
 @RestController
-@RequestMapping("/api/exercises/{exerciseId}/hints")
+@RequestMapping("/api/curricula/{curriculumId}/competencies/{competencyId}/standards/{standardId}/learning-objectives/{learningObjectiveId}/exercises/{exerciseId}/hints")
 public class HintController {
 
   private final HintService hintService;
@@ -32,49 +32,41 @@ public class HintController {
     this.hintService = hintService;
   }
 
-  @Operation(summary = "Listar pistas", description = "Obtiene todas las pistas de un ejercicio dado.")
+  @Operation(summary = "Listar pistas")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Listado de pistas obtenido correctamente", content = @Content(array = @ArraySchema(schema = @Schema(implementation = HintResponse.class)))),
       @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("isAuthenticated()")
   @GetMapping
-  public ResponseEntity<List<HintResponse>> listAll(
-      @PathVariable UUID exerciseId) throws ResourceNotFoundException {
-    List<HintResponse> hints = hintService.getAllByExercise(exerciseId);
-    return ResponseEntity.ok(hints);
+  public ResponseEntity<List<HintResponse>> listAll(@PathVariable UUID exerciseId) {
+    return ResponseEntity.ok(hintService.getAllByExercise(exerciseId));
   }
 
-  @Operation(summary = "Obtener pista", description = "Recupera una pista por su ID dentro de un ejercicio.")
+  @Operation(summary = "Obtener pista")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Pista encontrada", content = @Content(schema = @Schema(implementation = HintResponse.class))),
       @ApiResponse(responseCode = "404", description = "Ejercicio o pista no encontrados", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("isAuthenticated()")
   @GetMapping("/{id}")
-  public ResponseEntity<HintResponse> getOne(
-      @PathVariable UUID exerciseId,
-      @PathVariable UUID id) throws ResourceNotFoundException {
-    HintResponse hint = hintService.getById(exerciseId, id);
-    return ResponseEntity.ok(hint);
+  public ResponseEntity<HintResponse> getOne(@PathVariable UUID exerciseId, @PathVariable UUID id) {
+    return ResponseEntity.ok(hintService.getById(exerciseId, id));
   }
 
-  @Operation(summary = "Crear pista", description = "Crea una nueva pista para el ejercicio especificado.")
+  @Operation(summary = "Crear pista")
   @ApiResponses({
       @ApiResponse(responseCode = "201", description = "Pista creada correctamente", content = @Content(schema = @Schema(implementation = HintResponse.class))),
-      @ApiResponse(responseCode = "400", description = "Datos de entrada inválidos", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+      @ApiResponse(responseCode = "400", description = "Datos inválidos", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
       @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
   @PostMapping
-  public ResponseEntity<HintResponse> create(
-      @PathVariable UUID exerciseId,
-      @Valid @RequestBody HintRequest request) throws ResourceNotFoundException {
-    HintResponse created = hintService.create(exerciseId, request);
-    return ResponseEntity.status(HttpStatus.CREATED).body(created);
+  public ResponseEntity<HintResponse> create(@PathVariable UUID exerciseId, @Valid @RequestBody HintRequest request) {
+    return ResponseEntity.status(HttpStatus.CREATED).body(hintService.create(exerciseId, request));
   }
 
-  @Operation(summary = "Actualizar pista", description = "Actualiza una pista existente del ejercicio.")
+  @Operation(summary = "Actualizar pista")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Pista actualizada correctamente", content = @Content(schema = @Schema(implementation = HintResponse.class))),
       @ApiResponse(responseCode = "400", description = "Datos inválidos", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
@@ -82,25 +74,32 @@ public class HintController {
   })
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
   @PutMapping("/{id}")
-  public ResponseEntity<HintResponse> update(
-      @PathVariable UUID exerciseId,
-      @PathVariable UUID id,
-      @Valid @RequestBody HintRequest request) throws ResourceNotFoundException {
-    HintResponse updated = hintService.update(exerciseId, id, request);
-    return ResponseEntity.ok(updated);
+  public ResponseEntity<HintResponse> update(@PathVariable UUID exerciseId, @PathVariable UUID id,
+      @Valid @RequestBody HintRequest request) {
+    return ResponseEntity.ok(hintService.update(exerciseId, id, request));
   }
 
-  @Operation(summary = "Eliminar pista", description = "Elimina una pista (soft-delete) del ejercicio.")
+  @Operation(summary = "Eliminar pista (soft-delete)")
   @ApiResponses({
       @ApiResponse(responseCode = "204", description = "Pista eliminada correctamente"),
       @ApiResponse(responseCode = "404", description = "Ejercicio o pista no encontrados", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
-  @ResponseStatus(HttpStatus.NO_CONTENT)
   @DeleteMapping("/{id}")
-  public void delete(
-      @PathVariable UUID exerciseId,
-      @PathVariable UUID id) throws ResourceNotFoundException {
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void delete(@PathVariable UUID exerciseId, @PathVariable UUID id) {
     hintService.delete(exerciseId, id);
+  }
+
+  @Operation(summary = "Reactivar pista eliminada lógicamente")
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "Pista reactivada correctamente"),
+      @ApiResponse(responseCode = "404", description = "Pista no encontrada", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+  })
+  @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
+  @PatchMapping("/{id}/reactivate")
+  public ResponseEntity<Void> reactivate(@PathVariable UUID exerciseId, @PathVariable UUID id) {
+    hintService.reactivate(exerciseId, id);
+    return ResponseEntity.ok().build();
   }
 }

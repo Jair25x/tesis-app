@@ -82,7 +82,24 @@ public class HintServiceImpl implements HintService {
   public void delete(UUID exerciseId, UUID id) throws ResourceNotFoundException {
     Hint hint = hintRepo.findByIdAndExerciseId(id, exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("Hint", "id", id));
-    hintRepo.delete(hint);
+    hint.setActive(false);
+    hint.setDeletedAt(LocalDateTime.now());
+    hintRepo.save(hint);
+  }
+
+  @Override
+  public void reactivate(UUID exerciseId, UUID id) {
+    Hint hint = hintRepo.findByIdIncludingInactive(id)
+        .orElseThrow(() -> new ResourceNotFoundException("Hint", "id", id));
+
+    if (!hint.getExercise().getId().equals(exerciseId)) {
+      throw new ResourceNotFoundException("Hint", "exerciseId", exerciseId);
+    }
+
+    hint.setActive(true);
+    hint.setDeletedAt(null);
+    hint.setUpdatedAt(LocalDateTime.now());
+    hintRepo.save(hint);
   }
 
   // --------------------------------------------------

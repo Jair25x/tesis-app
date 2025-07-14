@@ -118,6 +118,7 @@ public class CompetencyServiceImpl implements CompetencyService {
         .name(c.getName())
         .description(c.getDescription())
         .code(c.getCode())
+        .curriculumId(c.getCurriculum() != null ? c.getCurriculum().getId() : null)
         .createdAt(c.getCreatedAt())
         .updatedAt(c.getUpdatedAt())
         .active(c.getActive())

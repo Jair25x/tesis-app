@@ -2,6 +2,8 @@ package com.tesis.curriculum_service.repository;
 
 import com.tesis.curriculum_service.model.Hint;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -37,4 +39,6 @@ public interface HintRepository extends JpaRepository<Hint, UUID> {
   // Si implementas reactivate/soft-delete avanzado, podrías exponer:
   // Optional<Hint> findIncludingInactiveByIdAndExerciseId(UUID id, UUID
   // exerciseId);
+  @Query("SELECT h FROM Hint h WHERE h.id = :id")
+  Optional<Hint> findByIdIncludingInactive(@Param("id") UUID id);
 }

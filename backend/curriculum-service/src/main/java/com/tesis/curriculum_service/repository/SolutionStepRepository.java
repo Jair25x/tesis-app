@@ -3,6 +3,7 @@ package com.tesis.curriculum_service.repository;
 
 import com.tesis.curriculum_service.model.SolutionStep;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -38,5 +39,6 @@ public interface SolutionStepRepository extends JpaRepository<SolutionStep, UUID
 
   List<SolutionStep> findByExerciseIdOrderByStepNumberAsc(UUID exerciseId);
 
+  @Query("SELECT s FROM SolutionStep s WHERE s.id = :id AND s.exercise.id = :exerciseId")
   Optional<SolutionStep> findIncludingInactiveByIdAndExerciseId(UUID id, UUID exerciseId);
 }

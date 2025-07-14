@@ -6,6 +6,7 @@ import com.tesis.curriculum_service.service.CompetencyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -18,8 +19,9 @@ import java.util.UUID;
  * Controlador REST para gestionar Competencies dentro de un Curriculum.
  */
 @RestController
-@RequestMapping("/curricula/{curriculumId}/competencies")
+@RequestMapping("/api/curricula/{curriculumId}/competencies")
 @RequiredArgsConstructor
+@Tag(name = "Competency", description = "Operaciones CRUD sobre competencias educativas")
 public class CompetencyController {
 
   private final CompetencyService service;
@@ -102,7 +104,7 @@ public class CompetencyController {
       @ApiResponse(responseCode = "403", description = "Acceso denegado")
   })
   @PreAuthorize("hasRole('ADMIN')")
-  @PutMapping("/{id}/reactivate")
+  @PatchMapping("/{id}/reactivate")
   public ResponseEntity<Void> reactivate(
       @PathVariable UUID curriculumId,
       @PathVariable UUID id) {

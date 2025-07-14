@@ -26,6 +26,16 @@ public class TemplateSchema {
     // 1. TABLAS Y PATRONES
     TBL_MATCH,
     PATTERN_FORMATION,
+    // Templates adicionales
+    /**
+     * Plantilla para analizar moda en tablas de frecuencia.
+     */
+    FREQUENCY_ANALYSIS,
+
+    /**
+     * Plantilla para calcular el total en tablas de frecuencia.
+     */
+    FREQUENCY_TOTAL,
     // 2. MÚLTIPLOS Y DIVISORES
     MULTIPLES_SEARCH,
     DIVISORS_SEARCH,

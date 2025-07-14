@@ -124,6 +124,8 @@ public class StandardServiceImpl implements StandardService {
         .name(s.getName())
         .description(s.getDescription())
         .code(s.getCode())
+        .competencyId(s.getCompetency().getId())
+        .competencyName(s.getCompetency().getName())
         .createdAt(s.getCreatedAt())
         .updatedAt(s.getUpdatedAt())
         .active(s.getActive())
