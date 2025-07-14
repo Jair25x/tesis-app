@@ -1,9 +1,10 @@
-// src/main/java/com/tesis/curriculum_service/model/Hint.java
 package com.tesis.curriculum_service.model;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -20,11 +21,13 @@ import java.util.UUID;
 @Builder
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @ToString(onlyExplicitlyIncluded = true)
+@SQLDelete(sql = "UPDATE hints SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
+@SQLRestriction("active = true")
 public class Hint {
 
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
-  @Column(name = "id", updatable = false, nullable = false, columnDefinition = "UUID")
+  @Column(updatable = false, nullable = false, columnDefinition = "UUID")
   @EqualsAndHashCode.Include
   private UUID id;
 
@@ -32,7 +35,7 @@ public class Hint {
   @ToString.Include
   private String hintText;
 
-  @Column(name = "cost", nullable = false)
+  @Column(nullable = false)
   @ToString.Include
   private Integer cost;
 
@@ -41,28 +44,28 @@ public class Hint {
   @JsonBackReference
   private Exercise exercise;
 
-  @Column(name = "created_at", nullable = false, updatable = false)
+  @Column(nullable = false, updatable = false)
   private LocalDateTime createdAt;
 
-  @Column(name = "updated_at", nullable = false)
+  @Column(nullable = false)
   private LocalDateTime updatedAt;
 
-  @Column(name = "active", nullable = false)
+  @Column(nullable = false)
   private Boolean active;
 
-  @Column(name = "deleted_at")
+  @Column
   private LocalDateTime deletedAt;
 
   @PrePersist
-  protected void onCreate() {
+  void onCreate() {
     LocalDateTime now = LocalDateTime.now();
-    this.createdAt = now;
-    this.updatedAt = now;
-    this.active = true;
+    createdAt = now;
+    updatedAt = now;
+    active = true;
   }
 
   @PreUpdate
-  protected void onUpdate() {
-    this.updatedAt = LocalDateTime.now();
+  void onUpdate() {
+    updatedAt = LocalDateTime.now();
   }
 }

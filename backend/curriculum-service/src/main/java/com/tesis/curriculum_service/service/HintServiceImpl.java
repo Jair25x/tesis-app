@@ -28,37 +28,30 @@ public class HintServiceImpl implements HintService {
 
   @Override
   @Transactional
-  public HintResponse create(UUID exerciseId, HintRequest request) throws ResourceNotFoundException {
-    // 1. Validar existencia del ejercicio
-    Exercise exercise = exerciseRepo.findById(exerciseId)
+  public HintResponse create(UUID exerciseId, HintRequest req) {
+    Exercise ex = exerciseRepo.findById(exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
 
-    // 2. Construir y persistir la nueva pista
-    Hint hint = Hint.builder()
-        .hintText(request.getHintText())
-        .cost(request.getCost())
-        .exercise(exercise)
-        .build();
-    Hint saved = hintRepo.save(hint);
+    Hint saved = hintRepo.save(Hint.builder()
+        .hintText(req.getHintText())
+        .cost(req.getCost())
+        .exercise(ex)
+        .build());
 
     return toDto(saved);
   }
 
   @Override
   @Transactional(readOnly = true)
-  public List<HintResponse> getAllByExercise(UUID exerciseId) throws ResourceNotFoundException {
-    // Verificar que el ejercicio exista
-    if (!exerciseRepo.existsById(exerciseId)) {
-      throw new ResourceNotFoundException("Exercise", "id", exerciseId);
-    }
-    return hintRepo.findByExerciseId(exerciseId).stream()
-        .map(this::toDto)
-        .collect(Collectors.toList());
+  public List<HintResponse> getAllByExercise(UUID exerciseId) {
+    verifyExerciseExists(exerciseId);
+    return hintRepo.findByExerciseIdOrderByCostAsc(exerciseId)
+        .stream().map(this::toDto).toList();
   }
 
   @Override
   @Transactional(readOnly = true)
-  public HintResponse getById(UUID exerciseId, UUID id) throws ResourceNotFoundException {
+  public HintResponse getById(UUID exerciseId, UUID id) {
     Hint hint = hintRepo.findByIdAndExerciseId(id, exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("Hint", "id", id));
     return toDto(hint);
@@ -66,28 +59,25 @@ public class HintServiceImpl implements HintService {
 
   @Override
   @Transactional
-  public HintResponse update(UUID exerciseId, UUID id, HintRequest request) throws ResourceNotFoundException {
+  public HintResponse update(UUID exerciseId, UUID id, HintRequest req) {
     Hint hint = hintRepo.findByIdAndExerciseId(id, exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("Hint", "id", id));
 
-    hint.setHintText(request.getHintText());
-    hint.setCost(request.getCost());
-    // updatedAt no existe en el modelo; si lo añadieras, se actualiza en @PreUpdate
-    Hint updated = hintRepo.save(hint);
-    return toDto(updated);
+    hint.setHintText(req.getHintText());
+    hint.setCost(req.getCost());
+    return toDto(hintRepo.save(hint));
   }
 
   @Override
   @Transactional
-  public void delete(UUID exerciseId, UUID id) throws ResourceNotFoundException {
+  public void delete(UUID exerciseId, UUID id) {
     Hint hint = hintRepo.findByIdAndExerciseId(id, exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("Hint", "id", id));
-    hint.setActive(false);
-    hint.setDeletedAt(LocalDateTime.now());
-    hintRepo.save(hint);
+    hintRepo.delete(hint); // gracias a @SQLDelete → soft-delete
   }
 
   @Override
+  @Transactional
   public void reactivate(UUID exerciseId, UUID id) {
     Hint hint = hintRepo.findByIdIncludingInactive(id)
         .orElseThrow(() -> new ResourceNotFoundException("Hint", "id", id));
@@ -95,16 +85,19 @@ public class HintServiceImpl implements HintService {
     if (!hint.getExercise().getId().equals(exerciseId)) {
       throw new ResourceNotFoundException("Hint", "exerciseId", exerciseId);
     }
-
     hint.setActive(true);
     hint.setDeletedAt(null);
     hint.setUpdatedAt(LocalDateTime.now());
     hintRepo.save(hint);
   }
 
-  // --------------------------------------------------
-  // Mapeo interno: entidad → DTO
-  // --------------------------------------------------
+  /* helpers */
+  private void verifyExerciseExists(UUID exerciseId) {
+    if (!exerciseRepo.existsById(exerciseId)) {
+      throw new ResourceNotFoundException("Exercise", "id", exerciseId);
+    }
+  }
+
   private HintResponse toDto(Hint h) {
     return HintResponse.builder()
         .id(h.getId())

@@ -26,7 +26,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/curricula/{curriculumId}/competencies/{competencyId}/standards/{standardId}/learning-objectives")
 @RequiredArgsConstructor
-public final class LearningObjectiveController {
+public class LearningObjectiveController {
 
   private final LearningObjectiveService loService;
 

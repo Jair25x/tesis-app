@@ -18,27 +18,13 @@ import java.util.UUID;
 @Repository
 public interface HintRepository extends JpaRepository<Hint, UUID> {
 
-  /**
-   * Recupera todas las pistas activas de un ejercicio dado.
-   *
-   * @param exerciseId UUID del ejercicio
-   * @return Lista de pistas asociadas al ejercicio
-   */
-  List<Hint> findByExerciseId(UUID exerciseId);
+  // Solo las pistas activas, ordenadas por coste asc (ajusta si prefieres otro
+  // criterio)
+  List<Hint> findByExerciseIdOrderByCostAsc(UUID exerciseId);
 
-  /**
-   * Recupera una única pista por su ID y el ID de su ejercicio padre.
-   * Garantiza que la pista pertenece al ejercicio correcto.
-   *
-   * @param id         UUID de la pista
-   * @param exerciseId UUID del ejercicio padre
-   * @return Optional con la pista si existe y pertenece al ejercicio
-   */
   Optional<Hint> findByIdAndExerciseId(UUID id, UUID exerciseId);
 
-  // Si implementas reactivate/soft-delete avanzado, podrías exponer:
-  // Optional<Hint> findIncludingInactiveByIdAndExerciseId(UUID id, UUID
-  // exerciseId);
+  /** Permite traer una pista incluso si está inactiva (para reactivate) */
   @Query("SELECT h FROM Hint h WHERE h.id = :id")
   Optional<Hint> findByIdIncludingInactive(@Param("id") UUID id);
 }
