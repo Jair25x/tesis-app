@@ -1,6 +1,8 @@
 // src/main/java/com/tesis/curriculum_service/controller/ExerciseController.java
 package com.tesis.curriculum_service.controller;
 
+import com.tesis.curriculum_service.dto.CheckAnswerRequest;
+import com.tesis.curriculum_service.dto.CheckAnswerResponse;
 import com.tesis.curriculum_service.dto.ExerciseRequest;
 import com.tesis.curriculum_service.dto.ExerciseResponse;
 import com.tesis.curriculum_service.exception.ErrorResponse;
@@ -142,5 +144,31 @@ public class ExerciseController {
 
     exerciseService.reactivate(learningObjectiveId, id);
     return ResponseEntity.ok().build();
+  }
+
+  @Operation(summary = "Verificar respuesta del estudiante")
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "Respuesta evaluada correctamente", content = @Content(schema = @Schema(implementation = CheckAnswerResponse.class))),
+      @ApiResponse(responseCode = "400", description = "Respuesta inválida", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+      @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+  })
+  @PreAuthorize("hasRole('STUDENT') or hasRole('TEACHER')")
+  @PostMapping("/{exerciseId}/check")
+  public ResponseEntity<CheckAnswerResponse> checkAnswer(
+      @PathVariable UUID curriculumId,
+      @PathVariable UUID competencyId,
+      @PathVariable UUID standardId,
+      @PathVariable UUID learningObjectiveId,
+      @PathVariable UUID exerciseId,
+      @Valid @RequestBody CheckAnswerRequest request) {
+
+    CheckAnswerResponse result = exerciseService.checkAnswer(
+        curriculumId,
+        competencyId,
+        standardId,
+        learningObjectiveId,
+        exerciseId,
+        request);
+    return ResponseEntity.ok(result);
   }
 }

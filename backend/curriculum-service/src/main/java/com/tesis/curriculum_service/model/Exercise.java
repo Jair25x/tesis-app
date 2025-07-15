@@ -55,8 +55,10 @@ public class Exercise {
   @Column(name = "type", nullable = false, length = 50)
   private String type;
 
-  // --- Ya no tienes enum interno TemplateType aquí ---
-
+  /* Respuesta correcta del ejercicio */
+  /** Respuesta correcta esperada (solo ejercicios de respuesta corta). */
+  @Column(name = "correct_answer", columnDefinition = "TEXT")
+  private String correctAnswer;
   /**
    * Tipo de plantilla a usar para generar el enunciado.
    * Usamos el enum compartido en TemplateSchema.

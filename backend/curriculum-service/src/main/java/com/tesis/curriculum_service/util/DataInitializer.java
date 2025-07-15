@@ -83,6 +83,8 @@ public class DataInitializer {
                                                                                                 .templateType(TemplateType
                                                                                                                 .valueOf(exDef.templateType))
                                                                                                 .parameters(exDef.parameters)
+                                                                                                .correctAnswer(exDef.correctAnswer) // ✅
+                                                                                                                                    // NUEVO
                                                                                                 .learningObjective(lo)
                                                                                                 .active(true)
                                                                                                 .createdAt(now)
@@ -175,6 +177,7 @@ public class DataInitializer {
                 public String type;
                 public String templateType;
                 public Map<String, Object> parameters;
+                public String correctAnswer; // ✅ NUEVO CAMPO
                 public List<SolutionStepDef> solutionSteps;
                 public List<HintDef> hints;
         }

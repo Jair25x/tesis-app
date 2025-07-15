@@ -1,9 +1,8 @@
 # src/main/resources/data/curriculum-math-6.yml
-code: "CN-MATH-6"
-name: "Currículo Nacional de Matemática - 6.º Grado"
-description: "Define los aprendizajes fundamentales en Matemática para el 6.º grado de primaria en Perú (EBR 2016)."
-grade: "6.º Grado"
-
+code: "CURR-MATH-6"
+name: "Currículo de Matemática - Sexto grado"
+description: "Programa oficial basado en el texto del MINEDU (bloque 1)."
+grade: "6°"
 competencies:
   - code: "C.1"
     name: "BIENVENIDOS"
@@ -17,17 +16,24 @@ competencies:
             name: "Analizar tablas de frecuencia"
             description: "Interpretar tablas con datos estadísticos simples."
             exercises:
-              - statement: "Observa la siguiente tabla de actividades preferidas por estudiantes de 4.º grado:\n\n| Actividad    | Frecuencia |\n|--------------|------------|\n| Ajedrez      | 10         |\n| Cantar       | 12         |\n| Bailar       | 8          |\n| Otras        | 5          |\n\n¿Cuál es la actividad más preferida?"
-                difficulty: BASIC
-                type: CHOICE
-                templateType: FREQUENCY_ANALYSIS
+              # ──────────────────────────────────────────────────────────────
+              - statement: |
+                  Observa la siguiente tabla de actividades preferidas por estudiantes de 4.º grado:
+
+                  | Actividad | Frecuencia |
+                  |-----------|------------|
+                  | Ajedrez   | 10         |
+                  | Cantar    | 12         |
+                  | Bailar    | 8          |
+                  | Otras     | 5          |
+
+                  ¿Cuál es la actividad más preferida?
+                difficulty: "BASIC"
+                type: "CHOICE"
+                templateType: "FREQUENCY_ANALYSIS"
                 parameters:
-                  choices:
-                    - "Ajedrez"
-                    - "Cantar"
-                    - "Bailar"
-                    - "Otras"
-                  correctAnswer: "Cantar"
+                  choices: ["Ajedrez", "Cantar", "Bailar", "Otras"]
+                correctAnswer: "Cantar" # ✅ NUEVO (lleva comillas)
                 hints:
                   - hintText: "Busca la actividad con el número más alto en la columna Frecuencia."
                     cost: 1
@@ -39,32 +45,40 @@ competencies:
                   - stepNumber: 3
                     explanation: "Por lo tanto, la moda es Cantar."
 
-              - statement: "En una encuesta a estudiantes de 5.º grado, se obtuvieron estos datos:\n\n| Actividad    | Frecuencia |\n|--------------|------------|\n| Ajedrez      | 7          |\n| Cantar       | 9          |\n| Bailar       | 10         |\n| Otras        | 4          |\n\n¿Cuántos estudiantes fueron encuestados en total?"
-                difficulty: BASIC
-                type: OPEN
-                templateType: FREQUENCY_TOTAL
-                parameters:
-                  correctAnswer: 30
+              # ──────────────────────────────────────────────────────────────
+              - statement: |
+                  En una encuesta a estudiantes de 5.º grado, se obtuvieron estos datos:
+
+                  | Actividad | Frecuencia |
+                  |-----------|------------|
+                  | Ajedrez   | 7          |
+                  | Cantar    | 9          |
+                  | Bailar    | 10         |
+                  | Otras     | 4          |
+
+                  ¿Cuántos estudiantes fueron encuestados en total?
+                difficulty: "BASIC"
+                type: "OPEN"
+                templateType: "FREQUENCY_TOTAL"
+                parameters: {}
+                correctAnswer: "30" # ✅ 7 + 9 + 10 + 4
                 hints:
                   - hintText: "Suma todas las frecuencias para obtener el total de estudiantes."
                     cost: 1
                 solutionSteps:
                   - stepNumber: 1
-                    explanation: "Suma las frecuencias: 7 + 9 + 10 + 4 = 30"
+                    explanation: "Suma las frecuencias: 7 + 9 + 10 + 4 = 30"
                   - stepNumber: 2
                     explanation: "El total de estudiantes encuestados es 30."
 
+              # ──────────────────────────────────────────────────────────────
               - statement: "¿Cuál fue la actividad más popular entre los estudiantes de 5.º grado según la tabla anterior?"
-                difficulty: BASIC
-                type: CHOICE
-                templateType: FREQUENCY_ANALYSIS
+                difficulty: "BASIC"
+                type: "CHOICE"
+                templateType: "FREQUENCY_ANALYSIS"
                 parameters:
-                  choices:
-                    - "Ajedrez"
-                    - "Cantar"
-                    - "Bailar"
-                    - "Otras"
-                  correctAnswer: "Bailar"
+                  choices: ["Ajedrez", "Cantar", "Bailar", "Otras"]
+                correctAnswer: "Bailar"
                 hints:
                   - hintText: "Busca la mayor frecuencia en la tabla."
                     cost: 1
@@ -75,7 +89,7 @@ competencies:
                     explanation: "Bailar tiene la mayor frecuencia: 10."
                   - stepNumber: 3
                     explanation: "Entonces, la actividad más popular fue Bailar."
-                    
+
       - code: "S.1.2"
         name: "Ficha 2: Usamos la probabilidad para tomar decisiones"
         description: "Introducción a eventos simples y probabilidad."

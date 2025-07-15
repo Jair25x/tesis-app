@@ -45,4 +45,7 @@ public class ExerciseRequest {
   @Schema(description = "ID del objetivo de aprendizaje al que pertenece", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
   @NotNull
   private UUID learningObjectiveId;
+
+  @Schema(description = "Respuesta correcta para validar el ejercicio", example = "5")
+  private String correctAnswer;
 }
