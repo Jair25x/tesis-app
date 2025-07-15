@@ -152,7 +152,7 @@ public class ExerciseController {
       @ApiResponse(responseCode = "400", description = "Respuesta inválida", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
       @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
-  @PreAuthorize("hasRole('STUDENT') or hasRole('TEACHER')")
+  @PreAuthorize("hasAnyRole('ADMIN','TEACHER','STUDENT')")
   @PostMapping("/{exerciseId}/check")
   public ResponseEntity<CheckAnswerResponse> checkAnswer(
       @PathVariable UUID curriculumId,

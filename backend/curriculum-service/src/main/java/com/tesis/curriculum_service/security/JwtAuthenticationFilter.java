@@ -46,30 +46,44 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-  private static final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+  private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
   private final JwtProperties jwtProperties;
 
   @Override
-  protected void doFilterInternal(HttpServletRequest request,
-      HttpServletResponse response,
-      FilterChain filterChain) throws ServletException, IOException {
+  protected void doFilterInternal(HttpServletRequest req,
+      HttpServletResponse res,
+      FilterChain chain) throws ServletException, IOException {
 
-    // -- manejo de llamadas internas vía gateway (X-Internal-Call) omitido aquí --
+    /* 1️⃣ – Confianza en llamadas internas desde el Gateway */
+    if ("gateway".equals(req.getHeader("X-Internal-Call"))) {
+      String user = req.getHeader("X-Auth-Username");
+      String roles = req.getHeader("X-Auth-Roles"); // "ROLE_ADMIN,ROLE_STUDENT"
 
-    // manejo JWT estándar
-    String header = request.getHeader(HttpHeaders.AUTHORIZATION);
-    if (StringUtils.hasText(header) && header.startsWith("Bearer ")) {
-      String token = header.substring(7);
+      if (user != null && roles != null) {
+        var auth = new UsernamePasswordAuthenticationToken(
+            user,
+            null,
+            Arrays.stream(roles.split(","))
+                .map(String::trim)
+                .map(SimpleGrantedAuthority::new)
+                .toList());
+
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        log.debug("⚡ Auth por cabeceras internas: {}", user);
+      }
+      chain.doFilter(req, res);
+      return;
+    }
+
+    /* 2️⃣ – Fallback: validar JWT normal si llega directo */
+    String bearer = req.getHeader(HttpHeaders.AUTHORIZATION);
+    if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
+      String token = bearer.substring(7);
       try {
-        // En tu versión, Jwts.parser() existe; encadenamos verifyWith(...) y build()
-        JwtParser parser = Jwts
-            .parser()
+        Claims claims = Jwts.parser()
             .verifyWith(Keys.hmacShaKeyFor(
                 io.jsonwebtoken.io.Decoders.BASE64.decode(jwtProperties.getSecretKey())))
-            .build();
-
-        // parseSignedClaims() es la nueva forma de obtener el payload
-        Claims claims = parser
+            .build()
             .parseSignedClaims(token)
             .getPayload();
 
@@ -78,23 +92,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         List<String> roles = claims.get("roles", List.class);
 
         if (username != null && roles != null) {
-          var authorities = roles.stream()
-              .map(r -> new SimpleGrantedAuthority("ROLE_" + r.trim().toUpperCase()))
-              .collect(Collectors.toList());
-          var auth = new UsernamePasswordAuthenticationToken(username, null, authorities);
+          var auth = new UsernamePasswordAuthenticationToken(
+              username,
+              null,
+              roles.stream()
+                  .map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase()))
+                  .toList());
           SecurityContextHolder.getContext().setAuthentication(auth);
-          logger.debug("Authenticated JWT user {}", username);
+          log.debug("🔐 Auth por JWT: {}", username);
         }
-
-      } catch (ExpiredJwtException ex) {
-        logger.warn("JWT expired: {}", ex.getMessage());
-      } catch (SignatureException ex) {
-        logger.warn("Invalid JWT signature: {}", ex.getMessage());
-      } catch (MalformedJwtException | UnsupportedJwtException | IllegalArgumentException ex) {
-        logger.warn("Invalid JWT token: {}", ex.getMessage());
+      } catch (Exception ex) {
+        log.warn("JWT inválido: {}", ex.getMessage());
       }
     }
 
-    filterChain.doFilter(request, response);
+    chain.doFilter(req, res);
   }
 }
