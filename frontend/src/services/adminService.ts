@@ -9,12 +9,12 @@ import type {
 } from "../types/AdminTypes";
 
 export async function getAllUsers(): Promise<AdminUserSummary[]> {
-  const response = await api.get("/api/auth/users");
+  const response = await api.get("/auth/users");
   return response.data;
 }
 
 export async function getUserById(id: number): Promise<AdminUserProfile> {
-  const response = await api.get(`/api/auth/profile/${id}`);
+  const response = await api.get(`/auth/profile/${id}`);
   return response.data;
 }
 
@@ -22,7 +22,7 @@ export async function updateUser(
   id: number,
   data: AdminUpdateUserDto
 ): Promise<AdminUserProfile> {
-  const response = await api.put(`/api/auth/users/${id}`, data);
+  const response = await api.put(`/auth/users/${id}`, data);
   return response.data;
 }
 
@@ -32,7 +32,7 @@ export async function setUserEnabled(
 ): Promise<string> {
   // Enviamos el booleano como JSON primitivo y forzamos el header application/json
   const response = await api.patch(
-    `/api/auth/users/${id}/enabled`,
+    `/auth/users/${id}/enabled`,
     JSON.stringify(enabled),
     {
       headers: {
@@ -45,7 +45,7 @@ export async function setUserEnabled(
 
 // New API helpers with alternative naming
 export async function fetchUsers(): Promise<AdminUser[]> {
-  const response = await api.get("/api/auth/users");
+  const response = await api.get("/auth/users");
   return response.data;
 }
 
@@ -53,7 +53,7 @@ export async function adminUpdateUser(
   id: number,
   data: AdminUpdateRequest
 ): Promise<AdminUser> {
-  const response = await api.put(`/api/auth/users/${id}`, data);
+  const response = await api.put(`/auth/users/${id}`, data);
   return response.data;
 }
 
@@ -63,7 +63,7 @@ export async function toggleUserEnabled(
 ): Promise<string> {
   // Igual que setUserEnabled, enviamos JSON y header adecuado
   const response = await api.patch(
-    `/api/auth/users/${id}/enabled`,
+    `/auth/users/${id}/enabled`,
     JSON.stringify(enabled),
     {
       headers: {
@@ -80,6 +80,6 @@ export async function getUserStats(): Promise<{
   inactive: number;
   byRole: Record<string, number>;
 }> {
-  const response = await api.get("/api/auth/users/stats");
+  const response = await api.get("/auth/users/stats");
   return response.data;
 }

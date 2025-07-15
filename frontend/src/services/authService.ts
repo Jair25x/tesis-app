@@ -29,17 +29,17 @@ export interface JwtResponse {
 
 // Register a new user
 export const register = async (data: RegisterRequest): Promise<string> => {
-  const response = await api.post("/api/auth/register", data);
+  const response = await api.post("/auth/register", data);
   return response.data;
 };
 
 // Authenticate the user and return JWT data
 export const login = async (data: LoginRequest): Promise<JwtResponse> => {
-  const response = await api.post("/api/auth/login", data);
+  const response = await api.post("/auth/login", data);
   return response.data;
 };
 
 export const logout = async (refreshToken: string): Promise<void> => {
-  await api.post("/api/auth/logout", { refreshToken });
+  await api.post("/auth/logout", { refreshToken });
 };
 

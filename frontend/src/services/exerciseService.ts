@@ -1,12 +1,37 @@
 import api from "./api";
-import type { ExerciseResponse } from "../types/ExerciseResponse";
+import type {
+  ExerciseResponse,
+  CheckAnswerRequest,
+  CheckAnswerResponse,
+} from "../types/ExerciseResponse";
 
-export const getExercisesByObjective = async (objectiveId: string): Promise<ExerciseResponse[]> => {
-  const response = await api.get(`/learning-objectives/${objectiveId}/exercises`);
-  return response.data;
+/** Devuelve lista completa del OA */
+export const getExercisesByObjective = async (
+  curriculumId: string,
+  competencyId: string,
+  standardId: string,
+  learningObjectiveId: string
+): Promise<ExerciseResponse[]> => {
+  const url =
+    `/curricula/${curriculumId}/competencies/${competencyId}` +
+    `/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises`;
+  const { data } = await api.get<ExerciseResponse[]>(url);
+  return data;
 };
 
-export const getExerciseById = async (objectiveId: string, exerciseId: string): Promise<ExerciseResponse> => {
-  const response = await api.get(`/learning-objectives/${objectiveId}/exercises/${exerciseId}`);
-  return response.data;
+/** Verifica la respuesta */
+export const checkAnswer = async (
+  curriculumId: string,
+  competencyId: string,
+  standardId: string,
+  learningObjectiveId: string,
+  exerciseId: string,
+  payload: CheckAnswerRequest
+): Promise<CheckAnswerResponse> => {
+  const url =
+    `/curricula/${curriculumId}/competencies/${competencyId}` +
+    `/standards/${standardId}/learning-objectives/${learningObjectiveId}` +
+    `/exercises/${exerciseId}/check`;
+  const { data } = await api.post<CheckAnswerResponse>(url, payload);
+  return data;
 };

@@ -60,8 +60,11 @@ export const router = createBrowserRouter([
         children: [
           { path: "dashboard", element: <StudentDashboard /> },
 
-          /*  ⬇ nueva ruta con :objectiveId */
-          { path: "practice/:objectiveId", element: <Practice /> },
+          /* 🆕 ruta completa */
+          {
+            path: "practice/:curriculumId/:competencyId/:standardId/:learningObjectiveId",
+            element: <Practice />,
+          },
 
           { path: "roadmap", element: <Roadmap /> },
           { path: "profile", element: <StudentProfile /> },

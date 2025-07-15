@@ -7,16 +7,16 @@ import type {
 } from "../types/ProfileTypes";
 
 export async function getProfile(): Promise<UserProfile> {
-  const response = await api.get("/api/auth/me");
+  const response = await api.get("/auth/me");
   return response.data;
 }
 
 export async function updateProfile(data: UpdateProfileDto): Promise<string> {
-  const response = await api.put("/api/auth/me", data);
+  const response = await api.put("/auth/me", data);
   return response.data;
 }
 
 export async function changePassword(data: ChangePasswordDto): Promise<string> {
-  const response = await api.put("/api/auth/change-password", data);
+  const response = await api.put("/auth/change-password", data);
   return response.data;
 }
