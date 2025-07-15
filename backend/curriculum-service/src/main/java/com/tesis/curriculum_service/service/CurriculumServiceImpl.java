@@ -1,5 +1,6 @@
 package com.tesis.curriculum_service.service;
 
+import com.tesis.curriculum_service.dto.CurriculumFullResponse;
 import com.tesis.curriculum_service.dto.CurriculumRequest;
 import com.tesis.curriculum_service.dto.CurriculumResponse;
 import com.tesis.curriculum_service.exception.ResourceNotFoundException;
@@ -105,6 +106,44 @@ public class CurriculumServiceImpl implements CurriculumService {
     // 3) Persiste el cambio
     repository.save(entity);
   }
+
+  @Override
+  @Transactional(readOnly = true)
+  public CurriculumFullResponse getCurriculumFull(UUID id) {
+    Curriculum cur = repository.findFullById(id)
+        .orElseThrow(() -> new ResourceNotFoundException("Curriculum", "id", id));
+
+    return CurriculumFullResponse.builder()
+        .id(cur.getId())
+        .code(cur.getCode())
+        .name(cur.getName())
+        .description(cur.getDescription())
+        .grade(cur.getGrade())
+        .competencies(cur.getCompetencies().stream().map(comp -> CurriculumFullResponse.CompetencyNode.builder()
+            .id(comp.getId())
+            .code(comp.getCode())
+            .name(comp.getName())
+            .standards(comp.getStandards().stream().map(std -> CurriculumFullResponse.StandardNode.builder()
+                .id(std.getId())
+                .code(std.getCode())
+                .name(std.getName())
+                .learningObjectives(std.getLearningObjectives().stream()
+                    .map(lo -> CurriculumFullResponse.LearningObjectiveNode.builder()
+                        .id(lo.getId())
+                        .code(lo.getCode())
+                        .name(lo.getName())
+                        .exercises(lo.getExercises().stream().map(ex -> CurriculumFullResponse.ExerciseLeaf.builder()
+                            .id(ex.getId())
+                            .statement(ex.getStatement())
+                            .difficulty(ex.getDifficulty().name())
+                            .build()).toList())
+                        .build())
+                    .toList())
+                .build()).toList())
+            .build()).toList())
+        .build();
+  }
+
 
   // ——————————————————————————————————————————————————————————————
   // Mapeo interno: entidad → DTO

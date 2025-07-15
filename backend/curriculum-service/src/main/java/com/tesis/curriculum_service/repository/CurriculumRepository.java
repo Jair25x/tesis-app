@@ -2,6 +2,8 @@
 package com.tesis.curriculum_service.repository;
 
 import com.tesis.curriculum_service.model.Curriculum;
+
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -25,4 +27,13 @@ public interface CurriculumRepository extends JpaRepository<Curriculum, UUID> {
    */
   @Query(value = "SELECT * FROM curricula WHERE id = :id", nativeQuery = true)
   Optional<Curriculum> findIncludingInactiveById(@Param("id") UUID id);
+
+  /** Trae toda la jerarquía en un solo query (LEFT JOIN FETCH) */
+  @EntityGraph(attributePaths = {
+      "competencies",
+      "competencies.standards",
+      "competencies.standards.learningObjectives",
+      "competencies.standards.learningObjectives.exercises"
+  })
+  Optional<Curriculum> findFullById(UUID id);
 }

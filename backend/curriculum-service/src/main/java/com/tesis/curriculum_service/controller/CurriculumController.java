@@ -1,5 +1,6 @@
 package com.tesis.curriculum_service.controller;
 
+import com.tesis.curriculum_service.dto.CurriculumFullResponse;
 import com.tesis.curriculum_service.dto.CurriculumRequest;
 import com.tesis.curriculum_service.dto.CurriculumResponse;
 import com.tesis.curriculum_service.exception.ErrorResponse;
@@ -56,16 +57,24 @@ public class CurriculumController {
     return ResponseEntity.ok(all);
   }
 
-  @Operation(summary = "Obtener un currículo por ID", description = "Devuelve un currículo activo por su ID.")
+  @Operation(summary = "Obtener un currículo por ID", description = "Devuelve un currículo simple o completo según el parámetro includeFull.")
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "200", description = "Currículo encontrado", content = @Content(schema = @Schema(implementation = CurriculumResponse.class))),
+      @ApiResponse(responseCode = "200", description = "Currículo encontrado", content = {
+          @Content(schema = @Schema(oneOf = { CurriculumResponse.class, CurriculumFullResponse.class }))
+      }),
       @ApiResponse(responseCode = "404", description = "Currículo no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("isAuthenticated()")
   @GetMapping("/{id}")
-  public ResponseEntity<CurriculumResponse> getById(@PathVariable UUID id) throws ResourceNotFoundException {
-    CurriculumResponse dto = curriculumService.getById(id);
-    return ResponseEntity.ok(dto);
+  public ResponseEntity<?> getCurriculum(
+      @PathVariable UUID id,
+      @RequestParam(defaultValue = "false") boolean includeFull) throws ResourceNotFoundException {
+
+    if (includeFull) {
+      return ResponseEntity.ok(curriculumService.getCurriculumFull(id));
+    } else {
+      return ResponseEntity.ok(curriculumService.getById(id));
+    }
   }
 
   @Operation(summary = "Actualizar un currículo", description = "Solo ADMIN o TEACHER pueden modificar currículos.")
@@ -106,4 +115,5 @@ public class CurriculumController {
     curriculumService.reactivate(id);
     return ResponseEntity.ok().build();
   }
+
 }

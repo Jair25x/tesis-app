@@ -1,5 +1,6 @@
 package com.tesis.curriculum_service.service;
 
+import com.tesis.curriculum_service.dto.CurriculumFullResponse;
 import com.tesis.curriculum_service.dto.CurriculumRequest;
 import com.tesis.curriculum_service.dto.CurriculumResponse;
 import com.tesis.curriculum_service.exception.ResourceNotFoundException;
@@ -62,4 +63,6 @@ public interface CurriculumService {
    * @throws ResourceNotFoundException si no existe.
    */
   void reactivate(UUID id) throws ResourceNotFoundException;
+
+  CurriculumFullResponse getCurriculumFull(UUID id);
 }
