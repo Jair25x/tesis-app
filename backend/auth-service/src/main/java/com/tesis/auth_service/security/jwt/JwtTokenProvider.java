@@ -78,8 +78,8 @@ public class JwtTokenProvider {
                 // Establece el "subject" (sujeto) del token, que es típicamente el nombre de
                 // usuario.
                 .subject(userPrincipal.getUsername())
-                // Agregamos el Id del usuario para trazabilidad
-                .claim("id", userPrincipal.getId()) 
+                // Agregamos el userId del usuario para trazabilidad
+                .claim("userId", userPrincipal.getId()) 
                 // Añade un "claim" (declaración) personalizado llamado "roles".
                 // Este claim contiene una lista de los roles del usuario.
                 .claim("roles", getRolesFromUser(userPrincipal))
