@@ -47,3 +47,21 @@ export interface CheckAnswerResponse {
   remainingHints: number;
   nextExerciseId: string | null;
 }
+
+export interface ExerciseAttemptRequest {
+  exerciseId: string; // UUID
+  correct: boolean;
+  hintsUsed: number;
+  timeSpent: number; // en milisegundos
+  submittedAnswer: string;
+}
+
+export interface ExerciseAttemptResponse {
+  id: number;
+  exerciseId: string;
+  correct: boolean;
+  hintsUsed: number;
+  timeSpent: number;
+  submittedAnswer: string;
+  attemptedAt: string; // ISO date
+}

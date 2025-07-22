@@ -37,6 +37,26 @@ import LoadingScreen from "../components/LoadingScreen";
 const AdminDashboard = lazy(() => import("../pages/admin/AdminDashboard"));
 const UserList = lazy(() => import("../pages/admin/UserList"));
 const EditUser = lazy(() => import("../pages/admin/EditUser"));
+/* Seccion de manejo de Competency */
+const CompetencyList = lazy(
+  () => import("../pages/admin/competencies/CompetencyList")
+);
+const CompetencyForm = lazy(
+  () => import("../pages/admin/competencies/CompetencyForm")
+);
+const CompetencyDetails = lazy(
+  () => import("../pages/admin/competencies/CompetencyDetails")
+);
+/* Seccion de manejo de Curriculum */
+const CurriculumList = lazy(
+  () => import("../pages/admin/curricula/CurriculumList")
+);
+const CurriculumForm = lazy(
+  () => import("../pages/admin/curricula/CurriculumForm")
+);
+const CurriculumDetails = lazy(
+  () => import("../pages/admin/curricula/CurriculumDetails")
+);
 
 export const router = createBrowserRouter([
   {
@@ -92,33 +112,88 @@ export const router = createBrowserRouter([
         path: "admin",
         element: (
           <RoleRoute roles={["ROLE_ADMIN"]}>
-            <Suspense fallback={<LoadingScreen />}>
-              <AdminDashboard />
-            </Suspense>
+            <MainLayout />
           </RoleRoute>
         ),
-      },
-      {
-        path: "admin/users",
-        element: (
-          <RoleRoute roles={["ROLE_ADMIN"]}>
-            <Suspense fallback={<LoadingScreen />}>
-              <UserList />
-            </Suspense>
-          </RoleRoute>
-        ),
-      },
-      {
-        path: "admin/users/:id",
-        element: (
-          <RoleRoute roles={["ROLE_ADMIN"]}>
-            <Suspense fallback={<LoadingScreen />}>
-              <EditUser />
-            </Suspense>
-          </RoleRoute>
-        ),
-      },
+        children: [
+          {
+            index: true,
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <AdminDashboard />
+              </Suspense>
+            ),
+          },
+          {
+            path: "users",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <UserList />
+              </Suspense>
+            ),
+          },
+          {
+            path: "users/:id",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <EditUser />
+              </Suspense>
+            ),
+          },
 
+          /* 📘 CRUD de Currículos */
+          {
+            path: "curricula",
+            element: <CurriculumList />,
+          },
+          {
+            path: "curricula/new",
+            element: <CurriculumForm />,
+          },
+          {
+            path: "curricula/:id/edit",
+            element: <CurriculumForm />,
+          },
+          {
+            path: "curricula/:id/details",
+            element: <CurriculumDetails />,
+          },
+
+          /* 📗 CRUD de Competencias por currículo */
+          {
+            path: "curricula/:curriculumId/competencies",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <CompetencyList />
+              </Suspense>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/new",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <CompetencyForm />
+              </Suspense>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/edit",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <CompetencyForm />
+              </Suspense>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/details",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <CompetencyDetails />
+              </Suspense>
+            ),
+          },
+        ],
+      },
       { path: "*", element: <NotFound /> },
     ],
   },

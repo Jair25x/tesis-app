@@ -1,4 +1,3 @@
-// src/pages/admin/AdminDashboard.tsx
 import React from "react";
 import { useUserStats } from "../../hooks/useUserStats";
 import type { LucideIcon } from "lucide-react";
@@ -42,56 +41,59 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="p-6">
-      <h1 className="text-3xl font-bold mb-8 text-center">
+    <div className="p-6 max-w-7xl mx-auto">
+      <h1 className="text-3xl font-bold text-center mb-10 text-gray-900 dark:text-white">
         📊 Panel de Administración
       </h1>
 
-      {/* Total Usuarios */}
-      <div className="flex justify-center mb-8">
-        <StatCard
-          label="Total de usuarios"
-          value={data.total}
-          Icon={Users}
-          color="text-gray-600"
-        />
-      </div>
+      {/* Total de usuarios */}
+      <section className="mb-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 justify-items-center gap-6">
+          <StatCard
+            label="Total de usuarios"
+            value={data.total}
+            Icon={Users}
+            color="text-gray-700 dark:text-white"
+          />
+          <StatCard
+            label="Usuarios activos"
+            value={data.active}
+            Icon={CheckCircle}
+            color="text-green-500"
+          />
+          <StatCard
+            label="Usuarios inactivos"
+            value={data.inactive}
+            Icon={XCircle}
+            color="text-red-500"
+          />
+        </div>
+      </section>
 
-      {/* Activos / Inactivos (espacio reducido) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 justify-items-center mb-8">
-        <StatCard
-          label="Activos"
-          value={data.active}
-          Icon={CheckCircle}
-          color="text-green-500"
-        />
-        <StatCard
-          label="Inactivos"
-          value={data.inactive}
-          Icon={XCircle}
-          color="text-red-500"
-        />
-      </div>
-
-      {/* Roles */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 justify-items-center">
-        {Object.entries(data.byRole).map(([role, count]) => {
-          const cfg = roleConfig[role] || {
-            label: role.replace("ROLE_", ""),
-            Icon: Users,
-            color: "text-gray-600",
-          };
-          return (
-            <StatCard
-              key={role}
-              label={cfg.label}
-              value={count}
-              Icon={cfg.Icon}
-              color={cfg.color}
-            />
-          );
-        })}
-      </div>
+      {/* Por roles */}
+      <section className="mt-10">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-6">
+          Usuarios por Rol
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 justify-items-center gap-6">
+          {Object.entries(data.byRole).map(([role, count]) => {
+            const cfg = roleConfig[role] || {
+              label: role.replace("ROLE_", ""),
+              Icon: Users,
+              color: "text-gray-500",
+            };
+            return (
+              <StatCard
+                key={role}
+                label={cfg.label}
+                value={count}
+                Icon={cfg.Icon}
+                color={cfg.color}
+              />
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }
@@ -105,12 +107,22 @@ interface StatCardProps {
 
 function StatCard({ label, value, Icon, color }: StatCardProps) {
   return (
-    <div className="flex flex-col items-center bg-white dark:bg-[#2d3b46] p-6 rounded-2xl shadow-lg w-48 sm:w-56 md:w-64">
-      <Icon className={`w-10 h-10 ${color} mb-2`} />
-      <div className="text-sm font-medium text-gray-500 dark:text-gray-400">
-        {label}
+    <div className="w-full max-w-xs bg-white dark:bg-[#2d3b46] shadow-lg rounded-xl p-5 transition transform hover:scale-[1.02] duration-300 ease-in-out">
+      <div className="flex items-center space-x-4">
+        <div
+          className={`rounded-full bg-opacity-10 p-3 ${color} flex items-center justify-center`}
+        >
+          <Icon className={`w-7 h-7 ${color}`} />
+        </div>
+        <div className="flex flex-col">
+          <span className="text-sm text-gray-600 dark:text-gray-300 font-medium">
+            {label}
+          </span>
+          <span className="text-2xl font-bold text-gray-900 dark:text-white">
+            {value}
+          </span>
+        </div>
       </div>
-      <div className="text-3xl font-bold mt-1">{value}</div>
     </div>
   );
 }

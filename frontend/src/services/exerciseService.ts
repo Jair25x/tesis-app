@@ -3,6 +3,8 @@ import type {
   ExerciseResponse,
   CheckAnswerRequest,
   CheckAnswerResponse,
+  ExerciseAttemptRequest,
+  ExerciseAttemptResponse,
 } from "../types/ExerciseResponse";
 
 /** Devuelve lista completa del OA */
@@ -33,5 +35,26 @@ export const checkAnswer = async (
     `/standards/${standardId}/learning-objectives/${learningObjectiveId}` +
     `/exercises/${exerciseId}/check`;
   const { data } = await api.post<CheckAnswerResponse>(url, payload);
+  return data;
+};
+
+/** Envía el intento de ejercicio al backend */
+export const submitExerciseAttempt = async (
+  payload: ExerciseAttemptRequest
+): Promise<ExerciseAttemptResponse> => {
+  const { data } = await api.post<ExerciseAttemptResponse>(
+    "/curricula/attempts",
+    payload
+  );
+  return data;
+};
+
+/** Obtiene los intentos anteriores del usuario para un ejercicio */
+export const getAttemptsByExercise = async (
+  exerciseId: string
+): Promise<ExerciseAttemptResponse[]> => {
+  const { data } = await api.get<ExerciseAttemptResponse[]>(
+    `/curricula/attempts/exercise/${exerciseId}`
+  );
   return data;
 };
