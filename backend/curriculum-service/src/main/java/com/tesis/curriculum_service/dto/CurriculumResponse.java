@@ -1,17 +1,11 @@
 package com.tesis.curriculum_service.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.*;
+
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-/**
- * DTO de salida para representar un Currículo.
- */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -42,4 +36,16 @@ public class CurriculumResponse {
 
   @Schema(description = "Indica si el currículo está activo")
   private Boolean active;
+
+  @Schema(description = "Usuario que creó el currículo", example = "admin")
+  private String createdBy;
+
+  @Schema(description = "Usuario que actualizó por última vez el currículo", example = "admin")
+  private String updatedBy;
+
+  @Schema(description = "Usuario que eliminó (lógicamente) el currículo, si aplica", example = "admin")
+  private String deletedBy;
+
+  @Schema(description = "Fecha de eliminación lógica, si aplica")
+  private LocalDateTime deletedAt;
 }

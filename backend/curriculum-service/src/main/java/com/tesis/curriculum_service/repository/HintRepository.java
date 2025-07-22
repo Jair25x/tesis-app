@@ -12,19 +12,65 @@ import java.util.UUID;
 
 /**
  * Repositorio JPA para la entidad {@link Hint}.
- * Proporciona métodos CRUD básicos y consultas específicas
- * para trabajar con las pistas asociadas a un ejercicio.
+ * Proporciona métodos CRUD, soft-delete y consultas específicas
+ * usando SQL nativo para mayor control.
  */
 @Repository
 public interface HintRepository extends JpaRepository<Hint, UUID> {
 
-  // Solo las pistas activas, ordenadas por coste asc (ajusta si prefieres otro
-  // criterio)
-  List<Hint> findByExerciseIdOrderByCostAsc(UUID exerciseId);
+  /**
+   * Lista todas las pistas activas para un ejercicio, ordenadas por costo
+   * ascendente.
+   */
+  @Query(value = """
+      SELECT * FROM hints
+      WHERE exercise_id = :exerciseId
+        AND active = true
+      ORDER BY cost ASC
+      """, nativeQuery = true)
+  List<Hint> findActiveByExerciseId(@Param("exerciseId") UUID exerciseId);
 
-  Optional<Hint> findByIdAndExerciseId(UUID id, UUID exerciseId);
+  /**
+   * Lista todas las pistas (activas e inactivas) de un ejercicio (para vista
+   * administrativa).
+   */
+  @Query(value = """
+      SELECT * FROM hints
+      WHERE exercise_id = :exerciseId
+      ORDER BY cost ASC
+      """, nativeQuery = true)
+  List<Hint> findAllByExerciseId(@Param("exerciseId") UUID exerciseId);
 
-  /** Permite traer una pista incluso si está inactiva (para reactivate) */
-  @Query("SELECT h FROM Hint h WHERE h.id = :id")
+  /**
+   * Recupera una pista activa por su ID y el ID del ejercicio.
+   */
+  @Query(value = """
+      SELECT * FROM hints
+      WHERE id = :id
+        AND exercise_id = :exerciseId
+        AND active = true
+      """, nativeQuery = true)
+  Optional<Hint> findByIdAndExerciseId(@Param("id") UUID id, @Param("exerciseId") UUID exerciseId);
+
+  /**
+   * Recupera una pista sin importar si está activa o no.
+   * Útil para operaciones de reactivación o vista administrativa.
+   */
+  @Query(value = """
+      SELECT * FROM hints
+      WHERE id = :id
+      """, nativeQuery = true)
   Optional<Hint> findByIdIncludingInactive(@Param("id") UUID id);
+
+  /**
+   * Borra todas las pistas asociadas a un ejercicio (borrado manual en cascada si
+   * se necesita).
+   * Este método es útil si quieres borrar huérfanos en cascada sin depender solo
+   * de JPA.
+   */
+  @Query(value = """
+      DELETE FROM hints
+      WHERE exercise_id = :exerciseId
+      """, nativeQuery = true)
+  void deleteAllByExerciseId(@Param("exerciseId") UUID exerciseId);
 }

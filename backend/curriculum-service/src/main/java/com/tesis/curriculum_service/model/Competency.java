@@ -1,12 +1,12 @@
 // src/main/java/com/tesis/curriculum_service/model/Competency.java
 package com.tesis.curriculum_service.model;
 
+import com.tesis.curriculum_service.model.base.AuditableEntity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
-import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -15,7 +15,7 @@ import java.util.UUID;
  * Entidad JPA que representa una Competencia dentro de un Currículo.
  *
  * - Soft-delete: marca active=false y registra deletedAt.
- * - @SQLRestriction filtra solo activas en cada SELECT.
+ * - Hereda auditoría automática desde AuditableEntity.
  */
 @Entity
 @Table(name = "competencies")
@@ -28,7 +28,7 @@ import java.util.UUID;
 @Builder
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @ToString(onlyExplicitlyIncluded = true)
-public class Competency {
+public class Competency extends AuditableEntity {
 
   /** UUID generado automáticamente como clave primaria. */
   @Id
@@ -51,26 +51,14 @@ public class Competency {
   @Column(nullable = false, columnDefinition = "TEXT", length = 1000)
   private String description;
 
-  /** Soft-delete flag. */
+  /** Estado lógico (soft delete). */
   @Column(nullable = false)
   @Builder.Default
   private Boolean active = true;
 
-  /** Fecha y hora de creación (no actualizable). */
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private LocalDateTime createdAt;
-
-  /** Fecha y hora de última actualización. */
-  @Column(name = "updated_at", nullable = false)
-  private LocalDateTime updatedAt;
-
-  /** Fecha y hora de borrado lógico. */
-  @Column(name = "deleted_at")
-  private LocalDateTime deletedAt;
-
   /**
    * Relación Many-To-One con Curriculum.
-   * Fetch LAZY para no cargar siempre el padre.
+   * Fetch LAZY para eficiencia.
    */
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "curriculum_id", nullable = false)
@@ -78,25 +66,22 @@ public class Competency {
 
   /**
    * Relación One-To-Many con Standard.
-   * orphanRemoval si eliminas la entidad de la colección.
-   * Cascade ALL para propagar persistencia y borrado lógico en cada hijo.
+   * orphanRemoval y cascade garantizan sincronización total.
    */
   @OneToMany(mappedBy = "competency", cascade = CascadeType.ALL, orphanRemoval = true)
   @Builder.Default
   private Set<Standard> standards = new HashSet<>();
 
   @PrePersist
-  protected void onCreate() {
-    LocalDateTime now = LocalDateTime.now();
-    this.createdAt = now;
-    this.updatedAt = now;
+  protected void onCreateEntity() {
+    super.onCreate(); // timestamps automáticos
     if (this.active == null) {
       this.active = true;
     }
   }
 
   @PreUpdate
-  protected void onUpdate() {
-    this.updatedAt = LocalDateTime.now();
+  protected void onUpdateEntity() {
+    super.onUpdate();
   }
 }

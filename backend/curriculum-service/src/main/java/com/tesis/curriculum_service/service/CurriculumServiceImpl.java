@@ -3,13 +3,17 @@ package com.tesis.curriculum_service.service;
 import com.tesis.curriculum_service.dto.CurriculumFullResponse;
 import com.tesis.curriculum_service.dto.CurriculumRequest;
 import com.tesis.curriculum_service.dto.CurriculumResponse;
+import com.tesis.curriculum_service.exception.BadRequestException;
 import com.tesis.curriculum_service.exception.ResourceNotFoundException;
 import com.tesis.curriculum_service.model.Curriculum;
 import com.tesis.curriculum_service.repository.CurriculumRepository;
+import com.tesis.curriculum_service.util.SecurityUtils;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -42,14 +46,45 @@ public class CurriculumServiceImpl implements CurriculumService {
   }
 
   /**
-   * Recupera todos los currículos activos.
+   * Recupera todos los currículos activos e inactivas.
    */
+  public List<CurriculumResponse> getAll(String filter) {
+    List<Curriculum> list;
+
+    switch (filter.toLowerCase()) {
+      case "active" -> list = repository.findAllActive();
+      case "inactive" -> list = repository.findAllInactive();
+      default -> list = repository.findAllIncludingInactive(); // incluye todos
+    }
+
+    return list.stream()
+        .sorted(Comparator.comparing(Curriculum::getActive).reversed()) // activos primero
+        .map(this::toDto)
+        .toList();
+  }
+
   @Override
   @Transactional(readOnly = true)
-  public List<CurriculumResponse> getAll() {
-    return repository.findAll().stream()
+  public List<CurriculumResponse> getAllIncludingInactive() {
+    return repository.findAllIncludingInactive().stream()
         .map(this::toDto)
-        .collect(Collectors.toList());
+        .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<CurriculumResponse> getAllActive() {
+    return repository.findAllActive().stream()
+        .map(this::toDto)
+        .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<CurriculumResponse> getAllInactive() {
+    return repository.findAllInactive().stream()
+        .map(this::toDto)
+        .toList();
   }
 
   /**
@@ -88,23 +123,32 @@ public class CurriculumServiceImpl implements CurriculumService {
   @Override
   @Transactional
   public void delete(UUID id) {
-    Curriculum entity = repository.findById(id)
+    Curriculum entity = repository.findIncludingInactiveById(id)
         .orElseThrow(() -> new ResourceNotFoundException("Curriculum", "id", id));
-    repository.delete(entity); // aplica soft-delete @SQLDelete
+
+    // Asignar el usuario que realiza la eliminación lógica
+    entity.setDeletedBy(SecurityUtils.getCurrentUsername().orElse("system"));
+
+    // Guardamos el estado con deletedBy antes de ejecutar el soft-delete
+    repository.save(entity);
+
+    // Ejecuta el @SQLDelete → active = false, deleted_at = now
+    repository.delete(entity);
   }
 
   @Override
   @Transactional
   public void reactivate(UUID id) {
-    // 1) Recupera incluso los soft-deleted (puedes usar tu repositorio o un método
-    // custom)
-    Curriculum entity = repository.findById(id)
+    Curriculum curriculum = repository.findIncludingInactiveById(id)
         .orElseThrow(() -> new ResourceNotFoundException("Curriculum", "id", id));
-    // 2) Reactiva el registro
-    entity.setActive(true);
-    entity.setDeletedAt(null);
-    // 3) Persiste el cambio
-    repository.save(entity);
+
+    if (Boolean.TRUE.equals(curriculum.getActive())) {
+      throw new BadRequestException("El currículo ya está activo.");
+    }
+
+    curriculum.setActive(true);
+    curriculum.setDeletedAt(null);
+    repository.save(curriculum); // Actualiza estado
   }
 
   @Override
@@ -144,7 +188,6 @@ public class CurriculumServiceImpl implements CurriculumService {
         .build();
   }
 
-
   // ——————————————————————————————————————————————————————————————
   // Mapeo interno: entidad → DTO
   // ——————————————————————————————————————————————————————————————
@@ -158,6 +201,10 @@ public class CurriculumServiceImpl implements CurriculumService {
         .createdAt(c.getCreatedAt())
         .updatedAt(c.getUpdatedAt())
         .active(c.getActive())
+        .createdBy(c.getCreatedBy())
+        .updatedBy(c.getUpdatedBy())
+        .deletedBy(c.getDeletedBy())
+        .deletedAt(c.getDeletedAt())
         .build();
   }
 }

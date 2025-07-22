@@ -13,41 +13,67 @@ import java.util.UUID;
 
 /**
  * Repositorio JPA para la entidad {@link Competency}.
- * Proporciona métodos CRUD básicos y consultas
- * específicas para trabajar con competencias dentro de un currículo.
+ * Implementado exclusivamente con native queries para evitar conflictos con
+ * soft delete.
  */
 @Repository
 public interface CompetencyRepository extends JpaRepository<Competency, UUID> {
 
   /**
-   * Recupera todas las competencias pertenecientes a un currículo dado.
-   *
-   * @param curriculumId UUID del currículo padre
-   * @return Lista de competencias asociadas al currículo
+   * Recupera todas las competencias (activos e inactivos) de un currículo.
    */
-  List<Competency> findByCurriculumId(UUID curriculumId);
+  @Query(value = """
+        SELECT * FROM competencies
+         WHERE curriculum_id = :curriculumId
+         ORDER BY created_at DESC
+      """, nativeQuery = true)
+  List<Competency> findAllByCurriculumId(@Param("curriculumId") UUID curriculumId);
 
   /**
-   * Recupera una competencia por su ID y el ID de su currículo padre.
-   * Esto garantiza que al buscar por competencia también validamos
-   * que pertenezca al currículo correcto.
-   *
-   * @param id           UUID de la competencia
-   * @param curriculumId UUID del currículo padre
-   * @return Optional con la competencia si existe y pertenece al currículo
+   * Recupera todas las competencias activas de un currículo.
    */
-  Optional<Competency> findByIdAndCurriculumId(UUID id, UUID curriculumId);
+  @Query(value = """
+        SELECT * FROM competencies
+         WHERE curriculum_id = :curriculumId
+           AND active = true
+         ORDER BY created_at DESC
+      """, nativeQuery = true)
+  List<Competency> findActiveByCurriculumId(@Param("curriculumId") UUID curriculumId);
 
   /**
-   * Trae incluso los soft-deleted (active=false) para poder reactivar.
+   * Recupera todas las competencias inactivas de un currículo.
    */
-  @Query("""
-        SELECT c
-          FROM Competency c
-         WHERE c.id = :id
-           AND c.curriculum.id = :curriculumId
-      """)
+  @Query(value = """
+        SELECT * FROM competencies
+         WHERE curriculum_id = :curriculumId
+           AND active = false
+         ORDER BY created_at DESC
+      """, nativeQuery = true)
+  List<Competency> findInactiveByCurriculumId(@Param("curriculumId") UUID curriculumId);
+
+  /**
+   * Recupera una competencia específica (activa o no) por ID y curriculumId.
+   */
+  @Query(value = """
+        SELECT * FROM competencies
+         WHERE id = :id
+           AND curriculum_id = :curriculumId
+      """, nativeQuery = true)
   Optional<Competency> findIncludingInactiveByIdAndCurriculumId(
       @Param("id") UUID id,
       @Param("curriculumId") UUID curriculumId);
+
+  /**
+   * Recupera una competencia activa por ID y curriculumId.
+   */
+  @Query(value = """
+        SELECT * FROM competencies
+         WHERE id = :id
+           AND curriculum_id = :curriculumId
+           AND active = true
+      """, nativeQuery = true)
+  Optional<Competency> findActiveByIdAndCurriculumId(
+      @Param("id") UUID id,
+      @Param("curriculumId") UUID curriculumId);
+
 }

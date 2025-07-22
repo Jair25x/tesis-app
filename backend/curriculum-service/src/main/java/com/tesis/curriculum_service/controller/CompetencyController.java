@@ -46,11 +46,17 @@ public class CompetencyController {
       @ApiResponse(responseCode = "404", description = "Currículo no encontrado"),
       @ApiResponse(responseCode = "403", description = "Acceso denegado")
   })
-  @PreAuthorize("isAuthenticated()")
   @GetMapping
+  @PreAuthorize("isAuthenticated()")
   public ResponseEntity<List<CompetencyResponse>> list(
-      @PathVariable UUID curriculumId) {
-    return ResponseEntity.ok(service.getAllByCurriculum(curriculumId));
+      @PathVariable UUID curriculumId,
+      @RequestParam(name = "status", defaultValue = "active") String status) {
+    return switch (status.toLowerCase()) {
+      case "all" -> ResponseEntity.ok(service.getAllIncludingInactiveByCurriculum(curriculumId));
+      case "inactive" -> ResponseEntity.ok(service.getAllInactiveByCurriculum(curriculumId));
+      case "active" -> ResponseEntity.ok(service.getAllByCurriculum(curriculumId));
+      default -> ResponseEntity.badRequest().build(); // Manejo de error si el status no es válido
+    };
   }
 
   @Operation(summary = "Obtener una competencia por ID")
@@ -88,7 +94,7 @@ public class CompetencyController {
       @ApiResponse(responseCode = "404", description = "Competencia o currículo no encontrado"),
       @ApiResponse(responseCode = "403", description = "Acceso denegado")
   })
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> delete(
       @PathVariable UUID curriculumId,
@@ -103,7 +109,7 @@ public class CompetencyController {
       @ApiResponse(responseCode = "404", description = "Competencia o currículo no encontrado"),
       @ApiResponse(responseCode = "403", description = "Acceso denegado")
   })
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
   @PatchMapping("/{id}/reactivate")
   public ResponseEntity<Void> reactivate(
       @PathVariable UUID curriculumId,

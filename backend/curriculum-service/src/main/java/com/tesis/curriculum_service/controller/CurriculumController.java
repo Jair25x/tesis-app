@@ -46,15 +46,22 @@ public class CurriculumController {
     return ResponseEntity.status(HttpStatus.CREATED).body(created);
   }
 
-  @Operation(summary = "Listar todos los currículos activos", description = "Cualquier usuario autenticado puede acceder.")
+  @Operation(summary = "Listar currículos por estado", description = "Permite listar currículos activos, inactivos o todos. Por defecto se listan todos.")
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "200", description = "Lista de currículos activos", content = @Content(array = @ArraySchema(schema = @Schema(implementation = CurriculumResponse.class))))
+      @ApiResponse(responseCode = "200", description = "Lista de currículos encontrados", content = @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = CurriculumResponse.class)))),
+      @ApiResponse(responseCode = "403", description = "Acceso denegado: el usuario no está autenticado o no tiene permisos", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("isAuthenticated()")
   @GetMapping
-  public ResponseEntity<List<CurriculumResponse>> listAll() {
-    List<CurriculumResponse> all = curriculumService.getAll();
-    return ResponseEntity.ok(all);
+  public ResponseEntity<List<CurriculumResponse>> listAll(
+      @RequestParam(name = "status", defaultValue = "all") String status) {
+    List<CurriculumResponse> result = switch (status.toLowerCase()) {
+      case "active" -> curriculumService.getAllActive();
+      case "inactive" -> curriculumService.getAllInactive();
+      default -> curriculumService.getAllIncludingInactive();
+    };
+
+    return ResponseEntity.ok(result);
   }
 
   @Operation(summary = "Obtener un currículo por ID", description = "Devuelve un currículo simple o completo según el parámetro includeFull.")

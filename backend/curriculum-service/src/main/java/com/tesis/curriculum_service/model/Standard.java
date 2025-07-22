@@ -1,12 +1,12 @@
 // src/main/java/com/tesis/curriculum_service/model/Standard.java
 package com.tesis.curriculum_service.model;
 
+import com.tesis.curriculum_service.model.base.AuditableEntity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
-import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -15,8 +15,8 @@ import java.util.UUID;
  * Entidad JPA que representa un Estándar de aprendizaje dentro de una
  * Competencia.
  *
- * - Soft-delete: al borrar marca active=false y registra deletedAt.
- * - @SQLRestriction filtra solo los registros activos en SELECTs.
+ * - Soporta soft-delete con @SQLDelete y @SQLRestriction.
+ * - Hereda campos de auditoría de AuditableEntity.
  */
 @Entity
 @Table(name = "standards")
@@ -27,9 +27,9 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@EqualsAndHashCode(onlyExplicitlyIncluded = true, callSuper = false)
 @ToString(onlyExplicitlyIncluded = true)
-public class Standard {
+public class Standard extends AuditableEntity {
 
   /** UUID autogenerado como clave primaria. */
   @Id
@@ -38,62 +38,46 @@ public class Standard {
   @EqualsAndHashCode.Include
   private UUID id;
 
-  /** Código único (ej. "S.01.01"). */
+  /** Código único del estándar (ej. "S.01.01"). */
   @Column(name = "code", nullable = false, unique = true, length = 50)
   @ToString.Include
   private String code;
 
-  /** Nombre o título breve del estándar. */
+  /** Nombre o título del estándar. */
   @Column(name = "name", nullable = false, length = 500)
   @ToString.Include
   private String name;
 
-  /** Descripción detallada (opcional). */
+  /** Descripción opcional y detallada. */
   @Column(name = "description", columnDefinition = "TEXT")
   private String description;
 
-  /** Soft-delete flag. */
+  /** Flag de borrado lógico. */
   @Column(name = "active", nullable = false)
   @Builder.Default
   private Boolean active = true;
 
-  /** Timestamp de creación (no actualizable). */
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private LocalDateTime createdAt;
-
-  /** Timestamp de última modificación. */
-  @Column(name = "updated_at", nullable = false)
-  private LocalDateTime updatedAt;
-
-  /** Timestamp de borrado lógico. */
-  @Column(name = "deleted_at")
-  private LocalDateTime deletedAt;
-
-  /** Cada Estándar pertenece a una Competencia. */
+  /** Relación con Competency (muchos a uno). */
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "competency_id", nullable = false)
   private Competency competency;
 
-  /**
-   * Un Estándar puede tener múltiples LearningObjectives.
-   * Cascade ALL + orphanRemoval para gestionar la colección.
-   */
+  /** Lista de objetivos de aprendizaje asociados. */
   @OneToMany(mappedBy = "standard", cascade = CascadeType.ALL, orphanRemoval = true)
   @Builder.Default
   private Set<LearningObjective> learningObjectives = new HashSet<>();
 
+  /** Hook de creación: asegura `active=true` por defecto si es null. */
   @PrePersist
-  protected void onCreate() {
-    LocalDateTime now = LocalDateTime.now();
-    this.createdAt = now;
-    this.updatedAt = now;
-    if (this.active == null) {
+  protected void prePersist() {
+    super.onCreate();
+    if (this.active == null)
       this.active = true;
-    }
   }
 
+  /** Hook de actualización: actualiza el timestamp. */
   @PreUpdate
-  protected void onUpdate() {
-    this.updatedAt = LocalDateTime.now();
+  protected void preUpdate() {
+    super.onUpdate();
   }
 }

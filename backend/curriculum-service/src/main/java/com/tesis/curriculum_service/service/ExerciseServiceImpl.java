@@ -36,13 +36,12 @@ public class ExerciseServiceImpl implements ExerciseService {
 
   @Override
   @Transactional
-  public ExerciseResponse create(UUID loId, ExerciseRequest req) {
+  public ExerciseResponse create(UUID curriculumId, UUID competencyId, UUID standardId,
+      UUID learningObjectiveId, ExerciseRequest req) {
 
-    LearningObjective lo = loRepo.findById(loId)
-        .orElseThrow(() -> new ResourceNotFoundException("LearningObjective", "id", loId));
+    LearningObjective lo = validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
 
     validateParameters(req.getTemplateType(), req.getParameters());
-
     String stmt = renderStatement(req.getStatement(), req.getTemplateType(), req.getParameters());
 
     Exercise ex = Exercise.builder()
@@ -51,7 +50,6 @@ public class ExerciseServiceImpl implements ExerciseService {
         .type(req.getType())
         .templateType(req.getTemplateType())
         .parameters(req.getParameters())
-        /* NUEVO */
         .correctAnswer(req.getCorrectAnswer())
         .learningObjective(lo)
         .build();
@@ -61,11 +59,12 @@ public class ExerciseServiceImpl implements ExerciseService {
 
   @Override
   @Transactional(readOnly = true)
-  public List<ExerciseResponse> getAllByLearningObjective(UUID loId) {
-    if (!loRepo.existsById(loId)) {
-      throw new ResourceNotFoundException("LearningObjective", "id", loId);
-    }
-    return exerciseRepo.findByLearningObjectiveId(loId)
+  public List<ExerciseResponse> getAllByLearningObjective(UUID curriculumId, UUID competencyId,
+      UUID standardId, UUID learningObjectiveId) {
+
+    validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
+
+    return exerciseRepo.findByLearningObjectiveId(learningObjectiveId)
         .stream()
         .map(this::toDto)
         .collect(Collectors.toList());
@@ -73,21 +72,28 @@ public class ExerciseServiceImpl implements ExerciseService {
 
   @Override
   @Transactional(readOnly = true)
-  public ExerciseResponse getById(UUID loId, UUID id) {
-    Exercise ex = exerciseRepo.findByIdAndLearningObjectiveId(id, loId)
-        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", id));
+  public ExerciseResponse getById(UUID curriculumId, UUID competencyId, UUID standardId,
+      UUID learningObjectiveId, UUID exerciseId) {
+
+    Exercise ex = exerciseRepo.findByIdAndLearningObjectiveId(exerciseId, learningObjectiveId)
+        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
+
+    validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
+
     return toDto(ex);
   }
 
   @Override
   @Transactional
-  public ExerciseResponse update(UUID loId, UUID id, ExerciseRequest req) {
+  public ExerciseResponse update(UUID curriculumId, UUID competencyId, UUID standardId,
+      UUID learningObjectiveId, UUID exerciseId, ExerciseRequest req) {
 
-    Exercise ex = exerciseRepo.findByIdAndLearningObjectiveId(id, loId)
-        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", id));
+    Exercise ex = exerciseRepo.findByIdAndLearningObjectiveId(exerciseId, learningObjectiveId)
+        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
+
+    validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
 
     validateParameters(req.getTemplateType(), req.getParameters());
-
     String stmt = renderStatement(req.getStatement(), req.getTemplateType(), req.getParameters());
 
     ex.setStatement(stmt);
@@ -95,7 +101,6 @@ public class ExerciseServiceImpl implements ExerciseService {
     ex.setType(req.getType());
     ex.setTemplateType(req.getTemplateType());
     ex.setParameters(req.getParameters());
-    /* NUEVO */
     ex.setCorrectAnswer(req.getCorrectAnswer());
 
     return toDto(exerciseRepo.save(ex));
@@ -103,21 +108,30 @@ public class ExerciseServiceImpl implements ExerciseService {
 
   @Override
   @Transactional
-  public void delete(UUID loId, UUID id) {
-    Exercise ex = exerciseRepo.findByIdAndLearningObjectiveId(id, loId)
-        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", id));
-    exerciseRepo.delete(ex); // soft‑delete por @SQLDelete
+  public void delete(UUID curriculumId, UUID competencyId, UUID standardId,
+      UUID learningObjectiveId, UUID exerciseId) {
+
+    Exercise ex = exerciseRepo.findByIdAndLearningObjectiveId(exerciseId, learningObjectiveId)
+        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
+
+    validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
+
+    exerciseRepo.delete(ex);
   }
 
   @Override
   @Transactional
-  public void reactivate(UUID loId, UUID id) {
-    Exercise ex = exerciseRepo.findByIdIncludingInactive(id)
-        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", id));
+  public void reactivate(UUID curriculumId, UUID competencyId, UUID standardId,
+      UUID learningObjectiveId, UUID exerciseId) {
 
-    if (!ex.getLearningObjective().getId().equals(loId)) {
-      throw new ResourceNotFoundException("Exercise", "id", id);
+    Exercise ex = exerciseRepo.findByIdIncludingInactive(exerciseId)
+        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
+
+    if (!ex.getLearningObjective().getId().equals(learningObjectiveId)) {
+      throw new ResourceNotFoundException("Exercise", "id", exerciseId);
     }
+
+    validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
 
     ex.setActive(true);
     ex.setDeletedAt(null);
@@ -125,22 +139,44 @@ public class ExerciseServiceImpl implements ExerciseService {
     exerciseRepo.save(ex);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public List<ExerciseResponse> getAllByLearningObjectiveInactive(UUID curriculumId, UUID competencyId,
+      UUID standardId, UUID learningObjectiveId) {
+
+    validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
+
+    return exerciseRepo.findInactiveByLearningObjectiveId(learningObjectiveId)
+        .stream()
+        .map(this::toDto)
+        .collect(Collectors.toList());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<ExerciseResponse> getAllByLearningObjectiveIncludingInactive(UUID curriculumId, UUID competencyId,
+      UUID standardId, UUID learningObjectiveId) {
+
+    validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
+
+    return exerciseRepo.findIncludingInactiveByLearningObjectiveId(learningObjectiveId)
+        .stream()
+        .map(this::toDto)
+        .collect(Collectors.toList());
+  }
+
   /* ──────────────────────── CHECK ANSWER ───────────────────────── */
 
   @Override
   @Transactional(readOnly = true)
-  public CheckAnswerResponse checkAnswer(
-      UUID curriculumId,
-      UUID competencyId,
-      UUID standardId,
-      UUID learningObjectiveId,
-      UUID exerciseId,
+  public CheckAnswerResponse checkAnswer(UUID curriculumId, UUID competencyId, UUID standardId,
+      UUID learningObjectiveId, UUID exerciseId,
       CheckAnswerRequest request) {
 
-    Exercise exercise = exerciseRepo.findById(exerciseId)
+    Exercise exercise = exerciseRepo.findByIdAndLearningObjectiveId(exerciseId, learningObjectiveId)
         .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
 
-    // (Aquí podrías verificar toda la jerarquía, si lo deseas)
+    validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
 
     String expected = Optional.ofNullable(exercise.getCorrectAnswer()).orElse("").trim();
     String given = Optional.ofNullable(request.getStudentAnswer()).orElse("").trim();
@@ -151,12 +187,33 @@ public class ExerciseServiceImpl implements ExerciseService {
         .correct(ok)
         .feedback(ok ? "✅ ¡Muy bien!" : "❌ Intenta otra vez")
         .xpAwarded(ok ? 10 : 0)
-        .remainingHints(3) // TODO: lógica real por usuario/sesión
-        .nextExerciseId(null) // TODO: buscar siguiente ejercicio
+        .remainingHints(3)
+        .nextExerciseId(null)
         .build();
   }
 
-  /* ────────────────────── Helpers de validación/render ────────────────── */
+  /* ────────────────────── Validación de jerarquía ───────────────────── */
+
+  private LearningObjective validateHierarchy(UUID curriculumId, UUID competencyId,
+      UUID standardId, UUID learningObjectiveId) {
+
+    LearningObjective lo = loRepo.findByIdWithFullHierarchy(learningObjectiveId)
+        .orElseThrow(() -> new ResourceNotFoundException("LearningObjective", "id", learningObjectiveId));
+
+    var std = lo.getStandard();
+    var comp = std.getCompetency();
+    var cur = comp.getCurriculum();
+
+    if (!std.getId().equals(standardId)
+        || !comp.getId().equals(competencyId)
+        || !cur.getId().equals(curriculumId)) {
+      throw new ResourceNotFoundException("LearningObjective", "id", learningObjectiveId);
+    }
+
+    return lo;
+  }
+
+  /* ────────────────────── Helpers Mustache / Validación ───────────────── */
 
   private void validateParameters(TemplateType tplType, Map<String, Object> params) {
     if (tplType == null)
@@ -201,6 +258,7 @@ public class ExerciseServiceImpl implements ExerciseService {
         .orElseThrow(() -> new IllegalArgumentException("Plantilla no encontrada: " + tplType));
 
     Mustache m = mustacheFactory.compile(new StringReader(schema.getPattern()), tplType.name());
+
     try (StringWriter w = new StringWriter()) {
       m.execute(w, params).flush();
       return w.toString();
@@ -209,10 +267,9 @@ public class ExerciseServiceImpl implements ExerciseService {
     }
   }
 
-  /* ────────────────────────── DTO mapping ────────────────────────────── */
+  /* ────────────────────── DTO Mapper ───────────────────── */
 
   private ExerciseResponse toDto(Exercise e) {
-
     var lo = e.getLearningObjective();
     var std = lo.getStandard();
     var comp = std.getCompetency();
@@ -225,6 +282,7 @@ public class ExerciseServiceImpl implements ExerciseService {
         .type(e.getType())
         .templateType(e.getTemplateType())
         .parameters(e.getParameters())
+        .correctAnswer(e.getCorrectAnswer())
         .learningObjectiveId(lo.getId())
         .learningObjectiveName(lo.getName())
         .standardId(std.getId())
@@ -232,8 +290,7 @@ public class ExerciseServiceImpl implements ExerciseService {
         .competencyId(comp.getId())
         .competencyName(comp.getName())
         .curriculumId(cur.getId())
-        .solutionSteps(e.getSolutionSteps()
-            .stream()
+        .solutionSteps(e.getSolutionSteps().stream()
             .sorted(Comparator.comparingInt(s -> s.getStepNumber()))
             .map(ss -> SolutionStepResponse.builder()
                 .id(ss.getId())
@@ -243,8 +300,7 @@ public class ExerciseServiceImpl implements ExerciseService {
                 .updatedAt(ss.getUpdatedAt())
                 .build())
             .collect(Collectors.toList()))
-        .hints(e.getHints()
-            .stream()
+        .hints(e.getHints().stream()
             .map(h -> HintResponse.builder()
                 .id(h.getId())
                 .hintText(h.getHintText())
@@ -259,11 +315,10 @@ public class ExerciseServiceImpl implements ExerciseService {
         .build();
   }
 
-  /* ─────────── Mensajes de error helper (solo legibilidad) ───────────── */
+  /* ─────── Helpers para mensajes de error ─────── */
 
   private String paramTypeErr(FieldDescriptor fd, Object raw) {
-    return "Parámetro '" + fd.getName() + "' debe ser " + fd.getType() +
-        ", no " + raw.getClass().getSimpleName();
+    return "Parámetro '" + fd.getName() + "' debe ser " + fd.getType() + ", no " + raw.getClass().getSimpleName();
   }
 
   private String minErr(FieldDescriptor fd, double v) {

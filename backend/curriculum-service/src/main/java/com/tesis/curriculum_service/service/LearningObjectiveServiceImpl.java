@@ -21,8 +21,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Implementación de {@link LearningObjectiveService} usando JPA.
- * Incluye validación jerárquica Curriculum ➜ Competency ➜ Standard.
+ * Implementación de {@link LearningObjectiveService}.
+ * Gestiona los objetivos de aprendizaje con validación de jerarquía completa.
  */
 @Service
 @RequiredArgsConstructor
@@ -38,27 +38,11 @@ public class LearningObjectiveServiceImpl implements LearningObjectiveService {
    *-----------------------------------------------------*/
   @Override
   @Transactional
-  public LearningObjectiveResponse create(UUID curriculumId,
-      UUID competencyId,
-      UUID standardId,
-      LearningObjectiveRequest req)
-      throws ResourceNotFoundException {
+  public LearningObjectiveResponse create(UUID curriculumId, UUID competencyId, UUID standardId,
+      LearningObjectiveRequest req) throws ResourceNotFoundException {
 
-    // 1) Curriculum
-    Curriculum curriculum = curriculumRepo.findById(curriculumId)
-        .orElseThrow(() -> new ResourceNotFoundException("Curriculum", "id", curriculumId));
+    Standard std = validateHierarchy(curriculumId, competencyId, standardId);
 
-    // 2) Competency dentro del Curriculum
-    Competency comp = compRepo.findById(competencyId)
-        .filter(c -> c.getCurriculum().getId().equals(curriculum.getId()))
-        .orElseThrow(() -> new ResourceNotFoundException("Competency", "id", competencyId));
-
-    // 3) Standard dentro de la Competency
-    Standard std = standardRepo.findById(standardId)
-        .filter(s -> s.getCompetency().getId().equals(comp.getId()))
-        .orElseThrow(() -> new ResourceNotFoundException("Standard", "id", standardId));
-
-    // 4) Persistimos el LearningObjective
     LearningObjective lo = LearningObjective.builder()
         .name(req.getName())
         .description(req.getDescription())
@@ -70,18 +54,16 @@ public class LearningObjectiveServiceImpl implements LearningObjectiveService {
   }
 
   /*-------------------------------------------------------
-   * READ – list & get
+   * READ – List & Get
    *-----------------------------------------------------*/
   @Override
   @Transactional(readOnly = true)
-  public List<LearningObjectiveResponse> getAllByStandard(UUID curriculumId,
-      UUID competencyId,
-      UUID standardId)
+  public List<LearningObjectiveResponse> getAllByStandard(UUID curriculumId, UUID competencyId, UUID standardId)
       throws ResourceNotFoundException {
 
     validateHierarchy(curriculumId, competencyId, standardId);
 
-    return loRepo.findByStandardId(standardId)
+    return loRepo.findActiveByStandardId(standardId)
         .stream()
         .map(this::toDto)
         .collect(Collectors.toList());
@@ -89,10 +71,33 @@ public class LearningObjectiveServiceImpl implements LearningObjectiveService {
 
   @Override
   @Transactional(readOnly = true)
-  public LearningObjectiveResponse getById(UUID curriculumId,
-      UUID competencyId,
-      UUID standardId,
-      UUID id)
+  public List<LearningObjectiveResponse> getAllInactive(UUID curriculumId, UUID competencyId, UUID standardId)
+      throws ResourceNotFoundException {
+
+    validateHierarchy(curriculumId, competencyId, standardId);
+
+    return loRepo.findInactiveByStandardId(standardId)
+        .stream()
+        .map(this::toDto)
+        .collect(Collectors.toList());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<LearningObjectiveResponse> getAllIncludingInactive(UUID curriculumId, UUID competencyId, UUID standardId)
+      throws ResourceNotFoundException {
+
+    validateHierarchy(curriculumId, competencyId, standardId);
+
+    return loRepo.findAllByStandardIdIncludingInactive(standardId)
+        .stream()
+        .map(this::toDto)
+        .collect(Collectors.toList());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public LearningObjectiveResponse getById(UUID curriculumId, UUID competencyId, UUID standardId, UUID id)
       throws ResourceNotFoundException {
 
     validateHierarchy(curriculumId, competencyId, standardId);
@@ -108,12 +113,8 @@ public class LearningObjectiveServiceImpl implements LearningObjectiveService {
    *-----------------------------------------------------*/
   @Override
   @Transactional
-  public LearningObjectiveResponse update(UUID curriculumId,
-      UUID competencyId,
-      UUID standardId,
-      UUID id,
-      LearningObjectiveRequest req)
-      throws ResourceNotFoundException {
+  public LearningObjectiveResponse update(UUID curriculumId, UUID competencyId, UUID standardId, UUID id,
+      LearningObjectiveRequest req) throws ResourceNotFoundException {
 
     validateHierarchy(curriculumId, competencyId, standardId);
 
@@ -128,21 +129,19 @@ public class LearningObjectiveServiceImpl implements LearningObjectiveService {
   }
 
   /*-------------------------------------------------------
-   * DELETE (soft)
+   * DELETE (soft-delete)
    *-----------------------------------------------------*/
   @Override
   @Transactional
-  public void delete(UUID curriculumId,
-      UUID competencyId,
-      UUID standardId,
-      UUID id) throws ResourceNotFoundException {
+  public void delete(UUID curriculumId, UUID competencyId, UUID standardId, UUID id)
+      throws ResourceNotFoundException {
 
     validateHierarchy(curriculumId, competencyId, standardId);
 
     LearningObjective lo = loRepo.findByIdAndStandardId(id, standardId)
         .orElseThrow(() -> new ResourceNotFoundException("LearningObjective", "id", id));
 
-    loRepo.delete(lo); // aplica @SQLDelete
+    loRepo.delete(lo); // Soft-delete aplicado por @SQLDelete
   }
 
   /*-------------------------------------------------------
@@ -150,10 +149,8 @@ public class LearningObjectiveServiceImpl implements LearningObjectiveService {
    *-----------------------------------------------------*/
   @Override
   @Transactional
-  public void reactivate(UUID curriculumId,
-      UUID competencyId,
-      UUID standardId,
-      UUID id) throws ResourceNotFoundException {
+  public void reactivate(UUID curriculumId, UUID competencyId, UUID standardId, UUID id)
+      throws ResourceNotFoundException {
 
     validateHierarchy(curriculumId, competencyId, standardId);
 
@@ -163,28 +160,26 @@ public class LearningObjectiveServiceImpl implements LearningObjectiveService {
     lo.setActive(true);
     lo.setDeletedAt(null);
     lo.setUpdatedAt(LocalDateTime.now());
+
     loRepo.save(lo);
   }
 
   /*-------------------------------------------------------
    * Helpers
    *-----------------------------------------------------*/
-  private void validateHierarchy(UUID curriculumId, UUID competencyId, UUID standardId)
+
+  private Standard validateHierarchy(UUID curriculumId, UUID competencyId, UUID standardId)
       throws ResourceNotFoundException {
 
-    // Curriculum
-    if (!curriculumRepo.existsById(curriculumId)) {
-      throw new ResourceNotFoundException("Curriculum", "id", curriculumId);
-    }
+    Curriculum curriculum = curriculumRepo.findById(curriculumId)
+        .orElseThrow(() -> new ResourceNotFoundException("Curriculum", "id", curriculumId));
 
-    // Competency dentro del Curriculum
-    Competency comp = compRepo.findById(competencyId)
-        .filter(c -> c.getCurriculum().getId().equals(curriculumId))
+    Competency competency = compRepo.findById(competencyId)
+        .filter(c -> c.getCurriculum().getId().equals(curriculum.getId()))
         .orElseThrow(() -> new ResourceNotFoundException("Competency", "id", competencyId));
 
-    // Standard dentro de la Competency
-    standardRepo.findById(standardId)
-        .filter(s -> s.getCompetency().getId().equals(comp.getId()))
+    return standardRepo.findById(standardId)
+        .filter(s -> s.getCompetency().getId().equals(competency.getId()))
         .orElseThrow(() -> new ResourceNotFoundException("Standard", "id", standardId));
   }
 

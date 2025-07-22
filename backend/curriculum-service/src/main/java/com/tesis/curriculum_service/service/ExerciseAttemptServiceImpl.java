@@ -15,77 +15,88 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Implementación del servicio para registrar intentos de ejercicios por parte
- * de los estudiantes.
- */
 @Service
 @RequiredArgsConstructor
 public class ExerciseAttemptServiceImpl implements ExerciseAttemptService {
 
-  private final ExerciseRepository exerciseRepository;
-  private final ExerciseAttemptRepository attemptRepository;
+    private final ExerciseRepository exerciseRepository;
+    private final ExerciseAttemptRepository attemptRepository;
 
-  @Override
-  @Transactional
-  public ExerciseAttemptResponse saveAttempt(Long userId, ExerciseAttemptRequest request) {
-    UUID exerciseId = request.getExerciseId();
+    @Override
+    @Transactional
+    public ExerciseAttemptResponse saveAttempt(Long userId, ExerciseAttemptRequest request) {
+        UUID exerciseId = request.getExerciseId();
 
-    Exercise exercise = exerciseRepository.findById(exerciseId)
-        .orElseThrow(() -> new ResourceNotFoundException("Ejercicio no encontrado con ID: " + exerciseId));
+        Exercise exercise = exerciseRepository.findById(exerciseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Ejercicio no encontrado con ID: " + exerciseId));
 
-    ExerciseAttempt attempt = ExerciseAttempt.builder()
-        .userId(userId)
-        .exercise(exercise)
-        .correct(request.isCorrect())
-        .hintsUsed(request.getHintsUsed())
-        .timeSpent(request.getTimeSpent())
-        .submittedAnswer(request.getSubmittedAnswer())
-        .attemptedAt(LocalDateTime.now())
-        .build();
+        ExerciseAttempt attempt = ExerciseAttempt.builder()
+                .userId(userId)
+                .exercise(exercise)
+                .correct(request.isCorrect())
+                .hintsUsed(request.getHintsUsed())
+                .timeSpent(request.getTimeSpent())
+                .submittedAnswer(request.getSubmittedAnswer())
+                .attemptedAt(LocalDateTime.now())
+                .build();
 
-    ExerciseAttempt saved = attemptRepository.save(attempt);
+        ExerciseAttempt saved = attemptRepository.save(attempt);
 
-    return ExerciseAttemptResponse.builder()
-        .id(saved.getId())
-        .exerciseId(saved.getExercise().getId())
-        .correct(saved.isCorrect())
-        .hintsUsed(saved.getHintsUsed())
-        .timeSpent(saved.getTimeSpent())
-        .submittedAnswer(saved.getSubmittedAnswer())
-        .attemptedAt(saved.getAttemptedAt())
-        .build();
-  }
+        return mapToResponse(saved);
+    }
 
-  @Override
-  @Transactional(readOnly = true)
-  public List<ExerciseAttemptResponse> getAttemptsByUser(Long userId) {
-    return attemptRepository.findByUserId(userId).stream()
-        .map(attempt -> ExerciseAttemptResponse.builder()
-            .id(attempt.getId())
-            .exerciseId(attempt.getExercise().getId())
-            .correct(attempt.isCorrect())
-            .hintsUsed(attempt.getHintsUsed())
-            .timeSpent(attempt.getTimeSpent())
-            .submittedAnswer(attempt.getSubmittedAnswer())
-            .attemptedAt(attempt.getAttemptedAt())
-            .build())
-        .toList();
-  }
+    @Override
+    @Transactional(readOnly = true)
+    public List<ExerciseAttemptResponse> getAttemptsByUser(Long userId) {
+        return attemptRepository.findActiveByUserId(userId).stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
 
-  @Override
-  @Transactional(readOnly = true)
-  public List<ExerciseAttemptResponse> getAttemptsByExerciseAndUser(UUID exerciseId, Long userId) {
-    return attemptRepository.findByExerciseIdAndUserId(exerciseId, userId).stream()
-        .map(attempt -> ExerciseAttemptResponse.builder()
-            .id(attempt.getId())
-            .exerciseId(attempt.getExercise().getId())
-            .correct(attempt.isCorrect())
-            .hintsUsed(attempt.getHintsUsed())
-            .timeSpent(attempt.getTimeSpent())
-            .submittedAnswer(attempt.getSubmittedAnswer())
-            .attemptedAt(attempt.getAttemptedAt())
-            .build())
-        .toList();
-  }
+    @Override
+    @Transactional(readOnly = true)
+    public List<ExerciseAttemptResponse> getAttemptsByExerciseAndUser(UUID exerciseId, Long userId) {
+        return attemptRepository.findActiveByExerciseIdAndUserId(exerciseId, userId).stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ExerciseAttemptResponse> getAttemptsByExercise(UUID exerciseId) {
+        return attemptRepository.findActiveByExerciseId(exerciseId).stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ExerciseAttemptResponse> getAllAttemptsByUserIncludingInactive(Long userId) {
+        return attemptRepository.findAllByUserIdIncludingInactive(userId).stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ExerciseAttemptResponse> getAllAttemptsByExerciseIncludingInactive(UUID exerciseId) {
+        return attemptRepository.findAllByExerciseIdIncludingInactive(exerciseId).stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    /**
+     * Convierte una entidad ExerciseAttempt a su correspondiente DTO.
+     */
+    private ExerciseAttemptResponse mapToResponse(ExerciseAttempt attempt) {
+        return ExerciseAttemptResponse.builder()
+                .id(attempt.getId())
+                .exerciseId(attempt.getExercise().getId())
+                .correct(attempt.isCorrect())
+                .hintsUsed(attempt.getHintsUsed())
+                .timeSpent(attempt.getTimeSpent())
+                .submittedAnswer(attempt.getSubmittedAnswer())
+                .attemptedAt(attempt.getAttemptedAt())
+                .build();
+    }
 }

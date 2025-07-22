@@ -1,14 +1,14 @@
 package com.tesis.curriculum_service.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.*;
+
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
+/**
+ * DTO para devolver información detallada de un objetivo de aprendizaje.
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -46,6 +46,6 @@ public class LearningObjectiveResponse {
   @Schema(description = "Fecha y hora de la última actualización del objetivo", example = "2025-07-13T12:45:20.000")
   private LocalDateTime updatedAt;
 
-  @Schema(description = "Indica si el Objetivo de aprendizaje está activo")
+  @Schema(description = "Indica si el objetivo de aprendizaje está activo")
   private Boolean active;
 }

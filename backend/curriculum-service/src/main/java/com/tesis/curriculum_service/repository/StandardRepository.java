@@ -19,28 +19,50 @@ import java.util.UUID;
 public interface StandardRepository extends JpaRepository<Standard, UUID> {
 
   /**
-   * Recupera todos los estándares asociados a una competencia dada.
-   *
-   * @param competencyId UUID de la competencia padre.
-   * @return Lista de estándares que pertenecen a dicha competencia.
+   * Estándares activos por competencia.
    */
-  List<Standard> findByCompetencyId(UUID competencyId);
+  @Query(value = """
+        SELECT * FROM standards
+         WHERE competency_id = :competencyId
+           AND active = true
+         ORDER BY created_at DESC
+      """, nativeQuery = true)
+  List<Standard> findActiveByCompetencyId(@Param("competencyId") UUID competencyId);
 
   /**
-   * Recupera un estándar por su ID y el ID de la competencia a la que pertenece.
-   * Esto garantiza que al buscar por estándar también validamos
-   * que efectivamente forme parte de la competencia indicada.
-   *
-   * @param id           UUID del estándar.
-   * @param competencyId UUID de la competencia padre.
-   * @return Optional con el estándar si existe y pertenece a la competencia.
+   * Estándares inactivos por competencia.
+   */
+  @Query(value = """
+        SELECT * FROM standards
+         WHERE competency_id = :competencyId
+           AND active = false
+         ORDER BY created_at DESC
+      """, nativeQuery = true)
+  List<Standard> findInactiveByCompetencyId(@Param("competencyId") UUID competencyId);
+
+  /**
+   * Todos los estándares (activos e inactivos) por competencia.
+   */
+  @Query(value = """
+        SELECT * FROM standards
+         WHERE competency_id = :competencyId
+         ORDER BY created_at DESC
+      """, nativeQuery = true)
+  List<Standard> findAllByCompetencyIdNative(@Param("competencyId") UUID competencyId);
+
+  /**
+   * Recupera un estándar activo por ID y competencia.
    */
   Optional<Standard> findByIdAndCompetencyId(UUID id, UUID competencyId);
 
-  @Query("SELECT s FROM Standard s WHERE s.competency.id = :competencyId")
-  List<Standard> findIncludingInactiveByCompetencyId(@Param("competencyId") UUID competencyId);
-
-  @Query("SELECT s FROM Standard s WHERE s.id = :id AND s.competency.id = :competencyId")
+  /**
+   * Recupera un estándar por ID y competencia (activo o inactivo).
+   */
+  @Query(value = """
+        SELECT * FROM standards
+         WHERE id = :id
+           AND competency_id = :competencyId
+      """, nativeQuery = true)
   Optional<Standard> findIncludingInactiveByIdAndCompetencyId(
       @Param("id") UUID id,
       @Param("competencyId") UUID competencyId);

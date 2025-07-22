@@ -1,12 +1,11 @@
-// src/main/java/com/tesis/curriculum_service/model/LearningObjective.java
 package com.tesis.curriculum_service.model;
 
+import com.tesis.curriculum_service.model.base.AuditableEntity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
-import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -14,8 +13,8 @@ import java.util.UUID;
 /**
  * Entidad JPA que representa un Objetivo de Aprendizaje.
  *
- * - Soft-delete: al borrar marca active=false y registra deletedAt.
- * - @SQLRestriction filtra automáticamente solo registros activos.
+ * - Hereda campos de auditoría (creadoPor, actualizadoPor, timestamps, etc.)
+ * - Soporta soft-delete con @SQLDelete y filtro automático con @SQLRestriction.
  */
 @Entity
 @Table(name = "learning_objectives")
@@ -28,7 +27,7 @@ import java.util.UUID;
 @Builder
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @ToString(onlyExplicitlyIncluded = true)
-public class LearningObjective {
+public class LearningObjective extends AuditableEntity {
 
   /** UUID generado automáticamente como clave primaria. */
   @Id
@@ -47,52 +46,25 @@ public class LearningObjective {
   @ToString.Include
   private String name;
 
-  /** Descripción detallada (opcional). */
+  /** Descripción detallada del objetivo. */
   @Column(name = "description", columnDefinition = "TEXT")
   private String description;
 
-  /** Soft-delete flag. */
+  /** Estado lógico activo/inactivo. */
   @Column(name = "active", nullable = false)
   @Builder.Default
   private Boolean active = true;
 
-  /** Timestamp de creación (no actualizable). */
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private LocalDateTime createdAt;
-
-  /** Timestamp de última modificación. */
-  @Column(name = "updated_at", nullable = false)
-  private LocalDateTime updatedAt;
-
-  /** Timestamp de borrado lógico. */
-  @Column(name = "deleted_at")
-  private LocalDateTime deletedAt;
-
-  /** Muchos objetivos pertenecen a un mismo Estándar. */
+  /** Relación con el estándar al que pertenece. */
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "standard_id", nullable = false)
   private Standard standard;
 
   /**
-   * Relación One-To-Many con Exercise:
-   * un Objetivo puede tener múltiples ejercicios.
+   * Relación uno-a-muchos con ejercicios:
+   * un objetivo puede tener múltiples ejercicios asociados.
    */
   @OneToMany(mappedBy = "learningObjective", cascade = CascadeType.ALL, orphanRemoval = true)
   @Builder.Default
   private Set<Exercise> exercises = new HashSet<>();
-
-  @PrePersist
-  protected void onCreate() {
-    LocalDateTime now = LocalDateTime.now();
-    this.createdAt = now;
-    this.updatedAt = now;
-    if (this.active == null) {
-      this.active = true;
-    }
-  }
-
-  @PreUpdate
-  protected void onUpdate() {
-    this.updatedAt = LocalDateTime.now();
-  }
 }

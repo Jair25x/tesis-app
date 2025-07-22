@@ -22,26 +22,22 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Endpoint para registrar y consultar intentos de ejercicios por los
- * estudiantes.
- */
 @RestController
 @RequestMapping("/api/curricula/attempts")
-@Tag(name = "Exercise Attempts", description = "Registro de intentos de ejercicios por los estudiantes")
+@Tag(name = "Exercise Attempts", description = "Registro y consulta de intentos de ejercicios realizados por estudiantes")
 @RequiredArgsConstructor
 public class ExerciseAttemptController {
 
   private final ExerciseAttemptService attemptService;
 
-  @Operation(summary = "Registrar un intento de ejercicio")
+  @Operation(summary = "Registrar un intento de ejercicio", description = "Permite al estudiante registrar su intento de resolver un ejercicio, incluyendo tiempo, pistas usadas y respuesta enviada")
   @ApiResponses({
       @ApiResponse(responseCode = "201", description = "Intento registrado correctamente", content = @Content(schema = @Schema(implementation = ExerciseAttemptResponse.class))),
-      @ApiResponse(responseCode = "400", description = "Datos inválidos", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+      @ApiResponse(responseCode = "400", description = "Solicitud inválida o datos mal formateados", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
       @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
-  @PreAuthorize("isAuthenticated()")
   @PostMapping
+  @PreAuthorize("hasRole('STUDENT')")
   public ResponseEntity<ExerciseAttemptResponse> saveAttempt(
       @Parameter(hidden = true) @RequestHeader("x-user-id") Long userId,
       @Valid @RequestBody ExerciseAttemptRequest request) {
@@ -50,29 +46,29 @@ public class ExerciseAttemptController {
     return ResponseEntity.status(HttpStatus.CREATED).body(response);
   }
 
-  @Operation(summary = "Listar intentos del usuario autenticado")
+  @Operation(summary = "Obtener todos los intentos del estudiante autenticado", description = "Devuelve la lista completa de intentos registrados por el estudiante actual")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Intentos obtenidos correctamente", content = @Content(schema = @Schema(implementation = ExerciseAttemptResponse.class))),
-      @ApiResponse(responseCode = "401", description = "Usuario no autenticado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+      @ApiResponse(responseCode = "401", description = "No autorizado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
-  @PreAuthorize("isAuthenticated()")
   @GetMapping
-  public ResponseEntity<List<ExerciseAttemptResponse>> getUserAttempts(
+  @PreAuthorize("hasRole('STUDENT')")
+  public ResponseEntity<List<ExerciseAttemptResponse>> getAttemptsByUser(
       @Parameter(hidden = true) @RequestHeader("x-user-id") Long userId) {
 
     List<ExerciseAttemptResponse> attempts = attemptService.getAttemptsByUser(userId);
     return ResponseEntity.ok(attempts);
   }
 
-  @Operation(summary = "Listar intentos del usuario autenticado sobre un ejercicio específico")
+  @Operation(summary = "Obtener intentos por ejercicio", description = "Devuelve todos los intentos realizados por el estudiante actual sobre un ejercicio específico")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Intentos encontrados", content = @Content(schema = @Schema(implementation = ExerciseAttemptResponse.class))),
       @ApiResponse(responseCode = "400", description = "ID de ejercicio inválido", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-      @ApiResponse(responseCode = "401", description = "Usuario no autenticado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+      @ApiResponse(responseCode = "401", description = "No autorizado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
-  @PreAuthorize("isAuthenticated()")
   @GetMapping("/exercise/{exerciseId}")
-  public ResponseEntity<List<ExerciseAttemptResponse>> getAttemptsByExercise(
+  @PreAuthorize("hasRole('STUDENT')")
+  public ResponseEntity<List<ExerciseAttemptResponse>> getAttemptsByExerciseAndUser(
       @PathVariable UUID exerciseId,
       @Parameter(hidden = true) @RequestHeader("x-user-id") Long userId) {
 

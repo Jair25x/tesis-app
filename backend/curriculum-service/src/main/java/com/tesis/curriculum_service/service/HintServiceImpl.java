@@ -14,10 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
- * Implementación de {@link HintService} usando JPA.
+ * Implementación del servicio {@link HintService} usando HintRepository con SQL
+ * nativo y auditoría.
  */
 @Service
 @RequiredArgsConstructor
@@ -28,25 +28,37 @@ public class HintServiceImpl implements HintService {
 
   @Override
   @Transactional
-  public HintResponse create(UUID exerciseId, HintRequest req) {
-    Exercise ex = exerciseRepo.findById(exerciseId)
+  public HintResponse create(UUID exerciseId, HintRequest request) {
+    Exercise exercise = exerciseRepo.findById(exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
 
-    Hint saved = hintRepo.save(Hint.builder()
-        .hintText(req.getHintText())
-        .cost(req.getCost())
-        .exercise(ex)
-        .build());
+    Hint hint = Hint.builder()
+        .hintText(request.getHintText())
+        .cost(request.getCost())
+        .exercise(exercise)
+        .build();
 
-    return toDto(saved);
+    return toDto(hintRepo.save(hint));
   }
 
   @Override
   @Transactional(readOnly = true)
   public List<HintResponse> getAllByExercise(UUID exerciseId) {
     verifyExerciseExists(exerciseId);
-    return hintRepo.findByExerciseIdOrderByCostAsc(exerciseId)
-        .stream().map(this::toDto).toList();
+    return hintRepo.findActiveByExerciseId(exerciseId)
+        .stream()
+        .map(this::toDto)
+        .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<HintResponse> getAllIncludingInactive(UUID exerciseId) {
+    verifyExerciseExists(exerciseId);
+    return hintRepo.findAllByExerciseId(exerciseId)
+        .stream()
+        .map(this::toDto)
+        .toList();
   }
 
   @Override
@@ -59,12 +71,13 @@ public class HintServiceImpl implements HintService {
 
   @Override
   @Transactional
-  public HintResponse update(UUID exerciseId, UUID id, HintRequest req) {
+  public HintResponse update(UUID exerciseId, UUID id, HintRequest request) {
     Hint hint = hintRepo.findByIdAndExerciseId(id, exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("Hint", "id", id));
 
-    hint.setHintText(req.getHintText());
-    hint.setCost(req.getCost());
+    hint.setHintText(request.getHintText());
+    hint.setCost(request.getCost());
+
     return toDto(hintRepo.save(hint));
   }
 
@@ -73,7 +86,7 @@ public class HintServiceImpl implements HintService {
   public void delete(UUID exerciseId, UUID id) {
     Hint hint = hintRepo.findByIdAndExerciseId(id, exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("Hint", "id", id));
-    hintRepo.delete(hint); // gracias a @SQLDelete → soft-delete
+    hintRepo.delete(hint); // soft-delete con @SQLDelete
   }
 
   @Override
@@ -85,13 +98,15 @@ public class HintServiceImpl implements HintService {
     if (!hint.getExercise().getId().equals(exerciseId)) {
       throw new ResourceNotFoundException("Hint", "exerciseId", exerciseId);
     }
+
     hint.setActive(true);
     hint.setDeletedAt(null);
     hint.setUpdatedAt(LocalDateTime.now());
     hintRepo.save(hint);
   }
 
-  /* helpers */
+  // ------------------ Helpers ------------------
+
   private void verifyExerciseExists(UUID exerciseId) {
     if (!exerciseRepo.existsById(exerciseId)) {
       throw new ResourceNotFoundException("Exercise", "id", exerciseId);
@@ -106,6 +121,11 @@ public class HintServiceImpl implements HintService {
         .exerciseId(h.getExercise().getId())
         .createdAt(h.getCreatedAt())
         .updatedAt(h.getUpdatedAt())
+        .active(h.getActive())
+        .deletedAt(h.getDeletedAt())
+        .createdBy(h.getCreatedBy())
+        .updatedBy(h.getUpdatedBy())
+        .deletedBy(h.getDeletedBy())
         .build();
   }
 }

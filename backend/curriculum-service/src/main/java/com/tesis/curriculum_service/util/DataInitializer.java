@@ -1,3 +1,4 @@
+// src/main/java/com/tesis/curriculum_service/util/DataInitializer.java
 package com.tesis.curriculum_service.util;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,6 +17,10 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Carga inicial del currículo de matemática y sus componentes desde archivo
+ * YAML.
+ */
 @Component
 @Profile({ "dev", "docker" })
 @RequiredArgsConstructor
@@ -32,7 +37,6 @@ public class DataInitializer {
 
                 ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
                 try (InputStream is = new ClassPathResource("data/curriculum-math-6.yml").getInputStream()) {
-
                         CurriculumDef def = mapper.readValue(is, CurriculumDef.class);
 
                         Curriculum curriculum = Curriculum.builder()
@@ -42,105 +46,102 @@ public class DataInitializer {
                                         .grade(def.grade)
                                         .build();
 
-                        /* ----------------- COMPETENCIES ----------------- */
                         Set<Competency> competencies = def.competencies.stream().map(compDef -> {
-                                Competency comp = Competency.builder()
+                                Competency competency = Competency.builder()
                                                 .code(compDef.code)
                                                 .name(compDef.name)
                                                 .description(compDef.description)
                                                 .curriculum(curriculum)
                                                 .build();
 
-                                /* ------------- STANDARDS ------------- */
                                 Set<Standard> standards = compDef.standards.stream().map(stdDef -> {
-                                        Standard std = Standard.builder()
+                                        Standard standard = Standard.builder()
                                                         .code(stdDef.code)
                                                         .name(stdDef.name)
                                                         .description(stdDef.description)
-                                                        .competency(comp)
+                                                        .competency(competency)
                                                         .build();
 
-                                        /* ---------- LEARNING OBJECTIVES ---------- */
-                                        Set<LearningObjective> los = stdDef.learningObjectives.stream().map(loDef -> {
-                                                LearningObjective lo = LearningObjective.builder()
-                                                                .code(loDef.code)
-                                                                .name(loDef.name)
-                                                                .description(loDef.description)
-                                                                .standard(std)
-                                                                .build();
+                                        Set<LearningObjective> learningObjectives = stdDef.learningObjectives.stream()
+                                                        .map(loDef -> {
+                                                                LearningObjective lo = LearningObjective.builder()
+                                                                                .code(loDef.code)
+                                                                                .name(loDef.name)
+                                                                                .description(loDef.description)
+                                                                                .standard(standard)
+                                                                                .build();
 
-                                                /* ------------- EXERCISES ------------- */
-                                                if (loDef.exercises != null) {
-                                                        Set<Exercise> exercises = loDef.exercises.stream()
-                                                                        .map(exDef -> {
-                                                                                LocalDateTime now = LocalDateTime.now();
+                                                                // Cargar ejercicios si hay
+                                                                if (loDef.exercises != null) {
+                                                                        Set<Exercise> exercises = loDef.exercises
+                                                                                        .stream().map(exDef -> {
+                                                                                                LocalDateTime now = LocalDateTime
+                                                                                                                .now();
 
-                                                                                Exercise exercise = Exercise.builder()
-                                                                                                .statement(exDef.statement)
-                                                                                                .difficulty(Exercise.Difficulty
-                                                                                                                .valueOf(exDef.difficulty))
-                                                                                                .type(exDef.type)
-                                                                                                .templateType(TemplateType
-                                                                                                                .valueOf(exDef.templateType))
-                                                                                                .parameters(exDef.parameters)
-                                                                                                .correctAnswer(exDef.correctAnswer) // ✅
-                                                                                                                                    // NUEVO
-                                                                                                .learningObjective(lo)
-                                                                                                .active(true)
-                                                                                                .createdAt(now)
-                                                                                                .updatedAt(now)
-                                                                                                .build();
+                                                                                                Exercise exercise = Exercise
+                                                                                                                .builder()
+                                                                                                                .statement(exDef.statement)
+                                                                                                                .difficulty(Exercise.Difficulty
+                                                                                                                                .valueOf(exDef.difficulty))
+                                                                                                                .type(exDef.type)
+                                                                                                                .templateType(TemplateType
+                                                                                                                                .valueOf(exDef.templateType))
+                                                                                                                .parameters(exDef.parameters)
+                                                                                                                .correctAnswer(exDef.correctAnswer)
+                                                                                                                .learningObjective(
+                                                                                                                                lo)
+                                                                                                                .active(true)
+                                                                                                                .build();
 
-                                                                                /* --- SolutionSteps --- */
-                                                                                if (exDef.solutionSteps != null) {
-                                                                                        Set<SolutionStep> steps = exDef.solutionSteps
-                                                                                                        .stream()
-                                                                                                        .map(stepDef -> SolutionStep
-                                                                                                                        .builder()
-                                                                                                                        .stepNumber(stepDef.stepNumber)
-                                                                                                                        .explanation(stepDef.explanation)
-                                                                                                                        .exercise(exercise)
-                                                                                                                        .active(true)
-                                                                                                                        .createdAt(now)
-                                                                                                                        .updatedAt(now)
-                                                                                                                        .build())
-                                                                                                        .collect(Collectors
-                                                                                                                        .toCollection(LinkedHashSet::new));
-                                                                                        exercise.setSolutionSteps(
-                                                                                                        steps);
-                                                                                }
+                                                                                                // Pistas
+                                                                                                if (exDef.hints != null) {
+                                                                                                        Set<Hint> hints = exDef.hints
+                                                                                                                        .stream()
+                                                                                                                        .map(hintDef -> Hint
+                                                                                                                                        .builder()
+                                                                                                                                        .hintText(hintDef.hintText)
+                                                                                                                                        .cost(hintDef.cost)
+                                                                                                                                        .exercise(exercise)
+                                                                                                                                        .build())
+                                                                                                                        .collect(Collectors
+                                                                                                                                        .toCollection(LinkedHashSet::new));
+                                                                                                        exercise.setHints(
+                                                                                                                        hints);
+                                                                                                }
 
-                                                                                /* --- Hints --- */
-                                                                                if (exDef.hints != null) {
-                                                                                        Set<Hint> hints = exDef.hints
-                                                                                                        .stream()
-                                                                                                        .map(hintDef -> Hint
-                                                                                                                        .builder()
-                                                                                                                        .hintText(hintDef.hintText)
-                                                                                                                        .cost(hintDef.cost)
-                                                                                                                        .exercise(exercise)
-                                                                                                                        .createdAt(now)
-                                                                                                                        .updatedAt(now)
-                                                                                                                        .build())
-                                                                                                        .collect(Collectors
-                                                                                                                        .toCollection(LinkedHashSet::new));
-                                                                                        exercise.setHints(hints);
-                                                                                }
+                                                                                                // Pasos
+                                                                                                if (exDef.solutionSteps != null) {
+                                                                                                        Set<SolutionStep> steps = exDef.solutionSteps
+                                                                                                                        .stream()
+                                                                                                                        .map(stepDef -> SolutionStep
+                                                                                                                                        .builder()
+                                                                                                                                        .stepNumber(stepDef.stepNumber)
+                                                                                                                                        .explanation(stepDef.explanation)
+                                                                                                                                        .exercise(exercise)
+                                                                                                                                        .active(true)
+                                                                                                                                        .build())
+                                                                                                                        .collect(Collectors
+                                                                                                                                        .toCollection(LinkedHashSet::new));
+                                                                                                        exercise.setSolutionSteps(
+                                                                                                                        steps);
+                                                                                                }
 
-                                                                                return exercise;
-                                                                        }).collect(Collectors.toCollection(
-                                                                                        LinkedHashSet::new));
-                                                        lo.setExercises(exercises);
-                                                }
-                                                return lo;
-                                        }).collect(Collectors.toCollection(LinkedHashSet::new));
+                                                                                                return exercise;
+                                                                                        }).collect(Collectors
+                                                                                                        .toCollection(LinkedHashSet::new));
 
-                                        std.setLearningObjectives(los);
-                                        return std;
+                                                                        lo.setExercises(exercises);
+                                                                }
+
+                                                                return lo;
+                                                        }).collect(Collectors.toCollection(LinkedHashSet::new));
+
+                                        standard.setLearningObjectives(learningObjectives);
+                                        return standard;
                                 }).collect(Collectors.toCollection(LinkedHashSet::new));
 
-                                comp.setStandards(standards);
-                                return comp;
+                                competency.setStandards(standards);
+                                return competency;
                         }).collect(Collectors.toCollection(LinkedHashSet::new));
 
                         curriculum.setCompetencies(competencies);
@@ -149,7 +150,7 @@ public class DataInitializer {
                 }
         }
 
-        /* ------------ DTOs para el parser YAML ------------ */
+        /* -------------- DTOs usados para parsear el archivo YAML -------------- */
 
         static class CurriculumDef {
                 public String code, name, description, grade;
@@ -177,7 +178,7 @@ public class DataInitializer {
                 public String type;
                 public String templateType;
                 public Map<String, Object> parameters;
-                public String correctAnswer; // ✅ NUEVO CAMPO
+                public String correctAnswer;
                 public List<SolutionStepDef> solutionSteps;
                 public List<HintDef> hints;
         }

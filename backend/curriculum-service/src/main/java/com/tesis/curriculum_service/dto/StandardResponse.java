@@ -1,14 +1,10 @@
-// src/main/java/com/tesis/curriculum_service/dto/StandardResponse.java
 package com.tesis.curriculum_service.dto;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 @Data
 @NoArgsConstructor
@@ -31,7 +27,7 @@ public class StandardResponse {
 
   @Schema(description = "ID de la competencia a la que pertenece este estándar", example = "5b2d3f74-1234-4a2b-9cde-1a2b3c4d5e6f")
   private UUID competencyId;
-  
+
   @Schema(description = "Nombre de la competencia asociada", example = "Pensamiento algebraico")
   private String competencyName;
 
@@ -41,6 +37,18 @@ public class StandardResponse {
   @Schema(description = "Fecha y hora de la última actualización", example = "2025-07-13T14:20:45.000")
   private LocalDateTime updatedAt;
 
-  @Schema(description = "Indica si el estandar está activo")
+  @Schema(description = "Indica si el estándar está activo")
   private Boolean active;
+
+  @Schema(description = "Fecha de eliminación lógica si aplica", example = "2025-07-15T18:00:00.000")
+  private LocalDateTime deletedAt;
+
+  @Schema(description = "Usuario que eliminó lógicamente el estándar")
+  private String deletedBy;
+
+  @Schema(description = "Usuario que creó el estándar")
+  private String createdBy;
+
+  @Schema(description = "Usuario que actualizó el estándar por última vez")
+  private String updatedBy;
 }

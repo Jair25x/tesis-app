@@ -1,32 +1,32 @@
 package com.tesis.curriculum_service.model;
 
+import com.tesis.curriculum_service.model.base.AuditableEntity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 /**
- * Entidad que representa un intento de resolución de un ejercicio por un
- * estudiante.
- * Se registra si fue correcto, cuántas pistas usó, cuánto tiempo tardó y qué
+ * Entidad que representa un intento de resolución de un ejercicio por parte de
+ * un estudiante.
+ * Registra si fue correcto, cuántas pistas usó, cuánto tiempo tardó y qué
  * respondió.
- * Usa soft-delete mediante la bandera `active` y la columna `deleted_at`.
+ * Usa soft-delete y auditoría automática heredada de {@link AuditableEntity}.
  */
 @Entity
 @Table(name = "exercise_attempts")
-@SQLDelete(sql = "UPDATE exercise_attempts SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
-@SQLRestriction("active = true")
+@SQLDelete(sql = "UPDATE exercise_attempts SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
+@SQLRestriction("deleted_at IS NULL")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@EqualsAndHashCode(onlyExplicitlyIncluded = true, callSuper = false)
 @ToString(onlyExplicitlyIncluded = true)
-public class ExerciseAttempt {
+public class ExerciseAttempt extends AuditableEntity {
 
   /** ID autogenerado del intento */
   @Id
@@ -58,27 +58,16 @@ public class ExerciseAttempt {
   @Column(name = "user_id", nullable = false)
   private Long userId;
 
-  /** Relación con el ejercicio resuelto (UUID) */
+  /** Relación con el ejercicio resuelto (obligatoria) */
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "exercise_id", nullable = false)
   private Exercise exercise;
 
-  /** Borrado lógico (activo o no) */
-  @Column(name = "active", nullable = false)
-  @Builder.Default
-  private Boolean active = true;
-
-  /** Fecha de eliminación lógica */
-  @Column(name = "deleted_at")
-  private LocalDateTime deletedAt;
-
   @PrePersist
-  protected void onCreate() {
+  protected void onCreateAttempt() {
+    super.onCreate();
     if (this.attemptedAt == null) {
       this.attemptedAt = LocalDateTime.now();
-    }
-    if (this.active == null) {
-      this.active = true;
     }
   }
 }

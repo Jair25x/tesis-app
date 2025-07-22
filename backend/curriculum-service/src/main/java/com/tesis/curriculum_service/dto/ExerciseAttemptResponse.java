@@ -7,33 +7,41 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * DTO de respuesta tras guardar un intento de ejercicio.
+ * DTO de respuesta que representa el resultado de registrar un intento de
+ * ejercicio.
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Schema(description = "Respuesta del sistema después de registrar un intento de ejercicio")
+@Schema(description = "Respuesta al registrar un intento de ejercicio")
 public class ExerciseAttemptResponse {
 
-    @Schema(description = "ID del intento registrado", example = "1")
+    @Schema(description = "ID del intento", example = "1")
     private Long id;
 
-    @Schema(description = "UUID del ejercicio al que se intentó responder", example = "f3c1a8d2-5cfa-4f22-bbb6-3b8d3e0e2abc")
+    @Schema(description = "UUID del ejercicio relacionado", example = "f3c1a8d2-5cfa-4f22-bbb6-3b8d3e0e2abc")
     private UUID exerciseId;
 
-    @Schema(description = "Indica si la respuesta fue correcta", example = "true")
+    @Schema(description = "¿El intento fue correcto?", example = "false")
     private boolean correct;
 
-    @Schema(description = "Cantidad de pistas utilizadas", example = "1")
+    @Schema(description = "Pistas usadas", example = "2")
     private int hintsUsed;
 
-    @Schema(description = "Tiempo que tardó el estudiante (en milisegundos)", example = "18000")
+    @Schema(description = "Tiempo invertido (milisegundos)", example = "14500")
     private long timeSpent;
 
-    @Schema(description = "Respuesta enviada por el estudiante", example = "40")
+    @Schema(description = "Respuesta enviada por el estudiante", example = "25")
     private String submittedAnswer;
 
-    @Schema(description = "Fecha y hora del intento", example = "2025-07-17T10:23:45")
+    @Schema(description = "Fecha y hora del intento", example = "2025-07-17T10:45:30")
     private LocalDateTime attemptedAt;
+
+    // Opcional: campos de auditoría (si quieres exponerlos)
+    @Schema(description = "Creado por", example = "student123")
+    private String createdBy;
+
+    @Schema(description = "Fecha de creación", example = "2025-07-17T10:45:30")
+    private LocalDateTime createdAt;
 }

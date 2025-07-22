@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,4 +37,13 @@ public interface CurriculumRepository extends JpaRepository<Curriculum, UUID> {
       "competencies.standards.learningObjectives.exercises"
   })
   Optional<Curriculum> findFullById(UUID id);
+
+  @Query(value = "SELECT * FROM curricula", nativeQuery = true)
+  List<Curriculum> findAllIncludingInactive();
+
+  @Query(value = "SELECT * FROM curricula WHERE active = true", nativeQuery = true)
+  List<Curriculum> findAllActive();
+
+  @Query(value = "SELECT * FROM curricula WHERE active = false", nativeQuery = true)
+  List<Curriculum> findAllInactive();
 }

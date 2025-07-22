@@ -1,4 +1,3 @@
-// src/main/java/com/tesis/curriculum_service/controller/ExerciseController.java
 package com.tesis.curriculum_service.controller;
 
 import com.tesis.curriculum_service.dto.CheckAnswerRequest;
@@ -19,7 +18,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -36,9 +34,9 @@ public class ExerciseController {
 
   private final ExerciseService exerciseService;
 
-  @Operation(summary = "Listar ejercicios")
+  @Operation(summary = "Listar ejercicios por objetivo")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "Listado de ejercicios obtenido", content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExerciseResponse.class)))),
+      @ApiResponse(responseCode = "200", description = "Listado obtenido", content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExerciseResponse.class)))),
       @ApiResponse(responseCode = "404", description = "Objetivo de aprendizaje no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("isAuthenticated()")
@@ -47,16 +45,32 @@ public class ExerciseController {
       @PathVariable UUID curriculumId,
       @PathVariable UUID competencyId,
       @PathVariable UUID standardId,
-      @PathVariable UUID learningObjectiveId) throws ResourceNotFoundException {
+      @PathVariable UUID learningObjectiveId,
+      @RequestParam(defaultValue = "active") String status) throws ResourceNotFoundException {
 
-    List<ExerciseResponse> list = exerciseService.getAllByLearningObjective(learningObjectiveId);
+    List<ExerciseResponse> list;
+
+    switch (status.toLowerCase()) {
+      case "inactive":
+        list = exerciseService.getAllByLearningObjectiveInactive(
+            curriculumId, competencyId, standardId, learningObjectiveId);
+        break;
+      case "all":
+        list = exerciseService.getAllByLearningObjectiveIncludingInactive(
+            curriculumId, competencyId, standardId, learningObjectiveId);
+        break;
+      default: // "active"
+        list = exerciseService.getAllByLearningObjective(
+            curriculumId, competencyId, standardId, learningObjectiveId);
+    }
+
     return ResponseEntity.ok(list);
   }
 
-  @Operation(summary = "Obtener un ejercicio")
+  @Operation(summary = "Obtener un ejercicio específico")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Ejercicio encontrado", content = @Content(schema = @Schema(implementation = ExerciseResponse.class))),
-      @ApiResponse(responseCode = "404", description = "Ejercicio u objetivo no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+      @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("isAuthenticated()")
   @GetMapping("/{id}")
@@ -67,13 +81,14 @@ public class ExerciseController {
       @PathVariable UUID learningObjectiveId,
       @PathVariable UUID id) throws ResourceNotFoundException {
 
-    ExerciseResponse dto = exerciseService.getById(learningObjectiveId, id);
-    return ResponseEntity.ok(dto);
+    ExerciseResponse response = exerciseService.getById(
+        curriculumId, competencyId, standardId, learningObjectiveId, id);
+    return ResponseEntity.ok(response);
   }
 
-  @Operation(summary = "Crear un ejercicio")
+  @Operation(summary = "Crear un nuevo ejercicio")
   @ApiResponses({
-      @ApiResponse(responseCode = "201", description = "Ejercicio creado correctamente", content = @Content(schema = @Schema(implementation = ExerciseResponse.class))),
+      @ApiResponse(responseCode = "201", description = "Ejercicio creado", content = @Content(schema = @Schema(implementation = ExerciseResponse.class))),
       @ApiResponse(responseCode = "400", description = "Datos inválidos", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
       @ApiResponse(responseCode = "404", description = "Objetivo de aprendizaje no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
@@ -86,15 +101,16 @@ public class ExerciseController {
       @PathVariable UUID learningObjectiveId,
       @Valid @RequestBody ExerciseRequest request) throws ResourceNotFoundException {
 
-    ExerciseResponse created = exerciseService.create(learningObjectiveId, request);
+    ExerciseResponse created = exerciseService.create(
+        curriculumId, competencyId, standardId, learningObjectiveId, request);
     return ResponseEntity.status(HttpStatus.CREATED).body(created);
   }
 
-  @Operation(summary = "Actualizar un ejercicio")
+  @Operation(summary = "Actualizar un ejercicio existente")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "Ejercicio actualizado correctamente", content = @Content(schema = @Schema(implementation = ExerciseResponse.class))),
+      @ApiResponse(responseCode = "200", description = "Ejercicio actualizado", content = @Content(schema = @Schema(implementation = ExerciseResponse.class))),
       @ApiResponse(responseCode = "400", description = "Datos inválidos", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-      @ApiResponse(responseCode = "404", description = "Ejercicio u objetivo no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+      @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
   @PutMapping("/{id}")
@@ -106,14 +122,15 @@ public class ExerciseController {
       @PathVariable UUID id,
       @Valid @RequestBody ExerciseRequest request) throws ResourceNotFoundException {
 
-    ExerciseResponse updated = exerciseService.update(learningObjectiveId, id, request);
+    ExerciseResponse updated = exerciseService.update(
+        curriculumId, competencyId, standardId, learningObjectiveId, id, request);
     return ResponseEntity.ok(updated);
   }
 
-  @Operation(summary = "Eliminar un ejercicio (soft-delete)")
+  @Operation(summary = "Eliminar lógicamente un ejercicio")
   @ApiResponses({
-      @ApiResponse(responseCode = "204", description = "Ejercicio eliminado correctamente"),
-      @ApiResponse(responseCode = "404", description = "Ejercicio u objetivo no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+      @ApiResponse(responseCode = "204", description = "Ejercicio eliminado"),
+      @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
   @DeleteMapping("/{id}")
@@ -124,14 +141,14 @@ public class ExerciseController {
       @PathVariable UUID learningObjectiveId,
       @PathVariable UUID id) throws ResourceNotFoundException {
 
-    exerciseService.delete(learningObjectiveId, id);
+    exerciseService.delete(curriculumId, competencyId, standardId, learningObjectiveId, id);
     return ResponseEntity.noContent().build();
   }
 
-  @Operation(summary = "Reactivar un ejercicio")
+  @Operation(summary = "Reactivar un ejercicio eliminado")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "Ejercicio reactivado correctamente"),
-      @ApiResponse(responseCode = "404", description = "Ejercicio u objetivo no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+      @ApiResponse(responseCode = "200", description = "Ejercicio reactivado"),
+      @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
   @PatchMapping("/{id}/reactivate")
@@ -142,14 +159,14 @@ public class ExerciseController {
       @PathVariable UUID learningObjectiveId,
       @PathVariable UUID id) throws ResourceNotFoundException {
 
-    exerciseService.reactivate(learningObjectiveId, id);
+    exerciseService.reactivate(curriculumId, competencyId, standardId, learningObjectiveId, id);
     return ResponseEntity.ok().build();
   }
 
-  @Operation(summary = "Verificar respuesta del estudiante")
+  @Operation(summary = "Verificar la respuesta de un estudiante")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "Respuesta evaluada correctamente", content = @Content(schema = @Schema(implementation = CheckAnswerResponse.class))),
-      @ApiResponse(responseCode = "400", description = "Respuesta inválida", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+      @ApiResponse(responseCode = "200", description = "Respuesta evaluada", content = @Content(schema = @Schema(implementation = CheckAnswerResponse.class))),
+      @ApiResponse(responseCode = "400", description = "Datos inválidos", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
       @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER','STUDENT')")
@@ -160,15 +177,10 @@ public class ExerciseController {
       @PathVariable UUID standardId,
       @PathVariable UUID learningObjectiveId,
       @PathVariable UUID exerciseId,
-      @Valid @RequestBody CheckAnswerRequest request) {
+      @Valid @RequestBody CheckAnswerRequest request) throws ResourceNotFoundException {
 
     CheckAnswerResponse result = exerciseService.checkAnswer(
-        curriculumId,
-        competencyId,
-        standardId,
-        learningObjectiveId,
-        exerciseId,
-        request);
+        curriculumId, competencyId, standardId, learningObjectiveId, exerciseId, request);
     return ResponseEntity.ok(result);
   }
 }

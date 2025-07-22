@@ -1,4 +1,3 @@
-// src/main/java/com/tesis/curriculum_service/service/SolutionStepServiceImpl.java
 package com.tesis.curriculum_service.service;
 
 import com.tesis.curriculum_service.dto.SolutionStepRequest;
@@ -18,8 +17,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Implementación de {@link SolutionStepService} usando JPA.
- * Soporta soft-delete y reactivación.
+ * Implementación del servicio de pasos de solución.
+ * Incluye CRUD, soft-delete, reactivación y auditoría.
  */
 @Service
 @RequiredArgsConstructor
@@ -30,16 +29,14 @@ public class SolutionStepServiceImpl implements SolutionStepService {
 
   @Override
   @Transactional
-  public SolutionStepResponse create(UUID exerciseId, SolutionStepRequest req) {
-    // 1. Validar existencia de ejercicio
-    Exercise ex = exerciseRepo.findById(exerciseId)
+  public SolutionStepResponse create(UUID exerciseId, SolutionStepRequest request) {
+    Exercise exercise = exerciseRepo.findById(exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
 
-    // 2. Construir y guardar
     SolutionStep step = SolutionStep.builder()
-        .stepNumber(req.getStepNumber())
-        .explanation(req.getExplanation())
-        .exercise(ex)
+        .stepNumber(request.getStepNumber())
+        .explanation(request.getExplanation())
+        .exercise(exercise)
         .build();
 
     SolutionStep saved = stepRepo.save(step);
@@ -49,11 +46,23 @@ public class SolutionStepServiceImpl implements SolutionStepService {
   @Override
   @Transactional(readOnly = true)
   public List<SolutionStepResponse> getAllByExercise(UUID exerciseId) {
-    // Verificar ejercicio
     if (!exerciseRepo.existsById(exerciseId)) {
       throw new ResourceNotFoundException("Exercise", "id", exerciseId);
     }
-    return stepRepo.findByExerciseIdOrderByStepNumberAsc(exerciseId).stream()
+
+    return stepRepo.findActiveByExerciseId(exerciseId).stream()
+        .map(this::toDto)
+        .collect(Collectors.toList());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<SolutionStepResponse> getAllIncludingInactive(UUID exerciseId) {
+    if (!exerciseRepo.existsById(exerciseId)) {
+      throw new ResourceNotFoundException("Exercise", "id", exerciseId);
+    }
+
+    return stepRepo.findAllByExerciseId(exerciseId).stream()
         .map(this::toDto)
         .collect(Collectors.toList());
   }
@@ -68,13 +77,13 @@ public class SolutionStepServiceImpl implements SolutionStepService {
 
   @Override
   @Transactional
-  public SolutionStepResponse update(UUID exerciseId, UUID id, SolutionStepRequest req) {
+  public SolutionStepResponse update(UUID exerciseId, UUID id, SolutionStepRequest request) {
     SolutionStep step = stepRepo.findByIdAndExerciseId(id, exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("SolutionStep", "id", id));
 
-    step.setStepNumber(req.getStepNumber());
-    step.setExplanation(req.getExplanation());
-    // updatedAt se fija en @PreUpdate
+    step.setStepNumber(request.getStepNumber());
+    step.setExplanation(request.getExplanation());
+
     SolutionStep updated = stepRepo.save(step);
     return toDto(updated);
   }
@@ -84,32 +93,39 @@ public class SolutionStepServiceImpl implements SolutionStepService {
   public void delete(UUID exerciseId, UUID id) {
     SolutionStep step = stepRepo.findByIdAndExerciseId(id, exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("SolutionStep", "id", id));
-    stepRepo.delete(step); // soft-delete via @SQLDelete
+    stepRepo.delete(step); // soft-delete activado con @SQLDelete
   }
 
   @Override
   @Transactional
   public void reactivate(UUID exerciseId, UUID id) {
-    // Permite recuperar registros inactivos
     SolutionStep step = stepRepo.findIncludingInactiveByIdAndExerciseId(id, exerciseId)
         .orElseThrow(() -> new ResourceNotFoundException("SolutionStep", "id", id));
 
     step.setActive(true);
     step.setDeletedAt(null);
+    step.setDeletedBy(null);
     step.setUpdatedAt(LocalDateTime.now());
+
     stepRepo.save(step);
   }
 
   // --------------------------------------------------
-  // Helper: entidad → DTO
+  // Helper para mapear entidad a DTO
   // --------------------------------------------------
   private SolutionStepResponse toDto(SolutionStep s) {
     return SolutionStepResponse.builder()
         .id(s.getId())
         .stepNumber(s.getStepNumber())
         .explanation(s.getExplanation())
+        .exerciseId(s.getExercise().getId())
         .createdAt(s.getCreatedAt())
         .updatedAt(s.getUpdatedAt())
+        .active(s.getActive())
+        .deletedAt(s.getDeletedAt())
+        .createdBy(s.getCreatedBy())
+        .updatedBy(s.getUpdatedBy())
+        .deletedBy(s.getDeletedBy())
         .build();
   }
 }

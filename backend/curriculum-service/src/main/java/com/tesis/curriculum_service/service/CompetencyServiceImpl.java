@@ -15,11 +15,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/**
- * Implementación de CompetencyService usando JPA.
- * Soporta soft-delete en cascada (standards + learning objectives)
- * y reactivación en cascada.
- */
 @Service
 @RequiredArgsConstructor
 public class CompetencyServiceImpl implements CompetencyService {
@@ -31,7 +26,6 @@ public class CompetencyServiceImpl implements CompetencyService {
   @Override
   @Transactional
   public CompetencyResponse create(UUID curriculumId, CompetencyRequest req) {
-    // Validamos y recuperamos el Curriculum
     Curriculum curriculum = curriculumRepo.findById(curriculumId)
         .orElseThrow(() -> new ResourceNotFoundException("Curriculum", "id", curriculumId));
 
@@ -49,11 +43,32 @@ public class CompetencyServiceImpl implements CompetencyService {
   @Override
   @Transactional(readOnly = true)
   public List<CompetencyResponse> getAllByCurriculum(UUID curriculumId) {
-    // Verificamos existencia de Curriculum
     if (!curriculumRepo.existsById(curriculumId)) {
       throw new ResourceNotFoundException("Curriculum", "id", curriculumId);
     }
-    return competencyRepo.findByCurriculumId(curriculumId).stream()
+    return competencyRepo.findActiveByCurriculumId(curriculumId).stream()
+        .map(this::toDto)
+        .collect(Collectors.toList());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<CompetencyResponse> getAllInactiveByCurriculum(UUID curriculumId) {
+    if (!curriculumRepo.existsById(curriculumId)) {
+      throw new ResourceNotFoundException("Curriculum", "id", curriculumId);
+    }
+    return competencyRepo.findInactiveByCurriculumId(curriculumId).stream()
+        .map(this::toDto)
+        .collect(Collectors.toList());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<CompetencyResponse> getAllIncludingInactiveByCurriculum(UUID curriculumId) {
+    if (!curriculumRepo.existsById(curriculumId)) {
+      throw new ResourceNotFoundException("Curriculum", "id", curriculumId);
+    }
+    return competencyRepo.findAllByCurriculumId(curriculumId).stream()
         .map(this::toDto)
         .collect(Collectors.toList());
   }
@@ -61,8 +76,7 @@ public class CompetencyServiceImpl implements CompetencyService {
   @Override
   @Transactional(readOnly = true)
   public CompetencyResponse getById(UUID curriculumId, UUID id) {
-    Competency c = competencyRepo
-        .findByIdAndCurriculumId(id, curriculumId)
+    Competency c = competencyRepo.findActiveByIdAndCurriculumId(id, curriculumId)
         .orElseThrow(() -> new ResourceNotFoundException("Competency", "id", id));
     return toDto(c);
   }
@@ -70,8 +84,7 @@ public class CompetencyServiceImpl implements CompetencyService {
   @Override
   @Transactional
   public CompetencyResponse update(UUID curriculumId, UUID id, CompetencyRequest req) {
-    Competency c = competencyRepo
-        .findByIdAndCurriculumId(id, curriculumId)
+    Competency c = competencyRepo.findActiveByIdAndCurriculumId(id, curriculumId)
         .orElseThrow(() -> new ResourceNotFoundException("Competency", "id", id));
 
     c.setName(req.getName());
@@ -84,34 +97,26 @@ public class CompetencyServiceImpl implements CompetencyService {
   @Override
   @Transactional
   public void delete(UUID curriculumId, UUID id) {
-    Competency c = competencyRepo
-        .findByIdAndCurriculumId(id, curriculumId)
+    Competency c = competencyRepo.findActiveByIdAndCurriculumId(id, curriculumId)
         .orElseThrow(() -> new ResourceNotFoundException("Competency", "id", id));
 
-    // Borrado lógico en cascada de estándares (y sus learning objectives)
     c.getStandards().forEach(std -> standardService.delete(curriculumId, c.getId(), std.getId()));
-    competencyRepo.delete(c);
+    competencyRepo.delete(c); // soft-delete via @SQLDelete
   }
 
   @Override
   @Transactional
   public void reactivate(UUID curriculumId, UUID competencyId) {
-    // 1. Reactivar la Competency (inactiva)
-    Competency c = competencyRepo
-        .findIncludingInactiveByIdAndCurriculumId(competencyId, curriculumId)
+    Competency c = competencyRepo.findIncludingInactiveByIdAndCurriculumId(competencyId, curriculumId)
         .orElseThrow(() -> new ResourceNotFoundException("Competency", "id", competencyId));
 
     c.setActive(true);
     c.setDeletedAt(null);
     competencyRepo.save(c);
 
-    // 2. Reactivar en cascada cada Standard
     c.getStandards().forEach(std -> standardService.reactivate(curriculumId, competencyId, std.getId()));
   }
 
-  // --------------------------------------------------
-  // Mapeo interno: entidad → DTO
-  // --------------------------------------------------
   private CompetencyResponse toDto(Competency c) {
     return CompetencyResponse.builder()
         .id(c.getId())
@@ -119,9 +124,13 @@ public class CompetencyServiceImpl implements CompetencyService {
         .description(c.getDescription())
         .code(c.getCode())
         .curriculumId(c.getCurriculum() != null ? c.getCurriculum().getId() : null)
+        .active(c.getActive())
         .createdAt(c.getCreatedAt())
         .updatedAt(c.getUpdatedAt())
-        .active(c.getActive())
+        .createdBy(c.getCreatedBy())
+        .updatedBy(c.getUpdatedBy())
+        .deletedAt(c.getDeletedAt())
+        .deletedBy(c.getDeletedBy())
         .build();
   }
 }

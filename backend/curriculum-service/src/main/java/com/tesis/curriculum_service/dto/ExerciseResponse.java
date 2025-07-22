@@ -60,6 +60,9 @@ public class ExerciseResponse {
   @Schema(description = "ID del currículo asociado")
   private UUID curriculumId;
 
+  @Schema(description = "Respuesta correcta del ejercicio", example = "4")
+  private String correctAnswer;
+
   @Schema(description = "Pasos de la solución ordenados")
   private List<SolutionStepResponse> solutionSteps;
 

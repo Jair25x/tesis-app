@@ -27,7 +27,7 @@ public interface CurriculumService {
    * 
    * @return Lista de DTOs.
    */
-  List<CurriculumResponse> getAll();
+  List<CurriculumResponse> getAll(String filter);
 
   /**
    * Recupera un currículo por su ID.
@@ -65,4 +65,10 @@ public interface CurriculumService {
   void reactivate(UUID id) throws ResourceNotFoundException;
 
   CurriculumFullResponse getCurriculumFull(UUID id);
+
+  List<CurriculumResponse> getAllIncludingInactive();
+
+  List<CurriculumResponse> getAllActive();
+
+  List<CurriculumResponse> getAllInactive();
 }

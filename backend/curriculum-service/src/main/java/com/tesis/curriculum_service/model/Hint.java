@@ -1,12 +1,12 @@
 package com.tesis.curriculum_service.model;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.tesis.curriculum_service.model.base.AuditableEntity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
@@ -19,11 +19,11 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@EqualsAndHashCode(onlyExplicitlyIncluded = true, callSuper = false)
 @ToString(onlyExplicitlyIncluded = true)
 @SQLDelete(sql = "UPDATE hints SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
 @SQLRestriction("active = true")
-public class Hint {
+public class Hint extends AuditableEntity {
 
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
@@ -44,28 +44,12 @@ public class Hint {
   @JsonBackReference
   private Exercise exercise;
 
-  @Column(nullable = false, updatable = false)
-  private LocalDateTime createdAt;
-
-  @Column(nullable = false)
-  private LocalDateTime updatedAt;
-
   @Column(nullable = false)
   private Boolean active;
 
-  @Column
-  private LocalDateTime deletedAt;
-
   @PrePersist
-  void onCreate() {
-    LocalDateTime now = LocalDateTime.now();
-    createdAt = now;
-    updatedAt = now;
-    active = true;
-  }
-
-  @PreUpdate
-  void onUpdate() {
-    updatedAt = LocalDateTime.now();
+  protected void onCreate() {
+    super.onCreate();
+    this.active = true;
   }
 }

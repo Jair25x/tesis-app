@@ -5,6 +5,7 @@ import com.tesis.curriculum_service.dto.StandardResponse;
 import com.tesis.curriculum_service.exception.ResourceNotFoundException;
 import com.tesis.curriculum_service.model.Competency;
 import com.tesis.curriculum_service.model.Standard;
+import com.tesis.curriculum_service.model.LearningObjective;
 import com.tesis.curriculum_service.repository.CompetencyRepository;
 import com.tesis.curriculum_service.repository.StandardRepository;
 import lombok.RequiredArgsConstructor;
@@ -16,21 +17,18 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/**
- * Implementación de {@link StandardService} usando JPA.
- */
 @Service
 @RequiredArgsConstructor
 public class StandardServiceImpl implements StandardService {
 
   private final StandardRepository standardRepo;
   private final CompetencyRepository competencyRepo;
+  private final LearningObjectiveService learningObjectiveService;
 
   @Override
   @Transactional
   public StandardResponse create(UUID curriculumId, UUID competencyId, StandardRequest request)
       throws ResourceNotFoundException {
-    // Validamos Competency dentro del Curriculum
     Competency comp = competencyRepo
         .findById(competencyId)
         .filter(c -> c.getCurriculum().getId().equals(curriculumId))
@@ -43,34 +41,55 @@ public class StandardServiceImpl implements StandardService {
         .competency(comp)
         .build();
 
-    Standard saved = standardRepo.save(std);
-    return toDto(saved);
+    return toDto(standardRepo.save(std));
   }
 
   @Override
   @Transactional(readOnly = true)
-  public List<StandardResponse> getAllByCompetency(UUID curriculumId, UUID competencyId)
+  public List<StandardResponse> getAllByCompetency(UUID curriculumId, UUID competencyId, String status)
       throws ResourceNotFoundException {
-    // Validamos Competency dentro del Curriculum
-    if (!competencyRepo.existsById(competencyId)
-        || !competencyRepo.findById(competencyId)
-            .filter(c -> c.getCurriculum().getId().equals(curriculumId))
-            .isPresent()) {
-      throw new ResourceNotFoundException("Competency", "id", competencyId);
+    validateCompetencyInCurriculum(curriculumId, competencyId);
+
+    List<Standard> standards;
+
+    switch (status.toLowerCase()) {
+      case "active" -> standards = standardRepo.findActiveByCompetencyId(competencyId);
+      case "inactive" -> standards = standardRepo.findInactiveByCompetencyId(competencyId);
+      case "all" -> standards = standardRepo.findAllByCompetencyIdNative(competencyId);
+      default -> throw new IllegalArgumentException("Parámetro 'status' inválido. Usa: active, inactive o all.");
     }
-    return standardRepo.findByCompetencyId(competencyId).stream()
+
+    return standards.stream()
         .map(this::toDto)
         .collect(Collectors.toList());
   }
 
   @Override
   @Transactional(readOnly = true)
+  public List<StandardResponse> getAllByCompetency(UUID curriculumId, UUID competencyId)
+      throws ResourceNotFoundException {
+    return getAllByCompetency(curriculumId, competencyId, "active");
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<StandardResponse> getAllInactiveByCompetency(UUID curriculumId, UUID competencyId)
+      throws ResourceNotFoundException {
+    return getAllByCompetency(curriculumId, competencyId, "inactive");
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<StandardResponse> getAllIncludingInactiveByCompetency(UUID curriculumId, UUID competencyId)
+      throws ResourceNotFoundException {
+    return getAllByCompetency(curriculumId, competencyId, "all");
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public StandardResponse getById(UUID curriculumId, UUID competencyId, UUID id)
       throws ResourceNotFoundException {
-    Standard std = standardRepo
-        .findByIdAndCompetencyId(id, competencyId)
-        .filter(s -> s.getCompetency().getCurriculum().getId().equals(curriculumId))
-        .orElseThrow(() -> new ResourceNotFoundException("Standard", "id", id));
+    Standard std = findValidatedStandard(curriculumId, competencyId, id);
     return toDto(std);
   }
 
@@ -78,29 +97,25 @@ public class StandardServiceImpl implements StandardService {
   @Transactional
   public StandardResponse update(UUID curriculumId, UUID competencyId, UUID id, StandardRequest request)
       throws ResourceNotFoundException {
-    // Validación análoga a getById
-    Standard std = standardRepo
-        .findByIdAndCompetencyId(id, competencyId)
-        .filter(s -> s.getCompetency().getCurriculum().getId().equals(curriculumId))
-        .orElseThrow(() -> new ResourceNotFoundException("Standard", "id", id));
-
+    Standard std = findValidatedStandard(curriculumId, competencyId, id);
     std.setName(request.getName());
     std.setDescription(request.getDescription());
     std.setCode(request.getCode());
-    Standard updated = standardRepo.save(std);
-    return toDto(updated);
+    return toDto(standardRepo.save(std));
   }
 
   @Override
   @Transactional
   public void delete(UUID curriculumId, UUID competencyId, UUID id)
       throws ResourceNotFoundException {
-    Standard std = standardRepo
-        .findByIdAndCompetencyId(id, competencyId)
-        .filter(s -> s.getCompetency().getCurriculum().getId().equals(curriculumId))
-        .orElseThrow(() -> new ResourceNotFoundException("Standard", "id", id));
+    Standard std = findValidatedStandard(curriculumId, competencyId, id);
 
-    standardRepo.delete(std); // soft-delete via @SQLDelete
+    // Desactivación manual de los learning objectives
+    for (LearningObjective lo : std.getLearningObjectives()) {
+      learningObjectiveService.delete(curriculumId, competencyId, std.getId(), lo.getId());
+    }
+
+    standardRepo.delete(std); // soft-delete con @SQLDelete
   }
 
   @Override
@@ -116,6 +131,24 @@ public class StandardServiceImpl implements StandardService {
     std.setDeletedAt(null);
     std.setUpdatedAt(LocalDateTime.now());
     standardRepo.save(std);
+
+    // Reactivar los learning objectives asociados
+    std.getLearningObjectives()
+        .forEach(lo -> learningObjectiveService.reactivate(curriculumId, competencyId, id, lo.getId()));
+  }
+
+  // 🔒 Métodos privados de apoyo
+  private Standard findValidatedStandard(UUID curriculumId, UUID competencyId, UUID id) {
+    return standardRepo
+        .findByIdAndCompetencyId(id, competencyId)
+        .filter(s -> s.getCompetency().getCurriculum().getId().equals(curriculumId))
+        .orElseThrow(() -> new ResourceNotFoundException("Standard", "id", id));
+  }
+
+  private void validateCompetencyInCurriculum(UUID curriculumId, UUID competencyId) {
+    competencyRepo.findById(competencyId)
+        .filter(c -> c.getCurriculum().getId().equals(curriculumId))
+        .orElseThrow(() -> new ResourceNotFoundException("Competency", "id", competencyId));
   }
 
   private StandardResponse toDto(Standard s) {
