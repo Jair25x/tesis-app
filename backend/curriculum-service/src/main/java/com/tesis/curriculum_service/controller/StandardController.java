@@ -123,7 +123,7 @@ public class StandardController {
             @ApiResponse(responseCode = "403", description = "No autorizado")
     })
     @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
-    @PostMapping("/{id}/reactivate")
+    @PatchMapping("/{id}/reactivate")
     public ResponseEntity<Void> reactivate(
             @PathVariable UUID curriculumId,
             @PathVariable UUID competencyId,
