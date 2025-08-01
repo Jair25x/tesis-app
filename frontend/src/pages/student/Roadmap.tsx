@@ -1,7 +1,7 @@
 // src/pages/student/Roadmap.tsx
 import { useEffect, useState } from "react";
 import { getCurriculumFull } from "../../services/curriculumService";
-import type { CurriculumFullResponse } from "../../types/CurriculumFullResponse";
+import type { CurriculumFullResponse } from "../../types/curriculum/CurriculumFullResponse";
 import LoadingScreen from "../../components/LoadingScreen";
 import ProgressNode from "../../components/student/ProgressNode";
 

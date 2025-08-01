@@ -5,7 +5,7 @@ import {
   getCurriculumById,
   updateCurriculum,
 } from "../../../services/curriculumService";
-import type { CurriculumRequest, CurriculumResponse } from "../../../types/Curriculum";
+import type { CurriculumRequest, CurriculumResponse } from "../../../types/curriculum/Curriculum";
 import { showToast } from "../../../utils/showToast";
 import { useCurriculum } from "../../../hooks/useCurriculum"; // ✅ Nuevo
 

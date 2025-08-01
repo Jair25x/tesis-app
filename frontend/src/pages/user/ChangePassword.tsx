@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { changePassword } from "../../services/profileService";
-import type { ChangePasswordDto } from "../../types/ProfileTypes";
+import type { ChangePasswordDto } from "../../types/user/ProfileTypes";
 import { useApi } from "../../hooks/useApi";
 
 export default function ChangePassword() {

@@ -4,7 +4,7 @@ import type {
   UserProfile,
   UpdateProfileDto,
   ChangePasswordDto,
-} from "../types/ProfileTypes";
+} from "../types/user/ProfileTypes";
 
 export async function getProfile(): Promise<UserProfile> {
   const response = await api.get("/auth/me");

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getProfile, updateProfile } from "../../services/profileService";
 import { useApi } from "../../hooks/useApi";
-import type { UpdateProfileDto, UserProfile } from "../../types/ProfileTypes";
+import type { UpdateProfileDto, UserProfile } from "../../types/user/ProfileTypes";
 import { useNavigate } from "react-router-dom";
 
 export default function EditProfile() {

@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { CompetencyContext } from "./CompetencyContext";
-import type { CompetencyResponse } from "../types/Competency";
+import type { CompetencyResponse } from "../types/curriculum/Competency";
 import { getCompetenciesByCurriculum } from "../services/competencyService";
 import { useParams } from "react-router-dom";
 

@@ -5,7 +5,7 @@ import {
   getCompetencyById,
   updateCompetency,
 } from "../../../services/competencyService";
-import type { CompetencyRequest } from "../../../types/Competency";
+import type { CompetencyRequest } from "../../../types/curriculum/Competency";
 import { showToast } from "../../../utils/showToast";
 import { useCompetency } from "../../../context/useCompetency";
 

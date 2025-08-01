@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { CurriculumResponse } from "../types/Curriculum";
+import type { CurriculumResponse } from "../types/curriculum/Curriculum";
 
 export interface CurriculumContextType {
   curricula: CurriculumResponse[];

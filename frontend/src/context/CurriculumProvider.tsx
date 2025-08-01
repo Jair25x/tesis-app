@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { getAllCurricula } from "../services/curriculumService";
 import { CurriculumContext } from "./CurriculumContext";
-import type { CurriculumResponse } from "../types/Curriculum";
+import type { CurriculumResponse } from "../types/curriculum/Curriculum";
 import type { CurriculumContextType } from "./CurriculumContext";
 
 export const CurriculumProvider = ({

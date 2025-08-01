@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { getProfile } from "../../services/profileService";
 import { useApi } from "../../hooks/useApi";
-import type { UserProfile } from "../../types/ProfileTypes";
+import type { UserProfile } from "../../types/user/ProfileTypes";
 import { useAuth } from "../../context/useAuth";
 
 export default function Profile() {

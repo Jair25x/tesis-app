@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { login as loginRequest } from "../services/authService";
-import type { TypedAxiosError } from "../types/AxiosError";
+import type { TypedAxiosError } from "../types/shared/AxiosError";
 import { useAuth } from "../context/useAuth";
 import capybaraGif from "../assets/capibaramini.gif";
 

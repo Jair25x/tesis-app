@@ -3,14 +3,15 @@ import api from "./api";
 import type {
   CurriculumRequest,
   CurriculumResponse,
-} from "../types/Curriculum";
-import type { CurriculumFullResponse } from "../types/CurriculumFullResponse";
+} from "../types/curriculum/Curriculum";
+import type { CurriculumFullResponse } from "../types/curriculum/CurriculumFullResponse";
 
 /* 🔎 1. Listar currículos por estado: all | active | inactive */
-export const getAllCurricula = (
+export const getAllCurricula = async (
   status: "all" | "active" | "inactive" = "all"
-) => {
-  return api.get<CurriculumResponse[]>(`/curricula?status=${status}`);
+): Promise<CurriculumResponse[]> => {
+  const res = await api.get(`/curricula?status=${status}`);
+  return Array.isArray(res.data) ? res.data : res.data.content || [];
 };
 
 /* 🔎 2. Obtener currículo simple por ID */

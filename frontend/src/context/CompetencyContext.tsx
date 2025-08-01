@@ -1,6 +1,6 @@
 // src/context/CompetencyContext.ts
 import { createContext } from "react";
-import type { CompetencyResponse } from "../types/Competency";
+import type { CompetencyResponse } from "../types/curriculum/Competency";
 
 export interface CompetencyContextType {
   competencies: CompetencyResponse[];

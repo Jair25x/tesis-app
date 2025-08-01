@@ -1,10 +1,10 @@
 // src/pages/admin/users/EditUser.tsx
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getUserById, updateUser } from "../../services/adminService";
-import type { AdminUpdateUserDto } from "../../types/AdminTypes";
-import { useApi } from "../../hooks/useApi";
-import { showToast } from "../../utils/showToast";
+import { getUserById, updateUser } from "../../../services/adminService";
+import type { AdminUpdateUserDto } from "../../../types/user/AdminTypes";
+import { useApi } from "../../../hooks/useApi";
+import { showToast } from "../../../utils/showToast";
 
 export default function EditUser() {
   const { id } = useParams<{ id: string }>();

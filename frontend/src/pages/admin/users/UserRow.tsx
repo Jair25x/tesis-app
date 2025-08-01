@@ -1,7 +1,7 @@
 // src/pages/admin/UserRow.tsx
 import { memo } from "react";
 import { Link } from "react-router-dom";
-import type { AdminUserSummary } from "../../types/AdminTypes";
+import type { AdminUserSummary } from "../../../types/user/AdminTypes";
 
 interface Props {
   user: AdminUserSummary;

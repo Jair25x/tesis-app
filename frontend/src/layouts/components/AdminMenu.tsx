@@ -1,7 +1,8 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "../../utils/cn";
 import { useState } from "react";
-import { useCurriculum } from "../../hooks/useCurriculum"; // ✅ Nuevo hook
+import { useCurriculum } from "../../hooks/useCurriculum";
+import { useCompetencyMap } from "../../hooks/useCompetencyMap";
 
 interface AdminMenuProps {
   adminOpen: boolean;
@@ -15,8 +16,15 @@ export default function AdminMenu({
   setSidebarOpen,
 }: AdminMenuProps) {
   const location = useLocation();
-  const { curricula } = useCurriculum(); // ✅ Obtenemos el estado global
+
+  // Aseguramos fallback con array vacío
+  const { curricula = [] } = useCurriculum();
+  const { competencyMap } = useCompetencyMap(curricula); // ✅ seguro gracias a fallback arriba
+
   const [curriculaOpen, setCurriculaOpen] = useState(false);
+  const [expandedCurriculum, setExpandedCurriculum] = useState<string | null>(
+    null
+  );
 
   return (
     <div className="relative">
@@ -56,8 +64,15 @@ export default function AdminMenu({
           >
             📚 Currículos
           </Link>
+          <Link
+            to="/admin/explorer"
+            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+            onClick={() => setSidebarOpen(false)}
+          >
+            🧭 Explorador Curricular
+          </Link>
 
-          {/* Submenú de competencias por currículo */}
+          {/* Submenú dinámico: Currículo → Competencias */}
           <div>
             <button
               className="flex items-center justify-between w-full px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
@@ -68,23 +83,43 @@ export default function AdminMenu({
             </button>
 
             {curriculaOpen && (
-              <div className="ml-4 mt-1 max-h-64 overflow-y-auto space-y-1 pr-1">
+              <div className="ml-4 mt-1 max-h-64 overflow-y-auto pr-1 space-y-1">
                 {curricula.length === 0 && (
                   <p className="text-sm text-gray-500 dark:text-gray-400 px-4">
                     No hay currículos activos.
                   </p>
                 )}
+
                 {curricula.map((curriculum) => (
-                  <Link
-                    key={curriculum.id}
-                    to={`/admin/curricula/${curriculum.id}/competencies`}
-                    className="block px-4 py-1 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 w-full"
-                    onClick={() => setSidebarOpen(false)}
-                  >
-                    <span className="block truncate" title={curriculum.name}>
+                  <div key={curriculum.id}>
+                    <button
+                      className="w-full text-left px-4 py-1 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                      onClick={() =>
+                        setExpandedCurriculum((prev) =>
+                          prev === curriculum.id ? null : curriculum.id
+                        )
+                      }
+                    >
                       {curriculum.name}
-                    </span>
-                  </Link>
+                    </button>
+
+                    {expandedCurriculum === curriculum.id && (
+                      <div className="ml-4 mt-1 space-y-1">
+                        {(competencyMap?.[curriculum.id] ?? []).map((comp) => (
+                          <div key={comp.id}>
+                            <Link
+                              to={`/admin/curricula/${curriculum.id}/competencies/${comp.id}/standards`}
+                              className="block px-4 py-1 text-sm rounded hover:bg-gray-200 dark:hover:bg-gray-700 truncate"
+                              title={comp.name}
+                              onClick={() => setSidebarOpen(false)}
+                            >
+                              ↳ {comp.name}
+                            </Link>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             )}

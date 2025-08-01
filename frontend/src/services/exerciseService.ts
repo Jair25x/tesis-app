@@ -5,7 +5,7 @@ import type {
   CheckAnswerResponse,
   ExerciseAttemptRequest,
   ExerciseAttemptResponse,
-} from "../types/ExerciseResponse";
+} from "../types/exercise/ExerciseResponse";
 
 /** Devuelve lista completa del OA */
 export const getExercisesByObjective = async (

@@ -3,7 +3,7 @@ import api from "./api";
 import type {
   CompetencyRequest,
   CompetencyResponse,
-} from "../types/Competency";
+} from "../types/curriculum/Competency";
 
 export const getCompetencyById = async (
   curriculumId: string,

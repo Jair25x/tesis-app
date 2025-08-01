@@ -4,7 +4,7 @@ import {
   getCurriculumById,
   deleteCurriculum,
 } from "../../../services/curriculumService";
-import type { CurriculumResponse } from "../../../types/Curriculum";
+import type { CurriculumResponse } from "../../../types/curriculum/Curriculum";
 import LoadingScreen from "../../../components/LoadingScreen";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { formatDate } from "../../../utils/formatDate";

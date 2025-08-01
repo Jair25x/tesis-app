@@ -6,7 +6,7 @@ import type {
   AdminUpdateUserDto,
   AdminUser,
   AdminUpdateRequest,
-} from "../types/AdminTypes";
+} from "../types/user/AdminTypes";
 
 export async function getAllUsers(): Promise<AdminUserSummary[]> {
   const response = await api.get("/auth/users");

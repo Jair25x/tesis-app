@@ -23,18 +23,16 @@ export default function CompetencyList() {
     refreshCompetencies,
   } = useCompetency();
 
-  useEffect(() => {
-    if (curriculumId) {
-      refreshCompetencies(curriculumId); // ✅ Evita el error
-    }
-  }, [status, curriculumId]);
-  
   const [showModal, setShowModal] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [modalAction, setModalAction] = useState<
     "delete" | "reactivate" | null
   >(null);
   const [modalLoading, setModalLoading] = useState(false);
+
+  useEffect(() => {
+    if (curriculumId) refreshCompetencies(curriculumId);
+  }, [status, curriculumId]);
 
   const openModal = (id: string, action: "delete" | "reactivate") => {
     setSelectedId(id);
@@ -53,7 +51,7 @@ export default function CompetencyList() {
         await reactivateCompetency(curriculumId, selectedId);
         showToast.success("Competencia reactivada correctamente.");
       }
-      await refreshCompetencies(curriculumId); // ✅ recarga desde el contexto
+      await refreshCompetencies(curriculumId);
     } catch (err) {
       console.error("Error ejecutando la acción:", err);
       showToast.error("Ocurrió un error al realizar la acción.");
@@ -66,33 +64,35 @@ export default function CompetencyList() {
   };
 
   return (
-    <section className="p-4 md:p-6 lg:p-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+    <section className="p-6 md:p-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+        <h1 className="text-xl sm:text-2xl font-bold dark:text-white text-center sm:text-left w-full sm:w-auto">
           Gestión de Competencias
         </h1>
-        <Link to={`/admin/curricula/${curriculumId}/competencies/new`}>
-          <Button>➕ Nueva Competencia</Button>
+        <Link
+          to={`/admin/curricula/${curriculumId}/competencies/new`}
+          className="w-full sm:w-auto"
+        >
+          <Button className="w-full sm:w-auto">➕ Nueva Competencia</Button>
         </Link>
       </div>
 
       {/* Filtros */}
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap gap-2 justify-center sm:justify-start">
         {(["all", "active", "inactive"] as const).map((type) => (
           <button
             key={type}
             onClick={() => setStatus(type)}
             className={cn(
-              "px-3 py-1 rounded text-sm font-medium",
+              "px-3 py-1 rounded text-sm transition",
               status === type
                 ? {
                     all: "bg-blue-600 text-white",
                     active: "bg-green-600 text-white",
                     inactive: "bg-red-600 text-white",
                   }[type]
-                : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white"
+                : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600"
             )}
-            aria-label={`Filtrar por ${type}`}
           >
             {type === "all"
               ? "Todas"
@@ -115,8 +115,8 @@ export default function CompetencyList() {
           No hay competencias para mostrar.
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full border border-gray-300 dark:border-gray-700 rounded-md overflow-hidden text-sm">
+        <div className="overflow-x-auto rounded-md shadow-sm">
+          <table className="min-w-full border border-gray-300 dark:border-gray-700 text-sm">
             <thead className="bg-gray-100 dark:bg-gray-800">
               <tr>
                 <th className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300">
@@ -125,7 +125,7 @@ export default function CompetencyList() {
                 <th className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300">
                   Código
                 </th>
-                <th className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                <th className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300">
                   Fecha de creación
                 </th>
                 <th className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300">
@@ -162,7 +162,7 @@ export default function CompetencyList() {
                       </span>
                     )}
                   </td>
-                  <td className="p-3 text-center space-x-2">
+                  <td className="p-3 text-sm text-center space-y-1 sm:space-y-0 sm:space-x-2 flex flex-col sm:flex-row justify-center items-center">
                     <Link
                       to={`/admin/curricula/${curriculumId}/competencies/${competency.id}/details`}
                       aria-label="Ver detalles"
@@ -198,7 +198,6 @@ export default function CompetencyList() {
         </div>
       )}
 
-      {/* Modal de confirmación */}
       <ConfirmModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}

@@ -4,7 +4,7 @@ import {
   getCompetencyById,
   deleteCompetency,
 } from "../../../services/competencyService";
-import type { CompetencyResponse } from "../../../types/Competency";
+import type { CompetencyResponse } from "../../../types/curriculum/Competency";
 import LoadingScreen from "../../../components/LoadingScreen";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { formatDate } from "../../../utils/formatDate";

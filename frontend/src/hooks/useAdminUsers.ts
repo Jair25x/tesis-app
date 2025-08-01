@@ -1,7 +1,7 @@
 // src/hooks/useAdminUsers.ts
 import { useState, useEffect, useCallback } from "react";
 import { getAllUsers } from "../services/adminService";
-import type { AdminUserSummary } from "../types/AdminTypes";
+import type { AdminUserSummary } from "../types/user/AdminTypes";
 import { useApi } from "./useApi";
 
 export function useAdminUsers() {

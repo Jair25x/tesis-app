@@ -1,3 +1,4 @@
+// src/pages/admin/AdminDashboard.tsx
 import React from "react";
 import { useUserStats } from "../../hooks/useUserStats";
 import type { LucideIcon } from "lucide-react";
@@ -12,11 +13,12 @@ import {
 
 export default function AdminDashboard() {
   const { stats } = useUserStats();
-  const data = stats ?? {
-    total: 0,
-    active: 0,
-    inactive: 0,
-    byRole: {},
+
+  const data = {
+    total: stats?.total ?? 0,
+    active: stats?.active ?? 0,
+    inactive: stats?.inactive ?? 0,
+    byRole: stats?.byRole ?? {}, // ✅ Asegura estructura vacía si viene null o undefined
   };
 
   const roleConfig: Record<
@@ -39,7 +41,7 @@ export default function AdminDashboard() {
       color: "text-green-500",
     },
   };
-
+  console.log("📊 stats desde hook:", stats);
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <h1 className="text-3xl font-bold text-center mb-10 text-gray-900 dark:text-white">

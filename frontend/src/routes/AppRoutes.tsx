@@ -1,4 +1,3 @@
-// src/routes/AppRoutes.tsx
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import { lazy, Suspense } from "react";
 
@@ -35,9 +34,10 @@ import LoadingScreen from "../components/LoadingScreen";
 
 /* Lazy-load admin */
 const AdminDashboard = lazy(() => import("../pages/admin/AdminDashboard"));
-const UserList = lazy(() => import("../pages/admin/UserList"));
-const EditUser = lazy(() => import("../pages/admin/EditUser"));
-/* Seccion de manejo de Competency */
+const UserList = lazy(() => import("../pages/admin/users/UserList"));
+const EditUser = lazy(() => import("../pages/admin/users/EditUser"));
+
+/* Competencias */
 const CompetencyList = lazy(
   () => import("../pages/admin/competencies/CompetencyList")
 );
@@ -47,7 +47,8 @@ const CompetencyForm = lazy(
 const CompetencyDetails = lazy(
   () => import("../pages/admin/competencies/CompetencyDetails")
 );
-/* Seccion de manejo de Curriculum */
+
+/* Currículos */
 const CurriculumList = lazy(
   () => import("../pages/admin/curricula/CurriculumList")
 );
@@ -57,6 +58,21 @@ const CurriculumForm = lazy(
 const CurriculumDetails = lazy(
   () => import("../pages/admin/curricula/CurriculumDetails")
 );
+
+/* Estándares */
+const StandardList = lazy(
+  () => import("../pages/admin/standards/StandardList")
+);
+const StandardForm = lazy(
+  () => import("../pages/admin/standards/StandardForm")
+);
+const StandardDetails = lazy(
+  () => import("../pages/admin/standards/StandardDetails")
+);
+
+/* Explorador Curricular */
+import ExplorerDashboard from "../pages/admin/explorer/ExplorerDashboard";
+import { ExplorerProvider } from "../pages/admin/explorer/ExplorerProvider";
 
 export const router = createBrowserRouter([
   {
@@ -79,13 +95,10 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "dashboard", element: <StudentDashboard /> },
-
-          /* 🆕 ruta completa */
           {
             path: "practice/:curriculumId/:competencyId/:standardId/:learningObjectiveId",
             element: <Practice />,
           },
-
           { path: "roadmap", element: <Roadmap /> },
           { path: "profile", element: <StudentProfile /> },
           { path: "achievements", element: <Achievements /> },
@@ -124,6 +137,18 @@ export const router = createBrowserRouter([
               </Suspense>
             ),
           },
+
+          // 🧭 Explorador Curricular
+          {
+            path: "explorer",
+            element: (
+              <ExplorerProvider>
+                <ExplorerDashboard />
+              </ExplorerProvider>
+            ),
+          },
+
+          /* Usuarios */
           {
             path: "users",
             element: (
@@ -141,25 +166,13 @@ export const router = createBrowserRouter([
             ),
           },
 
-          /* 📘 CRUD de Currículos */
-          {
-            path: "curricula",
-            element: <CurriculumList />,
-          },
-          {
-            path: "curricula/new",
-            element: <CurriculumForm />,
-          },
-          {
-            path: "curricula/:id/edit",
-            element: <CurriculumForm />,
-          },
-          {
-            path: "curricula/:id/details",
-            element: <CurriculumDetails />,
-          },
+          /* Currículos */
+          { path: "curricula", element: <CurriculumList /> },
+          { path: "curricula/new", element: <CurriculumForm /> },
+          { path: "curricula/:id/edit", element: <CurriculumForm /> },
+          { path: "curricula/:id/details", element: <CurriculumDetails /> },
 
-          /* 📗 CRUD de Competencias por currículo */
+          /* Competencias */
           {
             path: "curricula/:curriculumId/competencies",
             element: (
@@ -192,13 +205,48 @@ export const router = createBrowserRouter([
               </Suspense>
             ),
           },
+
+          /* Estándares */
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <StandardList />
+              </Suspense>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/new",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <StandardForm />
+              </Suspense>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/edit",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <StandardForm />
+              </Suspense>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/details",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <StandardDetails />
+              </Suspense>
+            ),
+          },
         ],
       },
+
       { path: "*", element: <NotFound /> },
     ],
   },
 
-  /* Públicas */
+  /* Rutas públicas */
   {
     path: "/login",
     element: (
@@ -215,6 +263,5 @@ export const router = createBrowserRouter([
       </PublicRoute>
     ),
   },
-
   { path: "*", element: <NotFound /> },
 ]);

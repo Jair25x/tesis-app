@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { register } from "../services/authService";
 import { useNavigate } from "react-router-dom";
-import type { TypedAxiosError } from "../types/AxiosError";
+import type { TypedAxiosError } from "../types/shared/AxiosError";
 
 import AuthFormWrapper from "../components/auth/AuthFormWrapper";
 import AuthInput from "../components/auth/AuthInput";

@@ -9,7 +9,7 @@ import type {
   ExerciseResponse,
   CheckAnswerRequest,
   ExerciseAttemptRequest,
-} from "../../types/ExerciseResponse";
+} from "../../types/exercise/ExerciseResponse";
 import LoadingScreen from "../../components/LoadingScreen";
 import { showAchievementToast } from "../../utils/showAchievementToast";
 import { renderStatement } from "../../utils/renderStatement";
