@@ -1,3 +1,5 @@
+// src/pages/admin/competencies/CompetencyList.tsx
+
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -6,7 +8,7 @@ import {
 } from "../../../services/competencyService";
 import { Button } from "../../../components/ui/Button";
 import { formatDate } from "../../../utils/formatDate";
-import { Trash2, Pencil, Eye, RotateCcw } from "lucide-react";
+import { Trash2, Pencil, Eye, RotateCcw, LayoutList } from "lucide-react";
 import { cn } from "../../../utils/cn";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { showToast } from "../../../utils/showToast";
@@ -126,7 +128,7 @@ export default function CompetencyList() {
                   Código
                 </th>
                 <th className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300">
-                  Fecha de creación
+                  Creación
                 </th>
                 <th className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300">
                   Estado
@@ -137,22 +139,16 @@ export default function CompetencyList() {
               </tr>
             </thead>
             <tbody>
-              {competencies.map((competency) => (
+              {competencies.map((comp) => (
                 <tr
-                  key={competency.id}
+                  key={comp.id}
                   className="border-t border-gray-200 dark:border-gray-700"
                 >
-                  <td className="p-3 text-gray-900 dark:text-gray-100">
-                    {competency.name}
-                  </td>
-                  <td className="p-3 text-gray-900 dark:text-gray-100">
-                    {competency.code}
-                  </td>
-                  <td className="p-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                    {formatDate(competency.createdAt)}
-                  </td>
+                  <td className="p-3">{comp.name}</td>
+                  <td className="p-3">{comp.code}</td>
+                  <td className="p-3">{formatDate(comp.createdAt)}</td>
                   <td className="p-3">
-                    {competency.active ? (
+                    {comp.active ? (
                       <span className="text-green-600 dark:text-green-400 font-medium">
                         Activo
                       </span>
@@ -162,33 +158,93 @@ export default function CompetencyList() {
                       </span>
                     )}
                   </td>
-                  <td className="p-3 text-sm text-center space-y-1 sm:space-y-0 sm:space-x-2 flex flex-col sm:flex-row justify-center items-center">
-                    <Link
-                      to={`/admin/curricula/${curriculumId}/competencies/${competency.id}/details`}
-                      aria-label="Ver detalles"
-                    >
-                      <Eye className="inline h-5 w-5 text-blue-500 hover:text-blue-600" />
-                    </Link>
-                    <Link
-                      to={`/admin/curricula/${curriculumId}/competencies/${competency.id}/edit`}
-                      aria-label="Editar competencia"
-                    >
-                      <Pencil className="inline h-5 w-5 text-yellow-500 hover:text-yellow-600" />
-                    </Link>
-                    {competency.active ? (
-                      <button
-                        onClick={() => openModal(competency.id!, "delete")}
-                        aria-label="Desactivar competencia"
+                  <td className="p-3 text-center space-x-2">
+                    {/* Tooltip para el botón de 'Ver detalles' */}
+                    <div className="group relative inline-block">
+                      <Link
+                        to={`/admin/curricula/${curriculumId}/competencies/${comp.id}/details`}
+                        aria-label="Ver detalles"
                       >
-                        <Trash2 className="inline h-5 w-5 text-red-500 hover:text-red-600" />
-                      </button>
+                        <Eye className="inline h-5 w-5 text-blue-500 hover:text-blue-600" />
+                      </Link>
+                      {/* El tooltip en sí, se muestra al hacer hover en el grupo padre */}
+                      <span
+                        className="absolute bottom-full left-1/2 -translate-x-1/2
+                     mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg
+                     whitespace-nowrap opacity-0 group-hover:opacity-100
+                     transition-opacity duration-300"
+                      >
+                        Ver detalles
+                      </span>
+                    </div>
+                    {/* Tooltip para el botón de 'Editar' */}
+                    <div className="group relative inline-block">
+                      <Link
+                        to={`/admin/curricula/${curriculumId}/competencies/${comp.id}/edit`}
+                        aria-label="Editar"
+                      >
+                        <Pencil className="inline h-5 w-5 text-yellow-500 hover:text-yellow-600" />
+                      </Link>
+                      <span
+                        className="absolute bottom-full left-1/2 -translate-x-1/2
+                     mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg
+                     whitespace-nowrap opacity-0 group-hover:opacity-100
+                     transition-opacity duration-300"
+                      >
+                        Editar
+                      </span>
+                    </div>
+                    {/* Tooltip para el botón de 'Ver estándares' */}
+                    <div className="group relative inline-block">
+                      <Link
+                        to={`/admin/curricula/${curriculumId}/competencies/${comp.id}/standards`}
+                        aria-label="Ver estándares"
+                      >
+                        <LayoutList className="inline h-5 w-5 text-purple-500 hover:text-purple-600" />
+                      </Link>
+                      <span
+                        className="absolute bottom-full left-1/2 -translate-x-1/2
+                     mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg
+                     whitespace-nowrap opacity-0 group-hover:opacity-100
+                     transition-opacity duration-300"
+                      >
+                        Ver estándares
+                      </span>
+                    </div>
+                    {comp.active ? (
+                      <div className="group relative inline-block">
+                        <button
+                          onClick={() => openModal(comp.id, "delete")}
+                          aria-label="Desactivar"
+                        >
+                          <Trash2 className="inline h-5 w-5 text-red-500 hover:text-red-600" />
+                        </button>
+                        <span
+                          className="absolute bottom-full left-1/2 -translate-x-1/2
+                       mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg
+                       whitespace-nowrap opacity-0 group-hover:opacity-100
+                       transition-opacity duration-300"
+                        >
+                          Desactivar
+                        </span>
+                      </div>
                     ) : (
-                      <button
-                        onClick={() => openModal(competency.id!, "reactivate")}
-                        aria-label="Reactivar competencia"
-                      >
-                        <RotateCcw className="inline h-5 w-5 text-green-500 hover:text-green-600" />
-                      </button>
+                      <div className="group relative inline-block">
+                        <button
+                          onClick={() => openModal(comp.id, "reactivate")}
+                          aria-label="Reactivar"
+                        >
+                          <RotateCcw className="inline h-5 w-5 text-green-500 hover:text-green-600" />
+                        </button>
+                        <span
+                          className="absolute bottom-full left-1/2 -translate-x-1/2
+                       mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg
+                       whitespace-nowrap opacity-0 group-hover:opacity-100
+                       transition-opacity duration-300"
+                        >
+                          Reactivar
+                        </span>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -209,8 +265,8 @@ export default function CompetencyList() {
         }
         description={
           modalAction === "delete"
-            ? "¿Estás seguro de que deseas desactivar esta competencia? Esto desactivará también sus estándares y objetivos."
-            : "¿Estás seguro de que deseas reactivar esta competencia? Volverá a estar disponible junto con sus estándares y objetivos."
+            ? "¿Estás seguro de que deseas desactivar esta competencia? También se desactivarán sus estándares y objetivos."
+            : "¿Deseas reactivarla junto con sus estándares y objetivos?"
         }
         variant={modalAction === "delete" ? "danger" : "success"}
         isLoading={modalLoading}

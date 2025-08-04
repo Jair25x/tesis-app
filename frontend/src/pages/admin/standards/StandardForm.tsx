@@ -5,6 +5,7 @@ import {
   getStandardById,
   updateStandard,
 } from "../../../services/standardService";
+import { useStandard } from "../../../context/useStandard";
 import type {
   StandardRequest,
   StandardResponse,
@@ -20,6 +21,7 @@ export default function StandardForm() {
   }>();
 
   const isEditMode = Boolean(standardId);
+  const { refreshStandards } = useStandard();
 
   const [form, setForm] = useState<StandardRequest>({
     name: "",
@@ -31,7 +33,7 @@ export default function StandardForm() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (isEditMode && standardId && curriculumId && competencyId) {
+    if (isEditMode && curriculumId && competencyId && standardId) {
       setLoading(true);
       getStandardById(curriculumId, competencyId, standardId)
         .then((res) => {
@@ -42,10 +44,12 @@ export default function StandardForm() {
             code: data.code,
           });
         })
-        .catch(() => setError("No se pudo cargar el estándar para edición."))
+        .catch(() => {
+          setError("No se pudo cargar el estándar.");
+        })
         .finally(() => setLoading(false));
     }
-  }, [standardId, curriculumId, competencyId, isEditMode]);
+  }, [isEditMode, curriculumId, competencyId, standardId]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -69,10 +73,17 @@ export default function StandardForm() {
         await createStandard(curriculumId, competencyId, form);
         showToast.success("Estándar creado exitosamente.");
       }
-      navigate(`/admin/curricula/${curriculumId}/competencies/${competencyId}`);
+
+      // Refrescar lista en contexto
+      await refreshStandards(curriculumId, competencyId);
+
+      // Redirigir a listado de estándares
+      navigate(
+        `/admin/curricula/${curriculumId}/competencies/${competencyId}/standards`
+      );
     } catch {
+      setError("No se pudo guardar el estándar. Intenta nuevamente.");
       showToast.error("Ocurrió un error al guardar el estándar.");
-      setError("No se pudo guardar el estándar. Inténtalo nuevamente.");
     } finally {
       setLoading(false);
     }
@@ -153,7 +164,7 @@ export default function StandardForm() {
             type="button"
             onClick={() =>
               navigate(
-                `/admin/curricula/${curriculumId}/competencies/${competencyId}`
+                `/admin/curricula/${curriculumId}/competencies/${competencyId}/standards`
               )
             }
             className="text-gray-700 dark:text-gray-300 underline text-sm"

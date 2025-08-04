@@ -1,8 +1,6 @@
+// src/components/layout/AdminMenu.tsx
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "../../utils/cn";
-import { useState } from "react";
-import { useCurriculum } from "../../hooks/useCurriculum";
-import { useCompetencyMap } from "../../hooks/useCompetencyMap";
 
 interface AdminMenuProps {
   adminOpen: boolean;
@@ -17,14 +15,8 @@ export default function AdminMenu({
 }: AdminMenuProps) {
   const location = useLocation();
 
-  // Aseguramos fallback con array vacío
-  const { curricula = [] } = useCurriculum();
-  const { competencyMap } = useCompetencyMap(curricula); // ✅ seguro gracias a fallback arriba
-
-  const [curriculaOpen, setCurriculaOpen] = useState(false);
-  const [expandedCurriculum, setExpandedCurriculum] = useState<string | null>(
-    null
-  );
+  const isActive = (path: string) =>
+    location.pathname.startsWith(path) ? "bg-green-500 text-white" : "";
 
   return (
     <div className="relative">
@@ -45,85 +37,84 @@ export default function AdminMenu({
         <div className="ml-4 mt-1 space-y-1">
           <Link
             to="/admin"
-            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+            className={cn(
+              "block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700",
+              isActive("/admin$")
+            )}
             onClick={() => setSidebarOpen(false)}
           >
             📊 Dashboard
           </Link>
           <Link
             to="/admin/users"
-            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+            className={cn(
+              "block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700",
+              isActive("/admin/users")
+            )}
             onClick={() => setSidebarOpen(false)}
           >
             🧑‍💼 Usuarios
           </Link>
           <Link
             to="/admin/curricula"
-            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+            className={cn(
+              "block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700",
+              isActive("/admin/curricula")
+            )}
             onClick={() => setSidebarOpen(false)}
           >
             📚 Currículos
           </Link>
           <Link
+            to="/admin/competencies"
+            className={cn(
+              "block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700",
+              isActive("/admin/competencies")
+            )}
+            onClick={() => setSidebarOpen(false)}
+          >
+            📗 Competencias
+          </Link>
+          <Link
+            to="/admin/standards"
+            className={cn(
+              "block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700",
+              isActive("/admin/standards")
+            )}
+            onClick={() => setSidebarOpen(false)}
+          >
+            📘 Estándares
+          </Link>
+          <Link
+            to="/admin/objectives"
+            className={cn(
+              "block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700",
+              isActive("/admin/objectives")
+            )}
+            onClick={() => setSidebarOpen(false)}
+          >
+            🎯 Objetivos
+          </Link>
+          <Link
+            to="/admin/exercises"
+            className={cn(
+              "block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700",
+              isActive("/admin/exercises")
+            )}
+            onClick={() => setSidebarOpen(false)}
+          >
+            ✏️ Ejercicios
+          </Link>
+          <Link
             to="/admin/explorer"
-            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+            className={cn(
+              "block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700",
+              isActive("/admin/explorer")
+            )}
             onClick={() => setSidebarOpen(false)}
           >
             🧭 Explorador Curricular
           </Link>
-
-          {/* Submenú dinámico: Currículo → Competencias */}
-          <div>
-            <button
-              className="flex items-center justify-between w-full px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
-              onClick={() => setCurriculaOpen((prev) => !prev)}
-            >
-              📗 Competencias
-              <span className="ml-2">{curriculaOpen ? "▴" : "▾"}</span>
-            </button>
-
-            {curriculaOpen && (
-              <div className="ml-4 mt-1 max-h-64 overflow-y-auto pr-1 space-y-1">
-                {curricula.length === 0 && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 px-4">
-                    No hay currículos activos.
-                  </p>
-                )}
-
-                {curricula.map((curriculum) => (
-                  <div key={curriculum.id}>
-                    <button
-                      className="w-full text-left px-4 py-1 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                      onClick={() =>
-                        setExpandedCurriculum((prev) =>
-                          prev === curriculum.id ? null : curriculum.id
-                        )
-                      }
-                    >
-                      {curriculum.name}
-                    </button>
-
-                    {expandedCurriculum === curriculum.id && (
-                      <div className="ml-4 mt-1 space-y-1">
-                        {(competencyMap?.[curriculum.id] ?? []).map((comp) => (
-                          <div key={comp.id}>
-                            <Link
-                              to={`/admin/curricula/${curriculum.id}/competencies/${comp.id}/standards`}
-                              className="block px-4 py-1 text-sm rounded hover:bg-gray-200 dark:hover:bg-gray-700 truncate"
-                              title={comp.name}
-                              onClick={() => setSidebarOpen(false)}
-                            >
-                              ↳ {comp.name}
-                            </Link>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       )}
     </div>

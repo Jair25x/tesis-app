@@ -1,23 +1,22 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { useStandard } from "../../../context/useStandard";
+import ConfirmModal from "../../../components/ui/ConfirmModal";
+import EntityList from "../../../components/admin/EntityList";
+import { showToast } from "../../../utils/showToast";
+import { formatDate } from "../../../utils/formatDate";
+import { Trash2, RotateCcw, Eye, Pencil, BookOpenCheck } from "lucide-react";
 import {
-  getStandards,
   deleteStandard,
   reactivateStandard,
 } from "../../../services/standardService";
-import type { StandardResponse } from "../../../types/curriculum/StandardResponse";
-import EntityList from "../../../components/admin/EntityList";
-import ConfirmModal from "../../../components/ui/ConfirmModal";
-import { formatDate } from "../../../utils/formatDate";
-import { showToast } from "../../../utils/showToast";
-import { Eye, Pencil, Trash2, RotateCcw } from "lucide-react";
+import { useState } from "react";
 
 export default function StandardList() {
   const { curriculumId, competencyId } = useParams();
-  const [standards, setStandards] = useState<StandardResponse[]>([]);
-  const [filter, setFilter] = useState<"all" | "active" | "inactive">("all");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { standards, status, setStatus, refreshStandards, loading, error } =
+    useStandard();
+  const navigate = useNavigate();
+
   const [showModal, setShowModal] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [modalAction, setModalAction] = useState<
@@ -25,42 +24,27 @@ export default function StandardList() {
   >(null);
   const [modalLoading, setModalLoading] = useState(false);
 
-  useEffect(() => {
-    if (curriculumId && competencyId) {
-      loadStandards();
-    }
-  }, [filter, curriculumId, competencyId]);
-
-  const loadStandards = async () => {
-    try {
-      setLoading(true);
-      const { data } = await getStandards(
-        curriculumId!,
-        competencyId!,
-        filter
-      );
-      setStandards(data);
-    } catch {
-      setError("Ocurrió un error al cargar los estándares.");
-    } finally {
-      setLoading(false);
-    }
+  const openModal = (id: string, action: "delete" | "reactivate") => {
+    setSelectedId(id);
+    setModalAction(action);
+    setShowModal(true);
   };
 
   const handleConfirm = async () => {
-    if (!selectedId || !modalAction) return;
+    if (!curriculumId || !competencyId || !selectedId || !modalAction) return;
     setModalLoading(true);
     try {
       if (modalAction === "delete") {
-        await deleteStandard(curriculumId!, competencyId!, selectedId);
-        showToast.success("Estándar desactivado.");
+        await deleteStandard(curriculumId, competencyId, selectedId);
+        showToast.success("Estándar desactivado correctamente.");
       } else {
-        await reactivateStandard(curriculumId!, competencyId!, selectedId);
-        showToast.success("Estándar reactivado.");
+        await reactivateStandard(curriculumId, competencyId, selectedId);
+        showToast.success("Estándar reactivado correctamente.");
       }
-      await loadStandards();
-    } catch {
-      showToast.error("Error al procesar la acción.");
+      await refreshStandards(curriculumId, competencyId);
+    } catch (err) {
+      console.error("Error ejecutando la acción:", err);
+      showToast.error("Ocurrió un error al realizar la acción.");
     } finally {
       setModalLoading(false);
       setShowModal(false);
@@ -72,43 +56,47 @@ export default function StandardList() {
       title="Gestión de Estándares"
       addButtonText="Nuevo Estándar"
       onAddClick={() =>
-        (window.location.href = `/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/new`)
+        navigate(
+          `/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/new`
+        )
       }
-      filter={filter}
-      setFilter={setFilter}
+      filter={status}
+      setFilter={setStatus}
       loading={loading}
-      error={error || ""}
-      emptyMessage="No hay estándares disponibles."
+      error={error}
+      emptyMessage="No hay estándares registrados."
     >
       <div className="overflow-x-auto rounded-md shadow-sm">
         <table className="min-w-full text-sm border border-gray-300 dark:border-gray-700">
           <thead className="bg-gray-100 dark:bg-gray-800">
             <tr>
               {["Nombre", "Código", "Creación", "Estado", "Acciones"].map(
-                (header) => (
+                (h) => (
                   <th
-                    key={header}
-                    className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300"
+                    key={h}
+                    className={`p-3 font-semibold text-gray-700 dark:text-gray-300 ${
+                      h === "Acciones" ? "text-center" : "text-left"
+                    }`}
                   >
-                    {header}
+                    {h}
                   </th>
                 )
               )}
             </tr>
           </thead>
           <tbody>
-            {standards.map((item) => (
+            {standards.map((std) => (
               <tr
-                key={item.id}
+                key={std.id}
                 className="border-t border-gray-200 dark:border-gray-700"
               >
-                <td className="p-3">{item.name}</td>
-                <td className="p-3">{item.code}</td>
+                <td className="p-3">{std.name}</td>
+                <td className="p-3">{std.code}</td>
                 <td className="p-3 text-gray-500">
-                  {formatDate(item.createdAt)}
+                  {formatDate(std.createdAt)}
                 </td>
                 <td className="p-3">
-                  {item.active ? (
+                  {std.active ? (
                     <span className="text-green-600 dark:text-green-400 font-medium">
                       Activo
                     </span>
@@ -118,30 +106,42 @@ export default function StandardList() {
                     </span>
                   )}
                 </td>
-                <td className="p-3 space-x-2 text-center">
-                  <Link
-                    to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${item.id}/details`}
-                  >
-                    <Eye className="inline h-5 w-5 text-blue-500" />
-                  </Link>
-                  <Link
-                    to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${item.id}/edit`}
-                  >
-                    <Pencil className="inline h-5 w-5 text-yellow-500" />
-                  </Link>
-                  <button
-                    onClick={() => {
-                      setSelectedId(item.id);
-                      setModalAction(item.active ? "delete" : "reactivate");
-                      setShowModal(true);
-                    }}
-                  >
-                    {item.active ? (
-                      <Trash2 className="inline h-5 w-5 text-red-500" />
-                    ) : (
-                      <RotateCcw className="inline h-5 w-5 text-green-500" />
-                    )}
-                  </button>
+                <td className="p-3 text-center">
+                  <div className="flex justify-center gap-2">
+                    <TooltipIcon
+                      to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${std.id}/details`}
+                      label="Ver detalles"
+                    >
+                      <Eye className="h-5 w-5 text-blue-500 hover:text-blue-600" />
+                    </TooltipIcon>
+
+                    <TooltipIcon
+                      to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${std.id}/edit`}
+                      label="Editar estándar"
+                    >
+                      <Pencil className="h-5 w-5 text-yellow-500 hover:text-yellow-600" />
+                    </TooltipIcon>
+
+                    <TooltipIcon
+                      to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${std.id}/learning-objectives`}
+                      label="Ver objetivos"
+                    >
+                      <BookOpenCheck className="h-5 w-5 text-purple-500 hover:text-purple-600" />
+                    </TooltipIcon>
+
+                    <TooltipButton
+                      onClick={() =>
+                        openModal(std.id, std.active ? "delete" : "reactivate")
+                      }
+                      label={std.active ? "Desactivar" : "Reactivar"}
+                    >
+                      {std.active ? (
+                        <Trash2 className="h-5 w-5 text-red-500 hover:text-red-600" />
+                      ) : (
+                        <RotateCcw className="h-5 w-5 text-green-500 hover:text-green-600" />
+                      )}
+                    </TooltipButton>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -160,12 +160,54 @@ export default function StandardList() {
         }
         description={
           modalAction === "delete"
-            ? "¿Estás seguro de que deseas desactivar este estándar?"
-            : "¿Deseas reactivarlo?"
+            ? "¿Estás seguro de que deseas desactivar este estándar? Esto también ocultará sus objetivos relacionados."
+            : "¿Deseas reactivarlo? Se restaurará con sus objetivos asociados."
         }
         variant={modalAction === "delete" ? "danger" : "success"}
         isLoading={modalLoading}
       />
     </EntityList>
+  );
+}
+
+function TooltipIcon({
+  to,
+  label,
+  children,
+}: {
+  to: string;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="group relative inline-block">
+      <Link to={to} className="inline-block">
+        {children}
+      </Link>
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function TooltipButton({
+  onClick,
+  label,
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="group relative inline-block">
+      <button onClick={onClick} className="inline-block">
+        {children}
+      </button>
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
+        {label}
+      </span>
+    </div>
   );
 }

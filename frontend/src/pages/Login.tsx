@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { login as loginRequest } from "../services/authService";
 import type { TypedAxiosError } from "../types/shared/AxiosError";
 import { useAuth } from "../context/useAuth";
-import capybaraGif from "../assets/capibaramini.gif";
+import capybaraGif from "../assets/capibaramini-unscreen.gif";
 
 import AuthInput from "../components/auth/AuthInput";
 import AuthButton from "../components/auth/AuthButton";

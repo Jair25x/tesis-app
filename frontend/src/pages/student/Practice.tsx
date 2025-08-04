@@ -1,19 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import type { ExerciseResponse } from "../../types/exercise/ExerciseResponse";
 import {
   getExercisesByObjective,
   checkAnswer,
   submitExerciseAttempt,
 } from "../../services/exerciseService";
-import type {
-  ExerciseResponse,
-  CheckAnswerRequest,
-  ExerciseAttemptRequest,
-} from "../../types/exercise/ExerciseResponse";
 import LoadingScreen from "../../components/LoadingScreen";
 import { showAchievementToast } from "../../utils/showAchievementToast";
 import { renderStatement } from "../../utils/renderStatement";
 import { X } from "lucide-react"; // Ícono para cerrar al estilo Duolingo
+import type { CheckAnswerRequest } from "../../types/exercise/CheckAnswer";
+import type { ExerciseAttemptRequest } from "../../types/exercise/ExerciseAttempt";
 
 export default function Practice() {
   // ⬇️ IDs de la URL

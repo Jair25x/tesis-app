@@ -6,7 +6,7 @@ import type {
 
 // Base path: /api/curricula/{curriculumId}/competencies/{competencyId}/standards
 const basePath = (curriculumId: string, competencyId: string) =>
-  `/api/curricula/${curriculumId}/competencies/${competencyId}/standards`;
+  `/curricula/${curriculumId}/competencies/${competencyId}/standards`;
 
 export const getStandards = (
   curriculumId: string,

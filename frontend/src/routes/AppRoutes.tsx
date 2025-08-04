@@ -37,17 +37,6 @@ const AdminDashboard = lazy(() => import("../pages/admin/AdminDashboard"));
 const UserList = lazy(() => import("../pages/admin/users/UserList"));
 const EditUser = lazy(() => import("../pages/admin/users/EditUser"));
 
-/* Competencias */
-const CompetencyList = lazy(
-  () => import("../pages/admin/competencies/CompetencyList")
-);
-const CompetencyForm = lazy(
-  () => import("../pages/admin/competencies/CompetencyForm")
-);
-const CompetencyDetails = lazy(
-  () => import("../pages/admin/competencies/CompetencyDetails")
-);
-
 /* Currículos */
 const CurriculumList = lazy(
   () => import("../pages/admin/curricula/CurriculumList")
@@ -57,6 +46,17 @@ const CurriculumForm = lazy(
 );
 const CurriculumDetails = lazy(
   () => import("../pages/admin/curricula/CurriculumDetails")
+);
+
+/* Competencias */
+const CompetencyList = lazy(
+  () => import("../pages/admin/competencies/CompetencyList")
+);
+const CompetencyForm = lazy(
+  () => import("../pages/admin/competencies/CompetencyForm")
+);
+const CompetencyDetails = lazy(
+  () => import("../pages/admin/competencies/CompetencyDetails")
 );
 
 /* Estándares */
@@ -70,9 +70,38 @@ const StandardDetails = lazy(
   () => import("../pages/admin/standards/StandardDetails")
 );
 
+/* Objetivos de Aprendizaje */
+const LearningObjectiveList = lazy(
+  () => import("../pages/admin/learning-objectives/LearningObjectiveList")
+);
+const LearningObjectiveForm = lazy(
+  () => import("../pages/admin/learning-objectives/LearningObjectiveForm")
+);
+const LearningObjectiveDetails = lazy(
+  () => import("../pages/admin/learning-objectives/LearningObjectiveDetails")
+);
+
+const ExerciseList = lazy(() => import("../pages/admin/exercise/ExerciseList"));
+const ExerciseForm = lazy(() => import("../pages/admin/exercise/ExerciseForm"));
+const ExerciseDetails = lazy(
+  () => import("../pages/admin/exercise/ExerciseDetails")
+);
+
+/* Pistas */
+const HintList = lazy(() => import("../pages/admin/hints/HintList"));
+const HintForm = lazy(() => import("../pages/admin/hints/HintForm"));
+const HintDetails = lazy(() => import("../pages/admin/hints/HintDetails"));
+
 /* Explorador Curricular */
 import ExplorerDashboard from "../pages/admin/explorer/ExplorerDashboard";
 import { ExplorerProvider } from "../pages/admin/explorer/ExplorerProvider";
+
+/* Context Providers */
+import { StandardProvider } from "../context/StandardProvider";
+import { CompetencyProvider } from "../context/CompetencyProvider";
+import { LearningObjectiveProvider } from "../context/LearningObjectiveProvider";
+import { ExerciseProvider } from "../context/ExerciseProvider";
+import { HintProvider } from "../context/HintProvider";
 
 export const router = createBrowserRouter([
   {
@@ -85,7 +114,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="student/dashboard" replace /> },
 
-      /* --- Student --- */
+      // Estudiante
       {
         path: "student",
         element: (
@@ -105,10 +134,10 @@ export const router = createBrowserRouter([
         ],
       },
 
-      /* --- Perfil genérico --- */
+      // Perfil general
       { path: "profile-dashboard", element: <ProfileDashboard /> },
 
-      /* --- Configuración --- */
+      // Configuración
       {
         path: "settings",
         element: <SettingsLayout />,
@@ -120,7 +149,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      /* --- Administración --- */
+      // Administración
       {
         path: "admin",
         element: (
@@ -138,7 +167,6 @@ export const router = createBrowserRouter([
             ),
           },
 
-          // 🧭 Explorador Curricular
           {
             path: "explorer",
             element: (
@@ -148,7 +176,7 @@ export const router = createBrowserRouter([
             ),
           },
 
-          /* Usuarios */
+          // Usuarios
           {
             path: "users",
             element: (
@@ -166,77 +194,218 @@ export const router = createBrowserRouter([
             ),
           },
 
-          /* Currículos */
+          // Currículos
           { path: "curricula", element: <CurriculumList /> },
           { path: "curricula/new", element: <CurriculumForm /> },
           { path: "curricula/:id/edit", element: <CurriculumForm /> },
           { path: "curricula/:id/details", element: <CurriculumDetails /> },
 
-          /* Competencias */
+          // Competencias
           {
             path: "curricula/:curriculumId/competencies",
             element: (
-              <Suspense fallback={<LoadingScreen />}>
-                <CompetencyList />
-              </Suspense>
+              <CompetencyProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <CompetencyList />
+                </Suspense>
+              </CompetencyProvider>
             ),
           },
           {
             path: "curricula/:curriculumId/competencies/new",
             element: (
-              <Suspense fallback={<LoadingScreen />}>
-                <CompetencyForm />
-              </Suspense>
+              <CompetencyProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <CompetencyForm />
+                </Suspense>
+              </CompetencyProvider>
             ),
           },
           {
             path: "curricula/:curriculumId/competencies/:competencyId/edit",
             element: (
-              <Suspense fallback={<LoadingScreen />}>
-                <CompetencyForm />
-              </Suspense>
+              <CompetencyProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <CompetencyForm />
+                </Suspense>
+              </CompetencyProvider>
             ),
           },
           {
             path: "curricula/:curriculumId/competencies/:competencyId/details",
             element: (
-              <Suspense fallback={<LoadingScreen />}>
-                <CompetencyDetails />
-              </Suspense>
+              <CompetencyProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <CompetencyDetails />
+                </Suspense>
+              </CompetencyProvider>
             ),
           },
 
-          /* Estándares */
+          // Estándares
           {
             path: "curricula/:curriculumId/competencies/:competencyId/standards",
             element: (
-              <Suspense fallback={<LoadingScreen />}>
-                <StandardList />
-              </Suspense>
+              <StandardProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <StandardList />
+                </Suspense>
+              </StandardProvider>
             ),
           },
           {
             path: "curricula/:curriculumId/competencies/:competencyId/standards/new",
             element: (
-              <Suspense fallback={<LoadingScreen />}>
-                <StandardForm />
-              </Suspense>
+              <StandardProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <StandardForm />
+                </Suspense>
+              </StandardProvider>
             ),
           },
           {
             path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/edit",
             element: (
-              <Suspense fallback={<LoadingScreen />}>
-                <StandardForm />
-              </Suspense>
+              <StandardProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <StandardForm />
+                </Suspense>
+              </StandardProvider>
             ),
           },
           {
             path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/details",
             element: (
-              <Suspense fallback={<LoadingScreen />}>
-                <StandardDetails />
-              </Suspense>
+              <StandardProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <StandardDetails />
+                </Suspense>
+              </StandardProvider>
+            ),
+          },
+
+          // Objetivos de aprendizaje
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives",
+            element: (
+              <LearningObjectiveProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <LearningObjectiveList />
+                </Suspense>
+              </LearningObjectiveProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/new",
+            element: (
+              <LearningObjectiveProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <LearningObjectiveForm />
+                </Suspense>
+              </LearningObjectiveProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/edit",
+            element: (
+              <LearningObjectiveProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <LearningObjectiveForm />
+                </Suspense>
+              </LearningObjectiveProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/details",
+            element: (
+              <LearningObjectiveProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <LearningObjectiveDetails />
+                </Suspense>
+              </LearningObjectiveProvider>
+            ),
+          },
+
+          // Ejercicios
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises",
+            element: (
+              <ExerciseProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <ExerciseList />
+                </Suspense>
+              </ExerciseProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/new",
+            element: (
+              <ExerciseProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <ExerciseForm />
+                </Suspense>
+              </ExerciseProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/edit",
+            element: (
+              <ExerciseProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <ExerciseForm />
+                </Suspense>
+              </ExerciseProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/details",
+            element: (
+              <ExerciseProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <ExerciseDetails />
+                </Suspense>
+              </ExerciseProvider>
+            ),
+          },
+          // Pistas
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/hints",
+            element: (
+              <HintProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <HintList />
+                </Suspense>
+              </HintProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/hints/new",
+            element: (
+              <HintProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <HintForm />
+                </Suspense>
+              </HintProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/hints/:hintId/edit",
+            element: (
+              <HintProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <HintForm />
+                </Suspense>
+              </HintProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/hints/:hintId/details",
+            element: (
+              <HintProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <HintDetails />
+                </Suspense>
+              </HintProvider>
             ),
           },
         ],
@@ -246,7 +415,7 @@ export const router = createBrowserRouter([
     ],
   },
 
-  /* Rutas públicas */
+  // Rutas públicas
   {
     path: "/login",
     element: (

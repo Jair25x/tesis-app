@@ -9,6 +9,7 @@ import LoadingScreen from "../../../components/LoadingScreen";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { formatDate } from "../../../utils/formatDate";
 import { showToast } from "../../../utils/showToast";
+import { useStandard } from "../../../context/useStandard";
 
 export default function StandardDetails() {
   const { curriculumId, competencyId, standardId } = useParams<{
@@ -18,6 +19,7 @@ export default function StandardDetails() {
   }>();
 
   const navigate = useNavigate();
+  const { refreshStandards } = useStandard();
 
   const [standard, setStandard] = useState<StandardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,6 +57,7 @@ export default function StandardDetails() {
     try {
       await deleteStandard(curriculumId, competencyId, standard.id);
       showToast.success("Estándar desactivado correctamente.");
+      await refreshStandards(curriculumId, competencyId);
       navigate(
         `/admin/curricula/${curriculumId}/competencies/${competencyId}/standards`
       );
@@ -86,7 +89,7 @@ export default function StandardDetails() {
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
-      {/* Título y botones */}
+      {/* Título y acciones */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <h1 className="text-xl sm:text-2xl font-bold text-indigo-700 dark:text-indigo-300">
           Detalles del Estándar
