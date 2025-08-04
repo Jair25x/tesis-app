@@ -4,6 +4,7 @@ package com.tesis.curriculum_service.dto;
 import lombok.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Data
@@ -59,5 +60,31 @@ public class CurriculumFullResponse {
     private UUID id;
     private String statement;
     private String difficulty;
+    private String type;
+    private String templateType;
+    private Map<String, Object> parameters;
+    private String correctAnswer;
+    private List<HintNode> hints;
+    private List<SolutionStepNode> solutionSteps;
+  }
+
+  @Data
+  @Builder
+  @AllArgsConstructor
+  @NoArgsConstructor
+  public static class HintNode {
+    private UUID id;
+    private String hintText;
+    private int cost;
+  }
+
+  @Data
+  @Builder
+  @AllArgsConstructor
+  @NoArgsConstructor
+  public static class SolutionStepNode {
+    private UUID id;
+    private int stepNumber;
+    private String explanation;
   }
 }

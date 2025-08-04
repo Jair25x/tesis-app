@@ -34,7 +34,9 @@ public interface CurriculumRepository extends JpaRepository<Curriculum, UUID> {
       "competencies",
       "competencies.standards",
       "competencies.standards.learningObjectives",
-      "competencies.standards.learningObjectives.exercises"
+      "competencies.standards.learningObjectives.exercises",
+      "competencies.standards.learningObjectives.exercises.hints",
+      "competencies.standards.learningObjectives.exercises.solutionSteps"
   })
   Optional<Curriculum> findFullById(UUID id);
 

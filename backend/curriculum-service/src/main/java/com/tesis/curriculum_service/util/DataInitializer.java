@@ -7,20 +7,16 @@ import com.tesis.curriculum_service.dto.TemplateSchema.TemplateType;
 import com.tesis.curriculum_service.model.*;
 import com.tesis.curriculum_service.repository.CurriculumRepository;
 import jakarta.annotation.PostConstruct;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * Carga inicial del currículo de matemática y sus componentes desde archivo
- * YAML.
- */
 @Component
 @Profile({ "dev", "docker" })
 @RequiredArgsConstructor
@@ -28,6 +24,7 @@ public class DataInitializer {
 
         private final CurriculumRepository curriculumRepository;
 
+        @Transactional
         @PostConstruct
         public void init() throws Exception {
                 if (curriculumRepository.count() > 0) {
@@ -62,7 +59,7 @@ public class DataInitializer {
                                                         .competency(competency)
                                                         .build();
 
-                                        Set<LearningObjective> learningObjectives = stdDef.learningObjectives.stream()
+                                        Set<LearningObjective> objectives = stdDef.learningObjectives.stream()
                                                         .map(loDef -> {
                                                                 LearningObjective lo = LearningObjective.builder()
                                                                                 .code(loDef.code)
@@ -71,13 +68,9 @@ public class DataInitializer {
                                                                                 .standard(standard)
                                                                                 .build();
 
-                                                                // Cargar ejercicios si hay
                                                                 if (loDef.exercises != null) {
                                                                         Set<Exercise> exercises = loDef.exercises
                                                                                         .stream().map(exDef -> {
-                                                                                                LocalDateTime now = LocalDateTime
-                                                                                                                .now();
-
                                                                                                 Exercise exercise = Exercise
                                                                                                                 .builder()
                                                                                                                 .statement(exDef.statement)
@@ -93,7 +86,6 @@ public class DataInitializer {
                                                                                                                 .active(true)
                                                                                                                 .build();
 
-                                                                                                // Pistas
                                                                                                 if (exDef.hints != null) {
                                                                                                         Set<Hint> hints = exDef.hints
                                                                                                                         .stream()
@@ -109,7 +101,6 @@ public class DataInitializer {
                                                                                                                         hints);
                                                                                                 }
 
-                                                                                                // Pasos
                                                                                                 if (exDef.solutionSteps != null) {
                                                                                                         Set<SolutionStep> steps = exDef.solutionSteps
                                                                                                                         .stream()
@@ -129,14 +120,13 @@ public class DataInitializer {
                                                                                                 return exercise;
                                                                                         }).collect(Collectors
                                                                                                         .toCollection(LinkedHashSet::new));
-
                                                                         lo.setExercises(exercises);
                                                                 }
 
                                                                 return lo;
                                                         }).collect(Collectors.toCollection(LinkedHashSet::new));
 
-                                        standard.setLearningObjectives(learningObjectives);
+                                        standard.setLearningObjectives(objectives);
                                         return standard;
                                 }).collect(Collectors.toCollection(LinkedHashSet::new));
 
@@ -145,13 +135,18 @@ public class DataInitializer {
                         }).collect(Collectors.toCollection(LinkedHashSet::new));
 
                         curriculum.setCompetencies(competencies);
-                        curriculumRepository.save(curriculum);
-                        System.out.println("✅ Currículo, ejercicios, pistas y pasos cargados.");
+
+                        try {
+                                curriculumRepository.saveAndFlush(curriculum);
+                                System.out.println("✅ Currículo cargado exitosamente con ejercicios, pistas y pasos.");
+                        } catch (Exception e) {
+                                System.err.println("❌ Error al guardar currículo:");
+                                e.printStackTrace();
+                        }
                 }
         }
 
-        /* -------------- DTOs usados para parsear el archivo YAML -------------- */
-
+        // DTO internos
         static class CurriculumDef {
                 public String code, name, description, grade;
                 public List<CompetencyDef> competencies;
@@ -179,17 +174,17 @@ public class DataInitializer {
                 public String templateType;
                 public Map<String, Object> parameters;
                 public String correctAnswer;
-                public List<SolutionStepDef> solutionSteps;
                 public List<HintDef> hints;
-        }
-
-        static class SolutionStepDef {
-                public int stepNumber;
-                public String explanation;
+                public List<SolutionStepDef> solutionSteps;
         }
 
         static class HintDef {
                 public String hintText;
                 public int cost;
+        }
+
+        static class SolutionStepDef {
+                public int stepNumber;
+                public String explanation;
         }
 }

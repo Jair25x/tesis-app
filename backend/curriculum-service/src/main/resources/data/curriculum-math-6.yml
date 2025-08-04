@@ -16,7 +16,6 @@ competencies:
             name: "Analizar tablas de frecuencia"
             description: "Interpretar tablas con datos estadísticos simples."
             exercises:
-              # 🧠 EJERCICIO 1 (ya existente)
               - statement: |
                   Observa la siguiente tabla de actividades preferidas por estudiantes de 4.º grado:
 
@@ -44,84 +43,41 @@ competencies:
                     explanation: "Cantar tiene la frecuencia más alta (12)."
                   - stepNumber: 3
                     explanation: "Por lo tanto, la moda es Cantar."
-
-              # 🧠 EJERCICIO 2
+  - code: "C.2"
+    name: "CANTIDAD Y OPERACIONES"
+    description: "Resolver situaciones de multiplicación y valor posicional."
+    standards:
+      - code: "S.2.1"
+        name: "Ficha 2: Candados y decenas"
+        description: "Aplicar multiplicación con unidades de medida y valor posicional."
+        learningObjectives:
+          - code: "LO.2.1.1"
+            name: "Resolver problemas con multiplicación en contextos reales"
+            description: "Usar operaciones para resolver problemas sobre cantidades."
+            exercises:
               - statement: |
-                  Se entrevistó a 20 estudiantes sobre su deporte favorito. Los resultados fueron:
+                  Eliana compró 9 cajas de candados para su ferretería.  
+                  Cada caja contiene 1 decena de candados y cada candado será vendido a S/ 18.00.  
 
-                  | Deporte     | Frecuencia |
-                  |-------------|------------|
-                  | Fútbol      | 7          |
-                  | Básquet     | 4          |
-                  | Natación    | 6          |
-                  | Vóley       | 3          |
-
-                  ¿Cuántos estudiantes prefieren natación o vóley?
-                difficulty: "BASIC"
-                type: "OPEN"
-                templateType: "FREQUENCY_TOTAL"
-                parameters: {}
-                correctAnswer: "9"
-                hints:
-                  - hintText: "Suma las frecuencias de Natación y Vóley."
-                    cost: 1
-                solutionSteps:
-                  - stepNumber: 1
-                    explanation: "Frecuencia de natación: 6"
-                  - stepNumber: 2
-                    explanation: "Frecuencia de vóley: 3"
-                  - stepNumber: 3
-                    explanation: "6 + 3 = 9"
-
-              # 🧠 EJERCICIO 3
-              - statement: |
-                  ¿Cuál fue el deporte menos popular según la tabla anterior?
+                  ¿Cuánto dinero recibirá Eliana por la venta del total de cajas de candados?
                 difficulty: "BASIC"
                 type: "CHOICE"
-                templateType: "FREQUENCY_ANALYSIS"
-                parameters:
-                  choices: ["Fútbol", "Básquet", "Natación", "Vóley"]
-                correctAnswer: "Vóley"
-                hints:
-                  - hintText: "Observa la frecuencia más baja."
-                    cost: 1
-                solutionSteps:
-                  - stepNumber: 1
-                    explanation: "Busca el deporte con menor frecuencia."
-                  - stepNumber: 2
-                    explanation: "Vóley tiene la menor frecuencia (3)."
-                  - stepNumber: 3
-                    explanation: "La respuesta es Vóley."
-
-              # 🧠 EJERCICIO 4
-              - statement: |
-                  De la siguiente tabla:
-
-                  | Actividad      | Frecuencia |
-                  |----------------|------------|
-                  | Lectura        | 5          |
-                  | Videojuegos    | 11         |
-                  | Deportes       | 9          |
-                  | Dibujo         | 5          |
-
-                  ¿Qué actividades tienen la misma frecuencia?
-                difficulty: "BASIC"
-                type: "CHOICE"
-                templateType: "FREQUENCY_ANALYSIS"
+                templateType: "BASIC_OPERATIONS"
                 parameters:
                   choices:
-                    [
-                      "Lectura y Videojuegos",
-                      "Lectura y Dibujo",
-                      "Dibujo y Deportes",
-                      "Lectura y Deportes",
-                    ]
-                correctAnswer: "Lectura y Dibujo"
+                    - "S/ 180.00"
+                    - "S/ 1620.00"
+                    - "S/ 1800.00"
+                correctAnswer: "S/ 1620.00"
                 hints:
-                  - hintText: "Busca los valores que se repiten en la columna Frecuencia."
+                  - hintText: "Primero calcula cuántos candados tiene en total."
                     cost: 1
+                  - hintText: "Multiplica la cantidad total de candados por el precio de venta."
+                    cost: 2
                 solutionSteps:
                   - stepNumber: 1
-                    explanation: "Lectura tiene frecuencia 5, Dibujo también."
+                    explanation: "Cada caja tiene 10 candados (1 decena)."
                   - stepNumber: 2
-                    explanation: "Ambas tienen la misma frecuencia."
+                    explanation: "9 cajas x 10 candados = 90 candados."
+                  - stepNumber: 3
+                    explanation: "90 candados x S/ 18.00 = S/ 1620.00."

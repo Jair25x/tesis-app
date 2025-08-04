@@ -53,6 +53,8 @@ public class FieldDescriptor {
     /** Selección única de entre un conjunto de valores. */
     CHOICE,
     /** Cadena de texto libre. */
-    TEXT
+    TEXT,
+    /** Imagen de referencia en el ejerciccio**/
+    IMAGE
   }
 }
