@@ -10,7 +10,15 @@ import { cn } from "../../../utils/cn";
 import { showToast } from "../../../utils/showToast";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { Button } from "../../../components/ui/Button";
-import { Eye, Pencil, Trash2, RotateCcw } from "lucide-react";
+import BackLink from "../../../components/ui/BackLink";
+import {
+  Eye,
+  Pencil,
+  Trash2,
+  RotateCcw,
+  Lightbulb,
+  Footprints,
+} from "lucide-react";
 import type { ExerciseResponse } from "../../../types/exercise/ExerciseResponse";
 
 export default function ExerciseList() {
@@ -111,6 +119,11 @@ export default function ExerciseList() {
 
   return (
     <section className="p-6 md:p-8">
+      <BackLink
+        to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives`}
+        label="Volver a Objetivos de Aprendizaje"
+      />
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <h1 className="text-xl sm:text-2xl font-bold dark:text-white text-center sm:text-left w-full sm:w-auto">
           Gestión de Ejercicios
@@ -170,6 +183,9 @@ export default function ExerciseList() {
                   Dificultad
                 </th>
                 <th className="p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
+                  Diagnóstico
+                </th>
+                <th className="p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
                   Creación
                 </th>
                 <th className="p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
@@ -188,6 +204,17 @@ export default function ExerciseList() {
                 >
                   <td className="p-3">{ex.templateType}</td>
                   <td className="p-3">{ex.difficulty}</td>
+                  <td className="p-3">
+                    {ex.isDiagnostic ? (
+                      <span className="inline-block px-2 py-0.5 text-xs font-semibold text-blue-700 bg-blue-100 dark:bg-blue-800 dark:text-blue-100 rounded">
+                        Sí
+                      </span>
+                    ) : (
+                      <span className="inline-block px-2 py-0.5 text-xs font-medium text-gray-500 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 rounded">
+                        No
+                      </span>
+                    )}
+                  </td>
                   <td className="p-3">{formatDate(ex.createdAt)}</td>
                   <td className="p-3">
                     {ex.active ? (
@@ -200,87 +227,49 @@ export default function ExerciseList() {
                       </span>
                     )}
                   </td>
-                  <td className="p-3 text-center space-x-2">
-                    {/* Ver */}
-                    <div className="group relative inline-block">
-                      <Link
+                  <td className="p-3 text-center">
+                    <div className="flex justify-center gap-2">
+                      <TooltipIcon
                         to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${ex.id}/details`}
-                        aria-label="Ver detalles"
+                        label="Ver detalles"
                       >
-                        <Eye className="inline h-5 w-5 text-blue-500 hover:text-blue-600" />
-                      </Link>
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                        Ver detalles
-                      </span>
-                    </div>
-                    {/* Editar */}
-                    <div className="group relative inline-block">
-                      <Link
+                        <Eye className="h-5 w-5 text-blue-500 hover:text-blue-600" />
+                      </TooltipIcon>
+
+                      <TooltipIcon
                         to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${ex.id}/edit`}
-                        aria-label="Editar"
+                        label="Editar ejercicio"
                       >
-                        <Pencil className="inline h-5 w-5 text-yellow-500 hover:text-yellow-600" />
-                      </Link>
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                        Editar
-                      </span>
-                    </div>
-                    {/* Ver pistas */}
-                    <div className="group relative inline-block">
-                      <Link
+                        <Pencil className="h-5 w-5 text-yellow-500 hover:text-yellow-600" />
+                      </TooltipIcon>
+
+                      <TooltipIcon
                         to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${ex.id}/hints`}
-                        aria-label="Ver pistas"
+                        label="Ver pistas"
                       >
-                        <span className="inline-block px-1 py-0.5 bg-indigo-500 text-white text-xs rounded hover:bg-indigo-600">
-                          Pistas
-                        </span>
-                      </Link>
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                        Ver pistas
-                      </span>
-                    </div>
+                        <Lightbulb className="h-5 w-5 text-indigo-500 hover:text-indigo-600" />
+                      </TooltipIcon>
 
-                    {/* Ver pasos */}
-                    <div className="group relative inline-block">
-                      <Link
+                      <TooltipIcon
                         to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${ex.id}/solution-steps`}
-                        aria-label="Ver pasos"
+                        label="Ver pasos de solución"
                       >
-                        <span className="inline-block px-1 py-0.5 bg-purple-500 text-white text-xs rounded hover:bg-purple-600">
-                          Pasos
-                        </span>
-                      </Link>
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                        Ver pasos
-                      </span>
-                    </div>
+                        <Footprints className="h-5 w-5 text-purple-500 hover:text-purple-600" />
+                      </TooltipIcon>
 
-                    {/* Desactivar / Reactivar */}
-                    {ex.active ? (
-                      <div className="group relative inline-block">
-                        <button
-                          onClick={() => openModal(ex.id, "delete")}
-                          aria-label="Desactivar"
-                        >
-                          <Trash2 className="inline h-5 w-5 text-red-500 hover:text-red-600" />
-                        </button>
-                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                          Desactivar
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="group relative inline-block">
-                        <button
-                          onClick={() => openModal(ex.id, "reactivate")}
-                          aria-label="Reactivar"
-                        >
-                          <RotateCcw className="inline h-5 w-5 text-green-500 hover:text-green-600" />
-                        </button>
-                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                          Reactivar
-                        </span>
-                      </div>
-                    )}
+                      <TooltipButton
+                        onClick={() =>
+                          openModal(ex.id, ex.active ? "delete" : "reactivate")
+                        }
+                        label={ex.active ? "Desactivar" : "Reactivar"}
+                      >
+                        {ex.active ? (
+                          <Trash2 className="h-5 w-5 text-red-500 hover:text-red-600" />
+                        ) : (
+                          <RotateCcw className="h-5 w-5 text-green-500 hover:text-green-600" />
+                        )}
+                      </TooltipButton>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -307,5 +296,46 @@ export default function ExerciseList() {
         isLoading={modalLoading}
       />
     </section>
+  );
+}
+function TooltipIcon({
+  to,
+  label,
+  children,
+}: {
+  to: string;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="group relative inline-block">
+      <Link to={to} className="inline-block">
+        {children}
+      </Link>
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function TooltipButton({
+  onClick,
+  label,
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="group relative inline-block">
+      <button onClick={onClick} className="inline-block">
+        {children}
+      </button>
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
+        {label}
+      </span>
+    </div>
   );
 }

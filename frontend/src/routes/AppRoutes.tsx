@@ -92,6 +92,20 @@ const HintList = lazy(() => import("../pages/admin/hints/HintList"));
 const HintForm = lazy(() => import("../pages/admin/hints/HintForm"));
 const HintDetails = lazy(() => import("../pages/admin/hints/HintDetails"));
 
+/* Pasos de solucion */
+const SolutionStepList = lazy(
+  () => import("../pages/admin/solutionStep/SolutionStepList")
+);
+const SolutionStepForm = lazy(
+  () => import("../pages/admin/solutionStep/SolutionStepForm")
+);
+const SolutionStepDetails = lazy(
+  () => import("../pages/admin/solutionStep/SolutionStepDetails")
+);
+
+/* Test de Inicio */
+const DiagnosticTest = lazy(() => import("../pages/student/DiagnosticTest"));
+
 /* Explorador Curricular */
 import ExplorerDashboard from "../pages/admin/explorer/ExplorerDashboard";
 import { ExplorerProvider } from "../pages/admin/explorer/ExplorerProvider";
@@ -102,6 +116,7 @@ import { CompetencyProvider } from "../context/CompetencyProvider";
 import { LearningObjectiveProvider } from "../context/LearningObjectiveProvider";
 import { ExerciseProvider } from "../context/ExerciseProvider";
 import { HintProvider } from "../context/HintProvider";
+import { SolutionStepProvider } from "../context/SolutionStepProvider";
 
 export const router = createBrowserRouter([
   {
@@ -131,6 +146,16 @@ export const router = createBrowserRouter([
           { path: "roadmap", element: <Roadmap /> },
           { path: "profile", element: <StudentProfile /> },
           { path: "achievements", element: <Achievements /> },
+
+          // ✅ Nueva ruta para el test diagnóstico
+          {
+            path: "diagnostic",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <DiagnosticTest />
+              </Suspense>
+            ),
+          },
         ],
       },
 
@@ -406,6 +431,47 @@ export const router = createBrowserRouter([
                   <HintDetails />
                 </Suspense>
               </HintProvider>
+            ),
+          },
+          // Solution Steps
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/solution-steps",
+            element: (
+              <SolutionStepProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <SolutionStepList />
+                </Suspense>
+              </SolutionStepProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/solution-steps/new",
+            element: (
+              <SolutionStepProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <SolutionStepForm />
+                </Suspense>
+              </SolutionStepProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/solution-steps/:solutionStepId/edit",
+            element: (
+              <SolutionStepProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <SolutionStepForm />
+                </Suspense>
+              </SolutionStepProvider>
+            ),
+          },
+          {
+            path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/solution-steps/:solutionStepId/details",
+            element: (
+              <SolutionStepProvider>
+                <Suspense fallback={<LoadingScreen />}>
+                  <SolutionStepDetails />
+                </Suspense>
+              </SolutionStepProvider>
             ),
           },
         ],

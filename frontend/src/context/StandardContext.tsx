@@ -1,5 +1,6 @@
 import { createContext } from "react";
 import type { StandardResponse } from "../types/curriculum/StandardResponse";
+export type StatusType = "all" | "active" | "inactive";
 
 export interface StandardContextType {
   standards: StandardResponse[];

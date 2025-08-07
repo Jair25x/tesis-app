@@ -1,0 +1,33 @@
+// src/types/exercise/TemplateSchemaResponse.ts
+
+export type TemplateType =
+  | "BASIC_OPERATIONS"
+  | "UNIT_VALUE"
+  | "FRACTION_PROBLEM_SOLVING"
+  | "DECIMAL_COMPARISON"
+  | "MULTIPLES_AND_FACTORS"
+  | "WORD_PROBLEM_EQUATION"
+  | "PATTERN_FORMATION"
+  | "PROPORTIONALITY"
+  | "SCALE_UP_DOWN"
+  | "RATIO_SPLIT"
+  | "TBL_MATCH"
+  | "FREQUENCY_ANALYSIS"
+  | "FREQUENCY_TOTAL"
+  | "BAR_GRAPH_READING"
+  | "BASIC_PROB_DECISION"
+  | "PROBABILITY_SINGLE_EVENT"
+  | "SHAPE_IDENTIFICATION"
+  | "PRISM_CONSTRUCTION"
+  | "POSITION_RECOGNITION"
+  | "EQUATION_SOLVE"
+  | "INEQUATION_SOLVE"
+  | "CUSTOM_STATIC_IMAGE_CHOICE"
+  | "MULT_DIV_CHALLENGE"
+  | "MUSTACHE";
+
+export interface TemplateSchemaResponse {
+  type: TemplateType;
+  description: string;
+  example?: string;
+}

@@ -9,4 +9,5 @@ export interface ExerciseRequest {
   parameters: Record<string, unknown>;
   learningObjectiveId: string;
   correctAnswer: string;
+  isDiagnostic?: boolean; // opcional para compatibilidad retro
 }

@@ -14,6 +14,7 @@ import { showToast } from "../../../utils/showToast";
 import { cn } from "../../../utils/cn";
 import { type LearningObjectiveResponse } from "../../../types/curriculum/LearningObjectiveResponse";
 import { Button } from "../../../components/ui/Button";
+import BackLink from "../../../components/ui/BackLink";
 
 export default function LearningObjectiveList() {
   const { curriculumId, competencyId, standardId } = useParams<{
@@ -106,6 +107,11 @@ export default function LearningObjectiveList() {
 
   return (
     <section className="p-6 md:p-8">
+      <BackLink
+        to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards`}
+        label="Volver al listado de Estándares"
+      />
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <h1 className="text-xl sm:text-2xl font-bold dark:text-white text-center sm:text-left w-full sm:w-auto">
           Gestión de Objetivos de Aprendizaje

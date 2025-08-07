@@ -1,15 +1,24 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useStandard } from "../../../context/useStandard";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
-import EntityList from "../../../components/admin/EntityList";
 import { showToast } from "../../../utils/showToast";
 import { formatDate } from "../../../utils/formatDate";
-import { Trash2, RotateCcw, Eye, Pencil, BookOpenCheck } from "lucide-react";
+import {
+  Trash2,
+  RotateCcw,
+  Eye,
+  Pencil,
+  BookOpenCheck,
+  Plus,
+} from "lucide-react";
 import {
   deleteStandard,
   reactivateStandard,
 } from "../../../services/standardService";
 import { useState } from "react";
+import BackLink from "../../../components/ui/BackLink";
+import LoadingScreen from "../../../components/LoadingScreen";
+type StatusType = "active" | "inactive" | "all";
 
 export default function StandardList() {
   const { curriculumId, competencyId } = useParams();
@@ -52,103 +61,146 @@ export default function StandardList() {
   };
 
   return (
-    <EntityList
-      title="Gestión de Estándares"
-      addButtonText="Nuevo Estándar"
-      onAddClick={() =>
-        navigate(
-          `/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/new`
-        )
-      }
-      filter={status}
-      setFilter={setStatus}
-      loading={loading}
-      error={error}
-      emptyMessage="No hay estándares registrados."
-    >
-      <div className="overflow-x-auto rounded-md shadow-sm">
-        <table className="min-w-full text-sm border border-gray-300 dark:border-gray-700">
-          <thead className="bg-gray-100 dark:bg-gray-800">
-            <tr>
-              {["Nombre", "Código", "Creación", "Estado", "Acciones"].map(
-                (h) => (
-                  <th
-                    key={h}
-                    className={`p-3 font-semibold text-gray-700 dark:text-gray-300 ${
-                      h === "Acciones" ? "text-center" : "text-left"
-                    }`}
-                  >
-                    {h}
-                  </th>
-                )
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {standards.map((std) => (
-              <tr
-                key={std.id}
-                className="border-t border-gray-200 dark:border-gray-700"
-              >
-                <td className="p-3">{std.name}</td>
-                <td className="p-3">{std.code}</td>
-                <td className="p-3 text-gray-500">
-                  {formatDate(std.createdAt)}
-                </td>
-                <td className="p-3">
-                  {std.active ? (
-                    <span className="text-green-600 dark:text-green-400 font-medium">
-                      Activo
-                    </span>
-                  ) : (
-                    <span className="text-red-500 dark:text-red-400 font-medium">
-                      Inactivo
-                    </span>
-                  )}
-                </td>
-                <td className="p-3 text-center">
-                  <div className="flex justify-center gap-2">
-                    <TooltipIcon
-                      to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${std.id}/details`}
-                      label="Ver detalles"
-                    >
-                      <Eye className="h-5 w-5 text-blue-500 hover:text-blue-600" />
-                    </TooltipIcon>
+    <div className="space-y-4">
+      <BackLink
+        to={`/admin/curricula/${curriculumId}/competencies`}
+        label="Volver al listado de Competencias"
+      />
 
-                    <TooltipIcon
-                      to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${std.id}/edit`}
-                      label="Editar estándar"
-                    >
-                      <Pencil className="h-5 w-5 text-yellow-500 hover:text-yellow-600" />
-                    </TooltipIcon>
-
-                    <TooltipIcon
-                      to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${std.id}/learning-objectives`}
-                      label="Ver objetivos"
-                    >
-                      <BookOpenCheck className="h-5 w-5 text-purple-500 hover:text-purple-600" />
-                    </TooltipIcon>
-
-                    <TooltipButton
-                      onClick={() =>
-                        openModal(std.id, std.active ? "delete" : "reactivate")
-                      }
-                      label={std.active ? "Desactivar" : "Reactivar"}
-                    >
-                      {std.active ? (
-                        <Trash2 className="h-5 w-5 text-red-500 hover:text-red-600" />
-                      ) : (
-                        <RotateCcw className="h-5 w-5 text-green-500 hover:text-green-600" />
-                      )}
-                    </TooltipButton>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <h1 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+          Gestión de Estándares
+        </h1>
+        <button
+          onClick={() =>
+            navigate(
+              `/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/new`
+            )
+          }
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Nuevo Estándar
+        </button>
       </div>
 
+      {/* Filtros */}
+      <div className="flex gap-2">
+        {(["active", "inactive", "all"] as StatusType[]).map((s) => (
+          <button
+            key={s}
+            onClick={() => setStatus(s)}
+            className={`px-4 py-1 text-sm rounded-full border ${
+              status === s
+                ? "bg-blue-600 text-white border-blue-600"
+                : "bg-transparent text-gray-700 dark:text-gray-300 border-gray-400 dark:border-gray-600"
+            }`}
+          >
+            {s === "active"
+              ? "Activos"
+              : s === "inactive"
+              ? "Inactivos"
+              : "Todos"}
+          </button>
+        ))}
+      </div>
+
+      {/* Tabla */}
+      {loading ? (
+        <LoadingScreen />
+      ) : error ? (
+        <p className="text-red-500">{error}</p>
+      ) : standards.length === 0 ? (
+        <p className="text-gray-500">No hay estándares registrados.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-md shadow-sm">
+          <table className="min-w-full text-sm border border-gray-300 dark:border-gray-700">
+            <thead className="bg-gray-100 dark:bg-gray-800">
+              <tr>
+                <th className="p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
+                  Nombre
+                </th>
+                <th className="p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
+                  Código
+                </th>
+                <th className="p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
+                  Creación
+                </th>
+                <th className="p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
+                  Estado
+                </th>
+                <th className="p-3 text-center font-semibold text-gray-700 dark:text-gray-300">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {standards.map((std) => (
+                <tr
+                  key={std.id}
+                  className="border-t border-gray-200 dark:border-gray-700"
+                >
+                  <td className="p-3">{std.name}</td>
+                  <td className="p-3">{std.code}</td>
+                  <td className="p-3 text-gray-500">
+                    {formatDate(std.createdAt)}
+                  </td>
+                  <td className="p-3">
+                    {std.active ? (
+                      <span className="text-green-600 dark:text-green-400 font-medium">
+                        Activo
+                      </span>
+                    ) : (
+                      <span className="text-red-500 dark:text-red-400 font-medium">
+                        Inactivo
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-3 text-center">
+                    <div className="flex justify-center gap-2 flex-wrap">
+                      <TooltipIcon
+                        to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${std.id}/details`}
+                        label="Ver detalles"
+                      >
+                        <Eye className="h-5 w-5 text-blue-500 hover:text-blue-600" />
+                      </TooltipIcon>
+                      <TooltipIcon
+                        to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${std.id}/edit`}
+                        label="Editar estándar"
+                      >
+                        <Pencil className="h-5 w-5 text-yellow-500 hover:text-yellow-600" />
+                      </TooltipIcon>
+                      <TooltipIcon
+                        to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${std.id}/learning-objectives`}
+                        label="Ver objetivos"
+                      >
+                        <BookOpenCheck className="h-5 w-5 text-purple-500 hover:text-purple-600" />
+                      </TooltipIcon>
+                      <TooltipButton
+                        onClick={() =>
+                          openModal(
+                            std.id,
+                            std.active ? "delete" : "reactivate"
+                          )
+                        }
+                        label={std.active ? "Desactivar" : "Reactivar"}
+                      >
+                        {std.active ? (
+                          <Trash2 className="h-5 w-5 text-red-500 hover:text-red-600" />
+                        ) : (
+                          <RotateCcw className="h-5 w-5 text-green-500 hover:text-green-600" />
+                        )}
+                      </TooltipButton>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Modal */}
       <ConfirmModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
@@ -166,7 +218,7 @@ export default function StandardList() {
         variant={modalAction === "delete" ? "danger" : "success"}
         isLoading={modalLoading}
       />
-    </EntityList>
+    </div>
   );
 }
 

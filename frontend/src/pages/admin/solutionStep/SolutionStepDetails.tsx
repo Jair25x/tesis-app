@@ -17,14 +17,14 @@ export default function SolutionStepDetails() {
     standardId,
     learningObjectiveId,
     exerciseId,
-    stepId,
+    solutionStepId,
   } = useParams<{
     curriculumId: string;
     competencyId: string;
     standardId: string;
     learningObjectiveId: string;
     exerciseId: string;
-    stepId: string;
+    solutionStepId: string;
   }>();
 
   const navigate = useNavigate();
@@ -43,7 +43,7 @@ export default function SolutionStepDetails() {
         !standardId ||
         !learningObjectiveId ||
         !exerciseId ||
-        !stepId
+        !solutionStepId
       ) {
         setError("Parámetros inválidos en la URL.");
         setLoading(false);
@@ -57,7 +57,7 @@ export default function SolutionStepDetails() {
           standardId,
           learningObjectiveId,
           exerciseId,
-          stepId
+          solutionStepId
         );
         if (!response) {
           setError("No se encontró el paso de solución.");
@@ -78,7 +78,7 @@ export default function SolutionStepDetails() {
     standardId,
     learningObjectiveId,
     exerciseId,
-    stepId,
+    solutionStepId,
   ]);
 
   const handleConfirmDelete = async () => {
@@ -88,7 +88,7 @@ export default function SolutionStepDetails() {
       !standardId ||
       !learningObjectiveId ||
       !exerciseId ||
-      !stepId
+      !solutionStepId
     )
       return;
 
@@ -100,7 +100,7 @@ export default function SolutionStepDetails() {
         standardId,
         learningObjectiveId,
         exerciseId,
-        stepId
+        solutionStepId
       );
       showToast.success("Paso de solución desactivado correctamente.");
       navigate(

@@ -1,5 +1,3 @@
-// src/pages/admin/competencies/CompetencyList.tsx
-
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -13,6 +11,7 @@ import { cn } from "../../../utils/cn";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { showToast } from "../../../utils/showToast";
 import { useCompetency } from "../../../context/useCompetency";
+import BackLink from "../../../components/ui/BackLink";
 
 export default function CompetencyList() {
   const { curriculumId } = useParams<{ curriculumId: string }>();
@@ -66,8 +65,10 @@ export default function CompetencyList() {
   };
 
   return (
-    <section className="p-6 md:p-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+    <section className="p-4 sm:p-6 md:p-8">
+      <BackLink to="/admin/curricula" label="Volver al listado de Currículos" />
+
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <h1 className="text-xl sm:text-2xl font-bold dark:text-white text-center sm:text-left w-full sm:w-auto">
           Gestión de Competencias
         </h1>
@@ -79,7 +80,6 @@ export default function CompetencyList() {
         </Link>
       </div>
 
-      {/* Filtros */}
       <div className="mb-4 flex flex-wrap gap-2 justify-center sm:justify-start">
         {(["all", "active", "inactive"] as const).map((type) => (
           <button
@@ -105,7 +105,6 @@ export default function CompetencyList() {
         ))}
       </div>
 
-      {/* Tabla */}
       {loading ? (
         <p className="text-center text-gray-500 dark:text-gray-400">
           Cargando...
@@ -158,94 +157,47 @@ export default function CompetencyList() {
                       </span>
                     )}
                   </td>
-                  <td className="p-3 text-center space-x-2">
-                    {/* Tooltip para el botón de 'Ver detalles' */}
-                    <div className="group relative inline-block">
+                  <td className="p-3 text-center">
+                    <div className="flex justify-center gap-2 flex-wrap">
                       <Link
                         to={`/admin/curricula/${curriculumId}/competencies/${comp.id}/details`}
                         aria-label="Ver detalles"
+                        title="Ver detalles"
                       >
-                        <Eye className="inline h-5 w-5 text-blue-500 hover:text-blue-600" />
+                        <Eye className="h-5 w-5 text-blue-500 hover:text-blue-600" />
                       </Link>
-                      {/* El tooltip en sí, se muestra al hacer hover en el grupo padre */}
-                      <span
-                        className="absolute bottom-full left-1/2 -translate-x-1/2
-                     mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg
-                     whitespace-nowrap opacity-0 group-hover:opacity-100
-                     transition-opacity duration-300"
-                      >
-                        Ver detalles
-                      </span>
-                    </div>
-                    {/* Tooltip para el botón de 'Editar' */}
-                    <div className="group relative inline-block">
                       <Link
                         to={`/admin/curricula/${curriculumId}/competencies/${comp.id}/edit`}
                         aria-label="Editar"
+                        title="Editar competencia"
                       >
-                        <Pencil className="inline h-5 w-5 text-yellow-500 hover:text-yellow-600" />
+                        <Pencil className="h-5 w-5 text-yellow-500 hover:text-yellow-600" />
                       </Link>
-                      <span
-                        className="absolute bottom-full left-1/2 -translate-x-1/2
-                     mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg
-                     whitespace-nowrap opacity-0 group-hover:opacity-100
-                     transition-opacity duration-300"
-                      >
-                        Editar
-                      </span>
-                    </div>
-                    {/* Tooltip para el botón de 'Ver estándares' */}
-                    <div className="group relative inline-block">
                       <Link
                         to={`/admin/curricula/${curriculumId}/competencies/${comp.id}/standards`}
                         aria-label="Ver estándares"
+                        title="Ver estándares"
                       >
-                        <LayoutList className="inline h-5 w-5 text-purple-500 hover:text-purple-600" />
+                        <LayoutList className="h-5 w-5 text-purple-500 hover:text-purple-600" />
                       </Link>
-                      <span
-                        className="absolute bottom-full left-1/2 -translate-x-1/2
-                     mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg
-                     whitespace-nowrap opacity-0 group-hover:opacity-100
-                     transition-opacity duration-300"
-                      >
-                        Ver estándares
-                      </span>
-                    </div>
-                    {comp.active ? (
-                      <div className="group relative inline-block">
+                      {comp.active ? (
                         <button
                           onClick={() => openModal(comp.id, "delete")}
                           aria-label="Desactivar"
+                          title="Desactivar"
                         >
-                          <Trash2 className="inline h-5 w-5 text-red-500 hover:text-red-600" />
+                          <Trash2 className="h-5 w-5 text-red-500 hover:text-red-600" />
                         </button>
-                        <span
-                          className="absolute bottom-full left-1/2 -translate-x-1/2
-                       mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg
-                       whitespace-nowrap opacity-0 group-hover:opacity-100
-                       transition-opacity duration-300"
-                        >
-                          Desactivar
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="group relative inline-block">
+                      ) : (
                         <button
                           onClick={() => openModal(comp.id, "reactivate")}
                           aria-label="Reactivar"
+                          title="Reactivar"
                         >
-                          <RotateCcw className="inline h-5 w-5 text-green-500 hover:text-green-600" />
+                          <RotateCcw className="h-5 w-5 text-green-500 hover:text-green-600" />
                         </button>
-                        <span
-                          className="absolute bottom-full left-1/2 -translate-x-1/2
-                       mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg
-                       whitespace-nowrap opacity-0 group-hover:opacity-100
-                       transition-opacity duration-300"
-                        >
-                          Reactivar
-                        </span>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -274,3 +226,5 @@ export default function CompetencyList() {
     </section>
   );
 }
+
+

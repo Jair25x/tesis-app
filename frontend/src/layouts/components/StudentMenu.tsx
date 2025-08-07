@@ -29,6 +29,7 @@ export default function StudentMenu({
         📚 Estudiante
         <span className="ml-2">{studentOpen ? "▴" : "▾"}</span>
       </button>
+
       {studentOpen && (
         <div className="ml-4 mt-1 space-y-1">
           <Link
@@ -58,6 +59,13 @@ export default function StudentMenu({
             onClick={() => setSidebarOpen(false)}
           >
             🏆 Logros
+          </Link>
+          <Link
+            to="/student/diagnostic"
+            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+            onClick={() => setSidebarOpen(false)}
+          >
+            📋 Test de Diagnóstico
           </Link>
         </div>
       )}

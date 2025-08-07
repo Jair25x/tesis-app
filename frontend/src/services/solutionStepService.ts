@@ -1,55 +1,58 @@
-import axios from "axios";
-import type { SolutionStepRequest, SolutionStepResponse } from "../types/exercise/SolutionStepResponse";
+import api from "./api";
+import type {
+  SolutionStepRequest,
+  SolutionStepResponse,
+} from "../types/exercise/SolutionStepResponse";
 
+const BASE_PATH = "/curricula";
 
-// Base para las rutas anidadas
-const BASE_URL = "/curricula";
-
-export async function getSolutionSteps(
+export const getSolutionSteps = async (
   curriculumId: string,
   competencyId: string,
   standardId: string,
   learningObjectiveId: string,
   exerciseId: string,
-  includeAll: boolean = false
-): Promise<SolutionStepResponse[]> {
+  status: "all" | "active" | "inactive" = "active"
+): Promise<SolutionStepResponse[]> => {
+  // Nota: solo los roles ADMIN y TEACHER pueden usar 'all'
+  const includeAll = status === "all";
   const suffix = includeAll ? "/all" : "";
-  const response = await axios.get(
-    `${BASE_URL}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps${suffix}`
+  const { data } = await api.get(
+    `${BASE_PATH}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps${suffix}`
   );
-  return response.data;
-}
+  return data;
+};
 
-export async function getSolutionStepById(
+export const getSolutionStepById = async (
   curriculumId: string,
   competencyId: string,
   standardId: string,
   learningObjectiveId: string,
   exerciseId: string,
   stepId: string
-): Promise<SolutionStepResponse> {
-  const response = await axios.get(
-    `${BASE_URL}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps/${stepId}`
+): Promise<SolutionStepResponse> => {
+  const { data } = await api.get(
+    `${BASE_PATH}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps/${stepId}`
   );
-  return response.data;
-}
+  return data;
+};
 
-export async function createSolutionStep(
+export const createSolutionStep = async (
   curriculumId: string,
   competencyId: string,
   standardId: string,
   learningObjectiveId: string,
   exerciseId: string,
   payload: SolutionStepRequest
-): Promise<SolutionStepResponse> {
-  const response = await axios.post(
-    `${BASE_URL}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps`,
+): Promise<SolutionStepResponse> => {
+  const { data } = await api.post(
+    `${BASE_PATH}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps`,
     payload
   );
-  return response.data;
-}
+  return data;
+};
 
-export async function updateSolutionStep(
+export const updateSolutionStep = async (
   curriculumId: string,
   competencyId: string,
   standardId: string,
@@ -57,36 +60,36 @@ export async function updateSolutionStep(
   exerciseId: string,
   stepId: string,
   payload: SolutionStepRequest
-): Promise<SolutionStepResponse> {
-  const response = await axios.put(
-    `${BASE_URL}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps/${stepId}`,
+): Promise<SolutionStepResponse> => {
+  const { data } = await api.put(
+    `${BASE_PATH}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps/${stepId}`,
     payload
   );
-  return response.data;
-}
+  return data;
+};
 
-export async function deleteSolutionStep(
+export const deleteSolutionStep = async (
   curriculumId: string,
   competencyId: string,
   standardId: string,
   learningObjectiveId: string,
   exerciseId: string,
   stepId: string
-): Promise<void> {
-  await axios.delete(
-    `${BASE_URL}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps/${stepId}`
+): Promise<void> => {
+  await api.delete(
+    `${BASE_PATH}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps/${stepId}`
   );
-}
+};
 
-export async function reactivateSolutionStep(
+export const reactivateSolutionStep = async (
   curriculumId: string,
   competencyId: string,
   standardId: string,
   learningObjectiveId: string,
   exerciseId: string,
   stepId: string
-): Promise<void> {
-  await axios.patch(
-    `${BASE_URL}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps/${stepId}/reactivate`
+): Promise<void> => {
+  await api.patch(
+    `${BASE_PATH}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps/${stepId}/reactivate`
   );
-}
+};

@@ -26,4 +26,6 @@ export interface ExerciseResponse {
   createdAt: string;
   updatedAt: string;
   active: boolean;
+
+  isDiagnostic: boolean;
 }

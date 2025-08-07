@@ -122,3 +122,9 @@ export const submitExerciseAttempt = async (
 ): Promise<void> => {
   await api.post("/exercise-attempts", payload);
 };
+
+// ✅ Obtener todos los ejercicios del cuestionario diagnóstico
+export const getDiagnosticExercises = async (): Promise<ExerciseResponse[]> => {
+  const { data } = await api.get("/curricula/exercises/diagnostic");
+  return data;
+};

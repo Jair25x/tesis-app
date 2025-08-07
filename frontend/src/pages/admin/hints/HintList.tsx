@@ -13,6 +13,7 @@ import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { Button } from "../../../components/ui/Button";
 import { Eye, Pencil, Trash2, RotateCcw } from "lucide-react";
 import type { HintResponse } from "../../../types/exercise/HintResponse";
+import BackLink from "../../../components/ui/BackLink";
 
 export default function HintList() {
   const {
@@ -137,6 +138,11 @@ export default function HintList() {
 
   return (
     <section className="p-6 md:p-8">
+      <BackLink
+        to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises`}
+        label="Volver al listado de Ejercicios"
+      />
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <h1 className="text-xl sm:text-2xl font-bold dark:text-white text-center sm:text-left w-full sm:w-auto">
           Gestión de Pistas

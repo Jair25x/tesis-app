@@ -8,18 +8,16 @@ import {
 import type { ExerciseRequest } from "../../../types/exercise/ExerciseRequest";
 import { showToast } from "../../../utils/showToast";
 import type { Difficulty } from "../../../types/exercise/Difficulty";
-import type { TemplateType } from "../../../types/exercise/TemplateType";
 import MustachePreview from "../../../components/MustachePreview";
+import { getAllTemplates } from "../../../services/templateService";
+import type { TemplateSchemaResponse } from "../../../types/exercise/TemplateSchemaResponse";
 
 const difficultyOptions: Difficulty[] = ["BASIC", "INTERMEDIATE", "ADVANCED"];
-const templateTypeOptions: TemplateType[] = [
-  "MUSTACHE",
-  "TBL_MATCH",
-  "FILL_IN_THE_BLANK",
-  "MULTIPLE_CHOICE",
-];
 
 export default function ExerciseForm() {
+  const [templateOptions, setTemplateOptions] = useState<
+    TemplateSchemaResponse[]
+  >([]);
   const navigate = useNavigate();
   const {
     curriculumId,
@@ -34,7 +32,15 @@ export default function ExerciseForm() {
     learningObjectiveId: string;
     exerciseId?: string;
   }>();
+  useEffect(() => {
+    if (!curriculumId) return;
 
+    getAllTemplates(curriculumId)
+      .then((data) => {
+        setTemplateOptions(data);
+      })
+      .catch(() => showToast.error("No se pudieron cargar las plantillas"));
+  }, [curriculumId]);
   const isEditMode = Boolean(exerciseId);
 
   const [form, setForm] = useState<ExerciseRequest>({
@@ -45,6 +51,7 @@ export default function ExerciseForm() {
     correctAnswer: "",
     parameters: {},
     learningObjectiveId: learningObjectiveId || "",
+    isDiagnostic: false,
   });
 
   const [jsonError, setJsonError] = useState<string>("");
@@ -73,6 +80,7 @@ export default function ExerciseForm() {
             correctAnswer: response.correctAnswer,
             parameters: response.parameters,
             learningObjectiveId: response.learningObjectiveId,
+            isDiagnostic: response.isDiagnostic ?? false,
           });
           setJsonText(JSON.stringify(response.parameters, null, 2));
         })
@@ -243,9 +251,9 @@ export default function ExerciseForm() {
             onChange={handleChange}
             className="w-full px-4 py-2 border rounded-md text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white"
           >
-            {templateTypeOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
+            {templateOptions.map((t) => (
+              <option key={t.type} value={t.type}>
+                {t.description}
               </option>
             ))}
           </select>
@@ -268,6 +276,29 @@ export default function ExerciseForm() {
             maxLength={1000}
             className="w-full px-4 py-2 border rounded-md text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white"
           />
+        </div>
+
+        {/* Marcar como diagnóstico */}
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="isDiagnostic"
+            name="isDiagnostic"
+            checked={form.isDiagnostic}
+            onChange={(e) =>
+              setForm((prev) => ({
+                ...prev,
+                isDiagnostic: e.target.checked,
+              }))
+            }
+            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+          />
+          <label
+            htmlFor="isDiagnostic"
+            className="text-sm text-gray-700 dark:text-gray-300"
+          >
+            Marcar este ejercicio como parte del test diagnóstico
+          </label>
         </div>
 
         {/* Parámetros JSON */}

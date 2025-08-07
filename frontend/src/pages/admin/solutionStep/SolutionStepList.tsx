@@ -13,6 +13,7 @@ import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { Button } from "../../../components/ui/Button";
 import { Eye, Pencil, Trash2, RotateCcw } from "lucide-react";
 import type { SolutionStepResponse } from "../../../types/exercise/SolutionStepResponse";
+import BackLink from "../../../components/ui/BackLink";
 
 export default function SolutionStepList() {
   const {
@@ -53,14 +54,13 @@ export default function SolutionStepList() {
 
     setLoading(true);
     try {
-      const includeAll = status === "all";
       const data = await getSolutionSteps(
         curriculumId,
         competencyId,
         standardId,
         learningObjectiveId,
         exerciseId,
-        includeAll
+        status // ← ahora se pasa directamente como string
       );
 
       // Si el usuario quiere ver solo activos o inactivos, filtramos manualmente
@@ -147,6 +147,11 @@ export default function SolutionStepList() {
 
   return (
     <section className="p-6 md:p-8">
+      <BackLink
+        to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises`}
+        label="Volver al listado de Ejercicios"
+      />
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <h1 className="text-xl sm:text-2xl font-bold dark:text-white text-center sm:text-left w-full sm:w-auto">
           Gestión de Pasos de Solución
@@ -238,6 +243,7 @@ export default function SolutionStepList() {
                     )}
                   </td>
                   <td className="p-3 text-center space-x-2">
+                    {/* Ver detalles */}
                     <div className="group relative inline-block">
                       <Link
                         to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps/${step.id}/details`}
@@ -245,9 +251,12 @@ export default function SolutionStepList() {
                       >
                         <Eye className="inline h-5 w-5 text-blue-500 hover:text-blue-600" />
                       </Link>
-                      <span className="tooltip">Ver detalles</span>
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                        Ver detalles
+                      </span>
                     </div>
 
+                    {/* Editar */}
                     <div className="group relative inline-block">
                       <Link
                         to={`/admin/curricula/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/solution-steps/${step.id}/edit`}
@@ -255,9 +264,12 @@ export default function SolutionStepList() {
                       >
                         <Pencil className="inline h-5 w-5 text-yellow-500 hover:text-yellow-600" />
                       </Link>
-                      <span className="tooltip">Editar</span>
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                        Editar
+                      </span>
                     </div>
 
+                    {/* Activar / Desactivar */}
                     {step.active ? (
                       <div className="group relative inline-block">
                         <button
@@ -266,7 +278,9 @@ export default function SolutionStepList() {
                         >
                           <Trash2 className="inline h-5 w-5 text-red-500 hover:text-red-600" />
                         </button>
-                        <span className="tooltip">Desactivar</span>
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                          Desactivar
+                        </span>
                       </div>
                     ) : (
                       <div className="group relative inline-block">
@@ -276,7 +290,9 @@ export default function SolutionStepList() {
                         >
                           <RotateCcw className="inline h-5 w-5 text-green-500 hover:text-green-600" />
                         </button>
-                        <span className="tooltip">Reactivar</span>
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                          Reactivar
+                        </span>
                       </div>
                     )}
                   </td>

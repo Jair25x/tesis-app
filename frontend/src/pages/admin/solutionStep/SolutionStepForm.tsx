@@ -16,17 +16,17 @@ export default function SolutionStepForm() {
     standardId,
     learningObjectiveId,
     exerciseId,
-    stepId,
+    solutionStepId,
   } = useParams<{
     curriculumId: string;
     competencyId: string;
     standardId: string;
     learningObjectiveId: string;
     exerciseId: string;
-    stepId?: string;
+    solutionStepId?: string;
   }>();
 
-  const isEditMode = Boolean(stepId);
+  const isEditMode = Boolean(solutionStepId);
 
   const [form, setForm] = useState<SolutionStepRequest>({
     stepNumber: 1,
@@ -44,7 +44,7 @@ export default function SolutionStepForm() {
       standardId &&
       learningObjectiveId &&
       exerciseId &&
-      stepId
+      solutionStepId
     ) {
       setLoading(true);
       getSolutionStepById(
@@ -53,7 +53,7 @@ export default function SolutionStepForm() {
         standardId,
         learningObjectiveId,
         exerciseId,
-        stepId
+        solutionStepId
       )
         .then((data) => {
           setForm({
@@ -71,7 +71,7 @@ export default function SolutionStepForm() {
     standardId,
     learningObjectiveId,
     exerciseId,
-    stepId,
+    solutionStepId,
   ]);
 
   const handleChange = (
@@ -99,14 +99,14 @@ export default function SolutionStepForm() {
     setError("");
 
     try {
-      if (isEditMode && stepId) {
+      if (isEditMode && solutionStepId) {
         await updateSolutionStep(
           curriculumId,
           competencyId,
           standardId,
           learningObjectiveId,
           exerciseId,
-          stepId,
+          solutionStepId,
           form
         );
         showToast.success("Paso de solución actualizado correctamente.");

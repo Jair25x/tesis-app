@@ -194,6 +194,16 @@ export default function ExerciseDetails() {
             )
           }
         />
+        <Detail
+          label="Ejercicio diagnóstico"
+          value={
+            exercise.isDiagnostic ? (
+              <span className="text-blue-600 font-medium">Sí</span>
+            ) : (
+              <span className="text-gray-500 dark:text-gray-400">No</span>
+            )
+          }
+        />
         <p className="text-sm text-gray-500 dark:text-gray-400">
           Creado: {formatDate(exercise.createdAt)}
         </p>
