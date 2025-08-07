@@ -63,6 +63,10 @@ public class Exercise extends AuditableEntity {
   @Builder.Default
   private Boolean active = true;
 
+  @Column(name = "is_diagnostic", nullable = false)
+  @Builder.Default
+  private boolean isDiagnostic = false;
+
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "learning_objective_id", nullable = false)
   private LearningObjective learningObjective;

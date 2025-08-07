@@ -52,6 +52,7 @@ public class ExerciseServiceImpl implements ExerciseService {
         .parameters(req.getParameters())
         .correctAnswer(req.getCorrectAnswer())
         .learningObjective(lo)
+        .isDiagnostic(req.getIsDiagnostic())
         .build();
 
     return toDto(exerciseRepo.save(ex));
@@ -102,6 +103,7 @@ public class ExerciseServiceImpl implements ExerciseService {
     ex.setTemplateType(req.getTemplateType());
     ex.setParameters(req.getParameters());
     ex.setCorrectAnswer(req.getCorrectAnswer());
+    ex.setDiagnostic(req.getIsDiagnostic());
 
     return toDto(exerciseRepo.save(ex));
   }
@@ -165,6 +167,14 @@ public class ExerciseServiceImpl implements ExerciseService {
         .collect(Collectors.toList());
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public List<ExerciseResponse> getAllDiagnosticExercises() {
+    return exerciseRepo.findAllByDiagnosticTrueAndActiveTrue()
+        .stream()
+        .map(this::toDto)
+        .collect(Collectors.toList());
+  }
   /* ──────────────────────── CHECK ANSWER ───────────────────────── */
 
   @Override
@@ -283,6 +293,7 @@ public class ExerciseServiceImpl implements ExerciseService {
         .templateType(e.getTemplateType())
         .parameters(e.getParameters())
         .correctAnswer(e.getCorrectAnswer())
+        .isDiagnostic(e.isDiagnostic())
         .learningObjectiveId(lo.getId())
         .learningObjectiveName(lo.getName())
         .standardId(std.getId())

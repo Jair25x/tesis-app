@@ -68,4 +68,9 @@ public interface ExerciseRepository extends JpaRepository<Exercise, UUID> {
       """, nativeQuery = true)
   List<Exercise> findInactiveByLearningObjectiveId(@Param("learningObjectiveId") UUID learningObjectiveId);
 
+  @Query(nativeQuery = true, value = """
+        SELECT * FROM exercises
+        WHERE is_diagnostic = true AND active = true
+      """)
+  List<Exercise> findAllByDiagnosticTrueAndActiveTrue();
 }

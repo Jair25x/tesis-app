@@ -1,6 +1,8 @@
 package com.tesis.curriculum_service.controller;
 
 import com.tesis.curriculum_service.dto.TemplateSchema;
+import com.tesis.curriculum_service.dto.TemplateSchema.TemplateType;
+import com.tesis.curriculum_service.dto.TemplateSchemaResponse;
 import com.tesis.curriculum_service.exception.ErrorResponse;
 import com.tesis.curriculum_service.service.template.ExerciseTemplateService;
 
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Tag(name = "Templates", description = "Plantillas parametrizables para generación de ejercicios")
 @RestController
@@ -31,15 +34,24 @@ public class TemplateController {
 
   @Operation(summary = "Listar todas las plantillas", description = "Devuelve la lista completa de esquemas de plantilla disponibles. Solo ADMIN/TEACHER.")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "Listado de plantillas obtenido correctamente", content = @Content(array = @ArraySchema(schema = @Schema(implementation = TemplateSchema.class)))),
+      @ApiResponse(responseCode = "200", description = "Listado de plantillas obtenido correctamente", content = @Content(array = @ArraySchema(schema = @Schema(implementation = TemplateSchemaResponse.class)))),
       @ApiResponse(responseCode = "403", description = "Acceso denegado: el usuario no tiene los roles requeridos")
   })
   @GetMapping
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
-  public ResponseEntity<List<TemplateSchema>> listAll(
+  public ResponseEntity<List<TemplateSchemaResponse>> listAll(
       @PathVariable UUID curriculumId) {
+
     List<TemplateSchema> schemas = templateService.listAll();
-    return ResponseEntity.ok(schemas);
+
+    List<TemplateSchemaResponse> response = schemas.stream()
+        .map(schema -> new TemplateSchemaResponse(
+            schema.getTemplateType(),
+            generateDescription(schema.getTemplateType()),
+            schema.getPattern()))
+        .collect(Collectors.toList());
+
+    return ResponseEntity.ok(response);
   }
 
   @Operation(summary = "Obtener esquema de plantilla por tipo", description = "Busca y devuelve el esquema para un tipo de plantilla concreto. Solo ADMIN/TEACHER.")
@@ -52,7 +64,7 @@ public class TemplateController {
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
   public ResponseEntity<?> getByType(
       @PathVariable UUID curriculumId,
-      @PathVariable TemplateSchema.TemplateType type) {
+      @PathVariable TemplateType type) {
 
     return templateService.schemaFor(type)
         .<ResponseEntity<?>>map(ResponseEntity::ok)
@@ -63,5 +75,19 @@ public class TemplateController {
               System.currentTimeMillis());
           return ResponseEntity.status(HttpStatus.NOT_FOUND).body(err);
         });
+  }
+
+  private String generateDescription(TemplateType type) {
+    // Puedes mejorar esto luego con un Map o enum con descripciones localizadas
+    return switch (type) {
+      case BASIC_OPERATIONS -> "Operaciones básicas (suma, resta, multiplicación, división)";
+      case UNIT_VALUE -> "Problemas con valores unitarios";
+      case FRACTION_PROBLEM_SOLVING -> "Resolución de problemas con fracciones";
+      case DECIMAL_COMPARISON -> "Comparación de decimales";
+      case MULTIPLES_AND_FACTORS -> "Múltiplos y factores (MCM y MCD)";
+      case WORD_PROBLEM_EQUATION -> "Problemas que se resuelven con ecuaciones";
+      case MUSTACHE -> "Plantilla libre con Mustache";
+      default -> type.name().replace("_", " ").toLowerCase();
+    };
   }
 }

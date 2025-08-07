@@ -22,4 +22,6 @@ public interface ExerciseTemplateService {
    * @return esquema si existe
    */
   Optional<TemplateSchema> schemaFor(TemplateSchema.TemplateType type);
+
+  
 }

@@ -48,4 +48,8 @@ public class ExerciseRequest {
 
   @Schema(description = "Respuesta correcta para validar el ejercicio", example = "5")
   private String correctAnswer;
+
+  @Schema(description = "Indica si el ejercicio forma parte del test diagnóstico", example = "true")
+  @Builder.Default
+  private Boolean isDiagnostic = false;
 }

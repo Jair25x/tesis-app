@@ -77,4 +77,7 @@ public class ExerciseResponse {
 
   @Schema(description = "Indica si el ejercicio está activo")
   private Boolean active;
+
+  @Schema(description = "Indica si el ejercicio forma parte del test diagnóstico", example = "true")
+  private Boolean isDiagnostic;
 }

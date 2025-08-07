@@ -136,6 +136,14 @@ public interface ExerciseService {
                         UUID exerciseId,
                         CheckAnswerRequest request) throws ResourceNotFoundException;
 
+        /**
+         * Obtiene todos los ejercicios marcados como parte del test diagnóstico.
+         * Se usa al cargar el cuestionario inicial del estudiante.
+         *
+         * @return Lista de ejercicios diagnósticos activos
+         */
+        List<ExerciseResponse> getAllDiagnosticExercises();
+
         List<ExerciseResponse> getAllByLearningObjectiveInactive(UUID curriculumId, UUID competencyId, UUID standardId,
                         UUID learningObjectiveId) throws ResourceNotFoundException;
 

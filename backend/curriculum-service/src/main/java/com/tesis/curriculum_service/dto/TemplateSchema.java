@@ -57,8 +57,9 @@ public class TemplateSchema {
 
     // === OTROS (si fueran necesarios en el futuro) ===
     CUSTOM_STATIC_IMAGE_CHOICE, // Plantilla para ejercicios con imagen estática y selección de opción (usado
-                               // con pizarra)
-                               
+                                // con pizarra)
     MULT_DIV_CHALLENGE,
+
+    MUSTACHE // Plantilla libre para renderizado dinámico con Mustache
   }
 }
