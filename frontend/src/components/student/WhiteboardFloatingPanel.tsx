@@ -79,8 +79,8 @@ export default function WhiteboardFloatingPanel({
     <div
       className="fixed z-40 shadow-2xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-900 rounded-lg flex flex-col overflow-hidden"
       style={{
-        width: "320px",
-        height: "400px",
+        width: "380px",
+        height: "420px",
         bottom: "1rem",
         right: "1rem",
       }}
