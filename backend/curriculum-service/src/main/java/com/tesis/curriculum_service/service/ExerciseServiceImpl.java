@@ -1,5 +1,7 @@
 package com.tesis.curriculum_service.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.mustachejava.Mustache;
 import com.github.mustachejava.MustacheFactory;
 import com.tesis.curriculum_service.dto.*;
@@ -9,6 +11,7 @@ import com.tesis.curriculum_service.exception.BadRequestException;
 import com.tesis.curriculum_service.exception.ResourceNotFoundException;
 import com.tesis.curriculum_service.model.Exercise;
 import com.tesis.curriculum_service.model.LearningObjective;
+import com.tesis.curriculum_service.model.SolutionStep;
 import com.tesis.curriculum_service.repository.ExerciseRepository;
 import com.tesis.curriculum_service.repository.LearningObjectiveRepository;
 import com.tesis.curriculum_service.service.template.ExerciseTemplateService;
@@ -31,7 +34,7 @@ public class ExerciseServiceImpl implements ExerciseService {
   private final LearningObjectiveRepository loRepo;
   private final ExerciseTemplateService templateService;
   private final MustacheFactory mustacheFactory;
-
+  private final ObjectMapper objectMapper;
   /* ─────────────────────────────── CRUD ─────────────────────────────── */
 
   @Override
@@ -55,7 +58,7 @@ public class ExerciseServiceImpl implements ExerciseService {
         .isDiagnostic(req.getIsDiagnostic())
         .build();
 
-    return toDto(exerciseRepo.save(ex));
+    return toStudentDto(exerciseRepo.save(ex));
   }
 
   @Override
@@ -67,7 +70,7 @@ public class ExerciseServiceImpl implements ExerciseService {
 
     return exerciseRepo.findByLearningObjectiveId(learningObjectiveId)
         .stream()
-        .map(this::toDto)
+        .map(this::toStudentDto)
         .collect(Collectors.toList());
   }
 
@@ -81,7 +84,7 @@ public class ExerciseServiceImpl implements ExerciseService {
 
     validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
 
-    return toDto(ex);
+    return toStudentDto(ex);
   }
 
   @Override
@@ -105,7 +108,7 @@ public class ExerciseServiceImpl implements ExerciseService {
     ex.setCorrectAnswer(req.getCorrectAnswer());
     ex.setDiagnostic(req.getIsDiagnostic());
 
-    return toDto(exerciseRepo.save(ex));
+    return toStudentDto(exerciseRepo.save(ex));
   }
 
   @Override
@@ -150,7 +153,7 @@ public class ExerciseServiceImpl implements ExerciseService {
 
     return exerciseRepo.findInactiveByLearningObjectiveId(learningObjectiveId)
         .stream()
-        .map(this::toDto)
+        .map(this::toStudentDto)
         .collect(Collectors.toList());
   }
 
@@ -163,7 +166,7 @@ public class ExerciseServiceImpl implements ExerciseService {
 
     return exerciseRepo.findIncludingInactiveByLearningObjectiveId(learningObjectiveId)
         .stream()
-        .map(this::toDto)
+        .map(this::toStudentDto)
         .collect(Collectors.toList());
   }
 
@@ -172,34 +175,180 @@ public class ExerciseServiceImpl implements ExerciseService {
   public List<ExerciseResponse> getAllDiagnosticExercises() {
     return exerciseRepo.findAllByDiagnosticTrueAndActiveTrue()
         .stream()
-        .map(this::toDto)
+        .map(this::toStudentDto)
         .collect(Collectors.toList());
   }
-  /* ──────────────────────── CHECK ANSWER ───────────────────────── */
 
   @Override
   @Transactional(readOnly = true)
-  public CheckAnswerResponse checkAnswer(UUID curriculumId, UUID competencyId, UUID standardId,
-      UUID learningObjectiveId, UUID exerciseId,
-      CheckAnswerRequest request) {
+  public ExerciseAdminResponse getByIdAdmin(
+      UUID curriculumId, UUID competencyId, UUID standardId, UUID learningObjectiveId, UUID id)
+      throws ResourceNotFoundException {
 
+    validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
+
+    Exercise e = exerciseRepo.findByIdAndLearningObjectiveId(id, learningObjectiveId)
+        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", id));
+
+    return toAdminDto(e);
+  }
+
+  /* ──────────────────────── CHECK ANSWER ───────────────────────── */
+  @Override
+  @Transactional(readOnly = true)
+  public CheckAnswerResponse checkAnswer(
+      UUID curriculumId, UUID competencyId, UUID standardId, UUID learningObjectiveId,
+      UUID exerciseId, CheckAnswerRequest request) {
+
+    // 1) Cargar ejercicio y validar jerarquía
     Exercise exercise = exerciseRepo.findByIdAndLearningObjectiveId(exerciseId, learningObjectiveId)
         .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
 
     validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
 
-    String expected = Optional.ofNullable(exercise.getCorrectAnswer()).orElse("").trim();
-    String given = Optional.ofNullable(request.getStudentAnswer()).orElse("").trim();
+    // 2) Ruteo por tipo de plantilla (MVP con 3 tipos)
+    var type = exercise.getTemplateType();
+    if (type == null) {
+      return CheckAnswerResponse.builder()
+          .correct(false).score(0.0).feedback("El ejercicio no tiene templateType asignado.")
+          .build();
+    }
 
-    boolean ok = expected.equalsIgnoreCase(given);
+    switch (type) {
+      case EQUATION_SINGLE_CHOICE:
+        return validateEquationSingleChoice(exercise, request);
 
+      case FREQUENCY_TABLE_QA:
+        return validateFrequencyTableQa(exercise, request);
+
+      case FREQUENCY_TABLE_COMPLETE:
+        return validateFrequencyTableComplete(exercise, request);
+
+      default:
+        // Fallback temporal (si tienes ejercicios legacy con MUSTACHE u otros)
+        return validateLegacyByCorrectAnswer(exercise, request);
+    }
+  }
+
+  /* === Validadores MVP === */
+
+  private CheckAnswerResponse validateEquationSingleChoice(Exercise ex, CheckAnswerRequest req) {
+    // parameters: { "choices": [...], "answer": "Cantar" }
+    // request.answer: { "value": "Cantar" }
+    var params = asJson(ex.getParameters());
+    String expected = params.path("answer").asText(null);
+    if (expected == null || expected.isBlank()) {
+      // Soporte backward: usa ex.getCorrectAnswer() si aún existe
+      expected = ex.getCorrectAnswer();
+    }
+    String given = req.getAnswer().path("value").asText("");
+
+    boolean ok = expected != null && expected.equalsIgnoreCase(given.trim());
     return CheckAnswerResponse.builder()
         .correct(ok)
-        .feedback(ok ? "✅ ¡Muy bien!" : "❌ Intenta otra vez")
-        .xpAwarded(ok ? 10 : 0)
-        .remainingHints(3)
-        .nextExerciseId(null)
+        .score(ok ? 1.0 : 0.0)
+        .feedback(ok ? "¡Correcto!" : "Respuesta incorrecta.")
         .build();
+  }
+
+  private CheckAnswerResponse validateFrequencyTableQa(Exercise ex, CheckAnswerRequest req) {
+    // parameters: { rows:[{actividad,frecuencia}], questions:[{id,kind,answer,...}]
+    // }
+    // request.answer: { answers: { "q1": "Ajedrez", "q2": 40 } }
+    var params = asJson(ex.getParameters());
+    var questions = params.path("questions");
+    var answersNode = req.getAnswer().path("answers");
+
+    if (!questions.isArray()) {
+      return CheckAnswerResponse.builder()
+          .correct(false).score(0.0).feedback("Plantilla inválida: questions no es un arreglo.")
+          .build();
+    }
+
+    int total = questions.size();
+    int correctCount = 0;
+    java.util.Map<String, Boolean> perQuestion = new java.util.LinkedHashMap<>();
+
+    for (var q : questions) {
+      String id = q.path("id").asText();
+      String kind = q.path("kind").asText("single_choice");
+      var expected = q.path("answer");
+      var given = answersNode.path(id);
+
+      boolean ok;
+      if ("numeric".equalsIgnoreCase(kind)) {
+        ok = expected.isNumber() && given.isNumber()
+            && Math.abs(expected.asDouble() - given.asDouble()) < 1e-6;
+      } else {
+        ok = expected.asText("").equalsIgnoreCase(given.asText(""));
+      }
+      perQuestion.put(id, ok);
+      if (ok)
+        correctCount++;
+    }
+
+    double score = total == 0 ? 0.0 : (double) correctCount / total;
+    return CheckAnswerResponse.builder()
+        .correct(score == 1.0) // puedes cambiar a >= umbral si deseas parcial
+        .score(score)
+        .questionResults(perQuestion)
+        .feedback(score == 1.0 ? "¡Muy bien!" : "Revisa las preguntas marcadas.")
+        .build();
+  }
+
+  private CheckAnswerResponse validateFrequencyTableComplete(Exercise ex, CheckAnswerRequest req) {
+    // parameters: { "missing": [{ "cell":"total", "answer": 40 }, ...], ... }
+    // request.answer: { "filled": { "total": 40, ... } }
+    var params = asJson(ex.getParameters());
+    var missing = params.path("missing"); // define tú la convención de celdas a completar
+    var filled = req.getAnswer().path("filled");
+
+    if (!missing.isArray()) {
+      return CheckAnswerResponse.builder()
+          .correct(false).score(0.0).feedback("Plantilla inválida: missing no es un arreglo.")
+          .build();
+    }
+
+    int total = missing.size();
+    int correctCount = 0;
+    for (var cell : missing) {
+      String key = cell.path("cell").asText();
+      var expected = cell.path("answer");
+      var given = filled.path(key);
+
+      boolean ok;
+      if (expected.isNumber()) {
+        ok = given.isNumber() && Math.abs(expected.asDouble() - given.asDouble()) < 1e-6;
+      } else {
+        ok = expected.asText("").equalsIgnoreCase(given.asText(""));
+      }
+      if (ok)
+        correctCount++;
+    }
+
+    double score = total == 0 ? 0.0 : (double) correctCount / total;
+    return CheckAnswerResponse.builder()
+        .correct(score == 1.0)
+        .score(score)
+        .feedback(score == 1.0 ? "¡Excelente!" : "Algunas celdas no coinciden.")
+        .build();
+  }
+
+  private CheckAnswerResponse validateLegacyByCorrectAnswer(Exercise ex, CheckAnswerRequest req) {
+    // Fallback temporal para ejercicios antiguos basados en correctAnswer +
+    // studentAnswer:string
+    String expected = ex.getCorrectAnswer();
+    String given = req.getAnswer().path("value").asText(""); // o "text", según legacy
+    boolean ok = expected != null && expected.trim().equalsIgnoreCase(given.trim());
+    return CheckAnswerResponse.builder()
+        .correct(ok)
+        .score(ok ? 1.0 : 0.0)
+        .feedback(ok ? "¡Correcto!" : "Intenta otra vez.")
+        .build();
+  }
+
+  private JsonNode asJson(Map<String, Object> map) {
+    return objectMapper.valueToTree(map == null ? Map.of() : map);
   }
 
   /* ────────────────────── Validación de jerarquía ───────────────────── */
@@ -232,6 +381,9 @@ public class ExerciseServiceImpl implements ExerciseService {
     TemplateSchema schema = templateService.schemaFor(tplType)
         .orElseThrow(() -> new BadRequestException("Plantilla no encontrada: " + tplType));
 
+    if (schema.getFields() == null || schema.getFields().isEmpty())
+      return; // <- evita NPE
+
     for (FieldDescriptor fd : schema.getFields()) {
       Object raw = params.get(fd.getName());
       if (raw == null)
@@ -256,6 +408,10 @@ public class ExerciseServiceImpl implements ExerciseService {
           if (!(raw instanceof String))
             throw new BadRequestException(paramTypeErr(fd, raw));
         }
+        case IMAGE -> {
+          // Nada que validar del backend por ahora (el front valida URL/formato si
+          // aplica)
+        }
       }
     }
   }
@@ -267,8 +423,12 @@ public class ExerciseServiceImpl implements ExerciseService {
     TemplateSchema schema = templateService.schemaFor(tplType)
         .orElseThrow(() -> new IllegalArgumentException("Plantilla no encontrada: " + tplType));
 
-    Mustache m = mustacheFactory.compile(new StringReader(schema.getPattern()), tplType.name());
+    // Solo renderiza Mustache si la plantilla define 'pattern'
+    if (schema.getPattern() == null || schema.getPattern().isBlank()) {
+      return raw != null ? raw : ""; // deja el enunciado “tal cual”
+    }
 
+    Mustache m = mustacheFactory.compile(new StringReader(schema.getPattern()), tplType.name());
     try (StringWriter w = new StringWriter()) {
       m.execute(w, params).flush();
       return w.toString();
@@ -277,9 +437,9 @@ public class ExerciseServiceImpl implements ExerciseService {
     }
   }
 
-  /* ────────────────────── DTO Mapper ───────────────────── */
+  /* ────────────────────── DTO Mappers ───────────────────── */
 
-  private ExerciseResponse toDto(Exercise e) {
+  private ExerciseResponse toStudentDto(Exercise e) {
     var lo = e.getLearningObjective();
     var std = lo.getStandard();
     var comp = std.getCompetency();
@@ -292,8 +452,8 @@ public class ExerciseServiceImpl implements ExerciseService {
         .type(e.getType())
         .templateType(e.getTemplateType())
         .parameters(e.getParameters())
-        .correctAnswer(e.getCorrectAnswer())
         .isDiagnostic(e.isDiagnostic())
+
         .learningObjectiveId(lo.getId())
         .learningObjectiveName(lo.getName())
         .standardId(std.getId())
@@ -301,8 +461,9 @@ public class ExerciseServiceImpl implements ExerciseService {
         .competencyId(comp.getId())
         .competencyName(comp.getName())
         .curriculumId(cur.getId())
+
         .solutionSteps(e.getSolutionSteps().stream()
-            .sorted(Comparator.comparingInt(s -> s.getStepNumber()))
+            .sorted(Comparator.comparingInt(SolutionStep::getStepNumber))
             .map(ss -> SolutionStepResponse.builder()
                 .id(ss.getId())
                 .stepNumber(ss.getStepNumber())
@@ -323,6 +484,37 @@ public class ExerciseServiceImpl implements ExerciseService {
         .createdAt(e.getCreatedAt())
         .updatedAt(e.getUpdatedAt())
         .active(e.getActive())
+        .build();
+  }
+
+  private ExerciseAdminResponse toAdminDto(Exercise e) {
+    // Reutiliza el student DTO y añade correctAnswer
+    ExerciseResponse base = toStudentDto(e);
+    return ExerciseAdminResponse.builder()
+        .id(base.getId())
+        .statement(base.getStatement())
+        .difficulty(base.getDifficulty())
+        .type(base.getType())
+        .templateType(base.getTemplateType())
+        .parameters(base.getParameters())
+
+        .learningObjectiveId(base.getLearningObjectiveId())
+        .learningObjectiveName(base.getLearningObjectiveName())
+        .standardId(base.getStandardId())
+        .standardName(base.getStandardName())
+        .competencyId(base.getCompetencyId())
+        .competencyName(base.getCompetencyName())
+        .curriculumId(base.getCurriculumId())
+
+        .solutionSteps(base.getSolutionSteps())
+        .hints(base.getHints())
+
+        .createdAt(base.getCreatedAt())
+        .updatedAt(base.getUpdatedAt())
+        .active(base.getActive())
+        .isDiagnostic(base.getIsDiagnostic())
+
+        .correctAnswer(e.getCorrectAnswer()) // <- solo en admin
         .build();
   }
 

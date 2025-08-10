@@ -1,12 +1,12 @@
 # src/main/resources/data/curriculum-math-6.yml
 code: "CURR-MATH-6"
 name: "Currículo de Matemática - Sexto grado"
-description: "Programa oficial basado en el texto del MINEDU (bloque 1)."
+description: "MVP – Ejemplos para 3 plantillas"
 grade: "6°"
 competencies:
   - code: "C.1"
     name: "BIENVENIDOS"
-    description: "Bloque 1: Introducción a tablas, patrones, prismas, múltiplos y divisores."
+    description: "Tablas y totales"
     standards:
       - code: "S.1.1"
         name: "Ficha 1: Juntamos las tablas"
@@ -16,68 +16,81 @@ competencies:
             name: "Analizar tablas de frecuencia"
             description: "Interpretar tablas con datos estadísticos simples."
             exercises:
-              - statement: |
-                  Observa la siguiente tabla de actividades preferidas por estudiantes de 4.º grado:
 
-                  | Actividad | Frecuencia |
-                  |-----------|------------|
-                  | Ajedrez   | 10         |
-                  | Cantar    | 12         |
-                  | Bailar    | 8          |
-                  | Otras     | 5          |
-
-                  ¿Cuál es la actividad más preferida?
+              # (A) FREQUENCY_TABLE_QA
+              - statement: "Observa la tabla y responde."
                 difficulty: "BASIC"
-                type: "CHOICE"
-                templateType: "FREQUENCY_ANALYSIS"
+                type: "TABLE_QA"
+                templateType: "FREQUENCY_TABLE_QA"
                 parameters:
-                  choices: ["Ajedrez", "Cantar", "Bailar", "Otras"]
-                correctAnswer: "Cantar"
+                  columns: ["Actividad", "Frecuencia"]
+                  rows:
+                    - { actividad: "Ajedrez", frecuencia: 10 }
+                    - { actividad: "Cantar",  frecuencia: 12 }
+                    - { actividad: "Bailar",  frecuencia: 8  }
+                    - { actividad: "Otras",   frecuencia: 5  }
+                  questions:
+                    - id: "q1"
+                      kind: "single_choice"
+                      prompt: "¿Cuál es la moda?"
+                      options: ["Ajedrez","Cantar","Bailar","Otras"]
+                      answer: "Cantar"
+                    - id: "q2"
+                      kind: "numeric"
+                      prompt: "¿Total de estudiantes?"
+                      answer: 35
                 hints:
-                  - hintText: "Busca la actividad con el número más alto en la columna Frecuencia."
+                  - hintText: "La moda es el mayor valor de la columna Frecuencia."
                     cost: 1
-                solutionSteps:
-                  - stepNumber: 1
-                    explanation: "Observa los valores en la columna Frecuencia."
-                  - stepNumber: 2
-                    explanation: "Cantar tiene la frecuencia más alta (12)."
-                  - stepNumber: 3
-                    explanation: "Por lo tanto, la moda es Cantar."
+
   - code: "C.2"
     name: "CANTIDAD Y OPERACIONES"
-    description: "Resolver situaciones de multiplicación y valor posicional."
+    description: "Multiplicación en contextos reales"
     standards:
       - code: "S.2.1"
         name: "Ficha 2: Candados y decenas"
         description: "Aplicar multiplicación con unidades de medida y valor posicional."
         learningObjectives:
           - code: "LO.2.1.1"
-            name: "Resolver problemas con multiplicación en contextos reales"
+            name: "Resolver problemas con multiplicación"
             description: "Usar operaciones para resolver problemas sobre cantidades."
             exercises:
-              - statement: |
-                  Eliana compró 9 cajas de candados para su ferretería.  
-                  Cada caja contiene 1 decena de candados y cada candado será vendido a S/ 18.00.  
 
-                  ¿Cuánto dinero recibirá Eliana por la venta del total de cajas de candados?
+              # (B) EQUATION_SINGLE_CHOICE
+              - statement: "Eliana compró 9 cajas con 10 candados cada una. Cada candado se venderá a S/ 18. ¿Cuánto dinero recibirá Eliana?"
                 difficulty: "BASIC"
                 type: "CHOICE"
-                templateType: "BASIC_OPERATIONS"
+                templateType: "EQUATION_SINGLE_CHOICE"
                 parameters:
-                  choices:
-                    - "S/ 180.00"
-                    - "S/ 1620.00"
-                    - "S/ 1800.00"
-                correctAnswer: "S/ 1620.00"
+                  a: 90    # 9*10 (cantidad total)
+                  b: 18    # precio unitario
+                  choices: ["S/ 180.00", "S/ 1620.00", "S/ 1800.00"]
+                  answer: "S/ 1620.00"
                 hints:
-                  - hintText: "Primero calcula cuántos candados tiene en total."
+                  - hintText: "Primero halla la cantidad total de candados."
                     cost: 1
-                  - hintText: "Multiplica la cantidad total de candados por el precio de venta."
+                  - hintText: "Multiplica la cantidad por el precio unitario."
                     cost: 2
                 solutionSteps:
                   - stepNumber: 1
-                    explanation: "Cada caja tiene 10 candados (1 decena)."
+                    explanation: "9 cajas x 10 = 90 candados."
                   - stepNumber: 2
-                    explanation: "9 cajas x 10 candados = 90 candados."
-                  - stepNumber: 3
-                    explanation: "90 candados x S/ 18.00 = S/ 1620.00."
+                    explanation: "90 x 18 = S/ 1620.00."
+
+              # (C) FREQUENCY_TABLE_COMPLETE
+              - statement: "Completa el dato faltante."
+                difficulty: "BASIC"
+                type: "TABLE_COMPLETE"
+                templateType: "FREQUENCY_TABLE_COMPLETE"
+                parameters:
+                  columns: ["Actividad", "Frecuencia"]
+                  rows:
+                    - { actividad: "Ajedrez", frecuencia: 14 }
+                    - { actividad: "Cantar",  frecuencia: 11 }
+                    - { actividad: "Bailar",  frecuencia: 10 }
+                    - { actividad: "Otras",   frecuencia: 5  }
+                  missing:
+                    - { cell: "total", answer: 40 }
+                hints:
+                  - hintText: "Suma todas las frecuencias."
+                    cost: 1

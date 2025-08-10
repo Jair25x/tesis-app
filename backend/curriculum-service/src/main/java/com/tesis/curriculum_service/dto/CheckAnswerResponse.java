@@ -1,40 +1,26 @@
 package com.tesis.curriculum_service.dto;
 
-import lombok.Builder;
-import lombok.Data;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.*;
 
-import java.util.UUID;
+import java.util.Map;
 
-/**
- * DTO que representa el resultado de validar una respuesta estudiantil.
- */
 @Data
 @Builder
+@AllArgsConstructor
+@NoArgsConstructor
+@Schema(name = "CheckAnswerResponse", description = "Resultado de la validación de una respuesta.")
 public class CheckAnswerResponse {
 
-  /**
-   * Indica si la respuesta del estudiante fue correcta.
-   */
+  @Schema(description = "¿La respuesta global es correcta? Para plantillas con varias sub-preguntas, puede ser true si el puntaje supera un umbral, o false si exige todo correcto.")
   private boolean correct;
 
-  /**
-   * Feedback textual para mostrar al estudiante.
-   */
+  @Schema(description = "Puntaje entre 0 y 1 (opcional si se admite calificación parcial).")
+  private Double score;
+
+  @Schema(description = "Resultados por sub-pregunta (si aplica): { \"q1\": true, \"q2\": false }")
+  private Map<String, Boolean> questionResults;
+
+  @Schema(description = "Feedback breve para el estudiante. No incluir soluciones completas aquí.")
   private String feedback;
-
-  /**
-   * ID del siguiente ejercicio, si se desea sugerir uno.
-   */
-  private UUID nextExerciseId;
-
-  /**
-   * Experiencia ganada por resolver el ejercicio (gamificación).
-   */
-  private int xpAwarded;
-
-  /**
-   * Número de pistas restantes disponibles para el estudiante.
-   */
-  private int remainingHints;
-
 }

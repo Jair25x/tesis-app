@@ -6,8 +6,7 @@ import com.tesis.curriculum_service.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
@@ -26,7 +25,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity(prePostEnabled = true)
 @RequiredArgsConstructor
 public class SecurityConfig {
-
   private final JwtAuthenticationFilter jwtAuthFilter;
   private final ObjectMapper mapper;
   private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
@@ -41,41 +39,56 @@ public class SecurityConfig {
     return cfg.getAuthenticationManager();
   }
 
+  /* -------- DEV: Swagger y Actuator abiertos para desarrollo -------- */
   @Bean
-  SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-
+  @Profile("dev")
+  SecurityFilterChain devFilterChain(HttpSecurity http) throws Exception {
     http
         .cors(Customizer.withDefaults())
         .csrf(csrf -> csrf.disable())
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-        /* Rutas públicas básicas */
         .authorizeHttpRequests(auth -> auth
             .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
             .requestMatchers("/actuator/**").permitAll()
-            // el resto: autenticado (la autorización fina la hace @PreAuthorize)
             .anyRequest().authenticated())
-
-        /* Manejo uniforme de errores */
         .exceptionHandling(ex -> ex
-            .authenticationEntryPoint((req, res, e) -> {
-              log.error("401 – {}", e.getMessage());
-              res.setStatus(HttpStatus.UNAUTHORIZED.value());
-              res.setContentType("application/json;charset=UTF-8");
-              mapper.writeValue(res.getWriter(),
-                  new ErrorResponse("No autorizado", 401, System.currentTimeMillis()));
-            })
-            .accessDeniedHandler((req, res, e) -> {
-              log.error("403 – {}", e.getMessage());
-              res.setStatus(HttpStatus.FORBIDDEN.value());
-              res.setContentType("application/json;charset=UTF-8");
-              mapper.writeValue(res.getWriter(),
-                  new ErrorResponse("Acceso denegado", 403, System.currentTimeMillis()));
-            }));
-
-    /* Filtro JWT antes del UsernamePasswordAuthenticationFilter */
+            .authenticationEntryPoint((req, res, e) -> write401(res, e.getMessage()))
+            .accessDeniedHandler((req, res, e) -> write403(res, e.getMessage())));
     http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
-
     return http.build();
+  }
+
+  /* -------- PROD: sin Swagger; Actuator solo health/info -------- */
+  @Bean
+  @Profile("prod")
+  SecurityFilterChain prodFilterChain(HttpSecurity http) throws Exception {
+    http
+        .cors(Customizer.withDefaults())
+        .csrf(csrf -> csrf.disable())
+        .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").denyAll()
+            .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+            .requestMatchers("/actuator/**").denyAll()
+            .anyRequest().authenticated())
+        .exceptionHandling(ex -> ex
+            .authenticationEntryPoint((req, res, e) -> write401(res, e.getMessage()))
+            .accessDeniedHandler((req, res, e) -> write403(res, e.getMessage())));
+    http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+    return http.build();
+  }
+
+  private void write401(jakarta.servlet.http.HttpServletResponse res, String msg) throws java.io.IOException {
+    log.error("401 – {}", msg);
+    res.setStatus(HttpStatus.UNAUTHORIZED.value());
+    res.setContentType("application/json;charset=UTF-8");
+    mapper.writeValue(res.getWriter(), new ErrorResponse("No autorizado", 401, System.currentTimeMillis()));
+  }
+
+  private void write403(jakarta.servlet.http.HttpServletResponse res, String msg) throws java.io.IOException {
+    log.error("403 – {}", msg);
+    res.setStatus(HttpStatus.FORBIDDEN.value());
+    res.setContentType("application/json;charset=UTF-8");
+    mapper.writeValue(res.getWriter(), new ErrorResponse("Acceso denegado", 403, System.currentTimeMillis()));
   }
 }

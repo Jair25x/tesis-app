@@ -2,6 +2,7 @@ package com.tesis.curriculum_service.service;
 
 import com.tesis.curriculum_service.dto.CheckAnswerRequest;
 import com.tesis.curriculum_service.dto.CheckAnswerResponse;
+import com.tesis.curriculum_service.dto.ExerciseAdminResponse;
 import com.tesis.curriculum_service.dto.ExerciseRequest;
 import com.tesis.curriculum_service.dto.ExerciseResponse;
 import com.tesis.curriculum_service.exception.ResourceNotFoundException;
@@ -150,4 +151,7 @@ public interface ExerciseService {
         List<ExerciseResponse> getAllByLearningObjectiveIncludingInactive(UUID curriculumId, UUID competencyId,
                         UUID standardId, UUID learningObjectiveId) throws ResourceNotFoundException;
 
+        ExerciseAdminResponse getByIdAdmin(
+                        UUID curriculumId, UUID competencyId, UUID standardId, UUID learningObjectiveId, UUID id)
+                        throws ResourceNotFoundException;
 }

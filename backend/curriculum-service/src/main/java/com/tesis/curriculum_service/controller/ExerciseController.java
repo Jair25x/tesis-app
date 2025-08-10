@@ -2,6 +2,7 @@ package com.tesis.curriculum_service.controller;
 
 import com.tesis.curriculum_service.dto.CheckAnswerRequest;
 import com.tesis.curriculum_service.dto.CheckAnswerResponse;
+import com.tesis.curriculum_service.dto.ExerciseAdminResponse;
 import com.tesis.curriculum_service.dto.ExerciseRequest;
 import com.tesis.curriculum_service.dto.ExerciseResponse;
 import com.tesis.curriculum_service.exception.ErrorResponse;
@@ -67,7 +68,7 @@ public class ExerciseController {
     return ResponseEntity.ok(list);
   }
 
-  @Operation(summary = "Obtener un ejercicio específico")
+  @Operation(summary = "Obtener un ejercicio específico (vista student)")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Ejercicio encontrado", content = @Content(schema = @Schema(implementation = ExerciseResponse.class))),
       @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
@@ -82,6 +83,25 @@ public class ExerciseController {
       @PathVariable UUID id) throws ResourceNotFoundException {
 
     ExerciseResponse response = exerciseService.getById(
+        curriculumId, competencyId, standardId, learningObjectiveId, id);
+    return ResponseEntity.ok(response);
+  }
+
+  @Operation(summary = "Obtener un ejercicio (vista admin/teacher)")
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "Ejercicio encontrado (admin)"),
+      @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+  })
+  @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
+  @GetMapping("/{id}/admin")
+  public ResponseEntity<ExerciseAdminResponse> getOneAdmin(
+      @PathVariable UUID curriculumId,
+      @PathVariable UUID competencyId,
+      @PathVariable UUID standardId,
+      @PathVariable UUID learningObjectiveId,
+      @PathVariable UUID id) throws ResourceNotFoundException {
+
+    ExerciseAdminResponse response = exerciseService.getByIdAdmin(
         curriculumId, competencyId, standardId, learningObjectiveId, id);
     return ResponseEntity.ok(response);
   }
@@ -183,4 +203,5 @@ public class ExerciseController {
         curriculumId, competencyId, standardId, learningObjectiveId, exerciseId, request);
     return ResponseEntity.ok(result);
   }
+
 }

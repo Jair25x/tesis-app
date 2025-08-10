@@ -9,10 +9,6 @@ import org.hibernate.annotations.SQLRestriction;
 
 import java.util.UUID;
 
-/**
- * Entidad JPA que representa un paso de solución para un ejercicio.
- * Soporta soft-delete y auditoría automática.
- */
 @Entity
 @Table(name = "solution_steps")
 @Getter
@@ -20,41 +16,30 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @ToString(onlyExplicitlyIncluded = true)
 @SQLDelete(sql = "UPDATE solution_steps SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
 @SQLRestriction("active = true")
 public class SolutionStep extends AuditableEntity {
 
-  /** UUID generado automáticamente como clave primaria. */
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
   @Column(name = "id", updatable = false, nullable = false, columnDefinition = "UUID")
-  @EqualsAndHashCode.Include
   @ToString.Include
   private UUID id;
 
-  /** Paso dentro de la solución (orden). */
   @Column(name = "step_number", nullable = false)
   @ToString.Include
   private Integer stepNumber;
 
-  /** Texto explicativo de este paso. */
   @Column(name = "explanation", nullable = false, columnDefinition = "TEXT")
   @ToString.Include
   private String explanation;
 
-  /**
-   * Many-to-One con Exercise.
-   *
-   * @JsonBackReference evita ciclos en la serialización.
-   */
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "exercise_id", nullable = false)
   @JsonBackReference
   private Exercise exercise;
 
-  /** Flag de soft-delete. */
   @Column(name = "active", nullable = false)
   @Builder.Default
   private Boolean active = true;

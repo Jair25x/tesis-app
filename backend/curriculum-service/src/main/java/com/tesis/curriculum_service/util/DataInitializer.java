@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.tesis.curriculum_service.dto.TemplateSchema.TemplateType;
 import com.tesis.curriculum_service.model.*;
-import com.tesis.curriculum_service.repository.CurriculumRepository;
+import com.tesis.curriculum_service.repository.*;
 import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -23,130 +23,189 @@ import java.util.stream.Collectors;
 public class DataInitializer {
 
         private final CurriculumRepository curriculumRepository;
+        private final CompetencyRepository competencyRepository;
+        private final StandardRepository standardRepository;
+        private final LearningObjectiveRepository learningObjectiveRepository;
+        private final ExerciseRepository exerciseRepository;
+        // (opcional) si tienes repos para hints/steps:
+        // private final HintRepository hintRepository;
+        // private final SolutionStepRepository solutionStepRepository;
 
         @Transactional
         @PostConstruct
         public void init() throws Exception {
-                if (curriculumRepository.count() > 0) {
-                        System.out.println("⚠️ Datos ya existentes. Saltando inicialización.");
-                        return;
-                }
-
                 ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
                 try (InputStream is = new ClassPathResource("data/curriculum-math-6.yml").getInputStream()) {
                         CurriculumDef def = mapper.readValue(is, CurriculumDef.class);
 
+                        // 🔐 Idempotencia real: revisa existencia por code sin filtrar por active
+                        if (curriculumRepository.existsByCodeIncludingInactive(def.code)) {
+                                System.out.println("⚠️ Currículo " + def.code
+                                                + " ya existe (incluyendo inactivos). Saltando seed.");
+                                return;
+                        }
+
+                        // 1) Curriculum
                         Curriculum curriculum = Curriculum.builder()
                                         .code(def.code)
                                         .name(def.name)
                                         .description(def.description)
                                         .grade(def.grade)
                                         .build();
+                        curriculum = curriculumRepository.saveAndFlush(curriculum);
 
-                        Set<Competency> competencies = def.competencies.stream().map(compDef -> {
+                        // 2) Competencies
+                        for (CompetencyDef compDef : def.competencies) {
                                 Competency competency = Competency.builder()
                                                 .code(compDef.code)
                                                 .name(compDef.name)
                                                 .description(compDef.description)
                                                 .curriculum(curriculum)
                                                 .build();
+                                competency = competencyRepository.save(competency);
 
-                                Set<Standard> standards = compDef.standards.stream().map(stdDef -> {
+                                // 3) Standards
+                                for (StandardDef stdDef : compDef.standards) {
                                         Standard standard = Standard.builder()
                                                         .code(stdDef.code)
                                                         .name(stdDef.name)
                                                         .description(stdDef.description)
                                                         .competency(competency)
                                                         .build();
+                                        standard = standardRepository.save(standard);
 
-                                        Set<LearningObjective> objectives = stdDef.learningObjectives.stream()
-                                                        .map(loDef -> {
-                                                                LearningObjective lo = LearningObjective.builder()
-                                                                                .code(loDef.code)
-                                                                                .name(loDef.name)
-                                                                                .description(loDef.description)
-                                                                                .standard(standard)
-                                                                                .build();
+                                        // 4) Learning Objectives
+                                        for (LearningObjectiveDef loDef : stdDef.learningObjectives) {
+                                                LearningObjective lo = LearningObjective.builder()
+                                                                .code(loDef.code)
+                                                                .name(loDef.name)
+                                                                .description(loDef.description)
+                                                                .standard(standard)
+                                                                .build();
+                                                lo = learningObjectiveRepository.save(lo);
 
-                                                                if (loDef.exercises != null) {
-                                                                        Set<Exercise> exercises = loDef.exercises
-                                                                                        .stream().map(exDef -> {
-                                                                                                Exercise exercise = Exercise
+                                                // 5) Exercises (+ hints / steps)
+                                                if (loDef.exercises != null) {
+                                                        for (ExerciseDef exDef : loDef.exercises) {
+                                                                try {
+                                                                        Map<String, Object> params = exDef.parameters != null
+                                                                                        ? new LinkedHashMap<>(
+                                                                                                        exDef.parameters)
+                                                                                        : new LinkedHashMap<>();
+
+                                                                        TemplateType tt = mapTemplateType(
+                                                                                        exDef.templateType);
+
+                                                                        // migración legacy: correctAnswer ->
+                                                                        // parameters.answer
+                                                                        if (tt == TemplateType.EQUATION_SINGLE_CHOICE) {
+                                                                                if (exDef.correctAnswer != null
+                                                                                                && !exDef.correctAnswer
+                                                                                                                .isBlank()
+                                                                                                && !params.containsKey(
+                                                                                                                "answer")) {
+                                                                                        params.put("answer",
+                                                                                                        exDef.correctAnswer);
+                                                                                }
+                                                                        }
+
+                                                                        Exercise exercise = Exercise.builder()
+                                                                                        .statement(exDef.statement)
+                                                                                        .difficulty(mapDifficulty(
+                                                                                                        exDef.difficulty))
+                                                                                        .type(exDef.type)
+                                                                                        .templateType(tt)
+                                                                                        .parameters(params)
+                                                                                        .correctAnswer(null) // ya
+                                                                                                             // migrado
+                                                                                                             // a
+                                                                                                             // parameters
+                                                                                                             // si
+                                                                                                             // aplica
+                                                                                        .learningObjective(lo)
+                                                                                        .active(true)
+                                                                                        .build();
+
+                                                                        // Hints (List)
+                                                                        if (exDef.hints != null
+                                                                                        && !exDef.hints.isEmpty()) {
+                                                                                var hints = exDef.hints.stream()
+                                                                                                .map(h -> Hint.builder()
+                                                                                                                .hintText(h.hintText)
+                                                                                                                .cost(h.cost)
+                                                                                                                .exercise(exercise)
+                                                                                                                .build())
+                                                                                                .toList();
+                                                                                exercise.setHints(hints);
+                                                                        }
+
+                                                                        // Steps (List) ordenados
+                                                                        if (exDef.solutionSteps != null
+                                                                                        && !exDef.solutionSteps
+                                                                                                        .isEmpty()) {
+                                                                                var steps = exDef.solutionSteps.stream()
+                                                                                                .sorted(Comparator
+                                                                                                                .comparingInt(s -> s.stepNumber))
+                                                                                                .map(s -> SolutionStep
                                                                                                                 .builder()
-                                                                                                                .statement(exDef.statement)
-                                                                                                                .difficulty(Exercise.Difficulty
-                                                                                                                                .valueOf(exDef.difficulty))
-                                                                                                                .type(exDef.type)
-                                                                                                                .templateType(TemplateType
-                                                                                                                                .valueOf(exDef.templateType))
-                                                                                                                .parameters(exDef.parameters)
-                                                                                                                .correctAnswer(exDef.correctAnswer)
-                                                                                                                .learningObjective(
-                                                                                                                                lo)
+                                                                                                                .stepNumber(s.stepNumber)
+                                                                                                                .explanation(s.explanation)
+                                                                                                                .exercise(exercise)
                                                                                                                 .active(true)
-                                                                                                                .build();
+                                                                                                                .build())
+                                                                                                .toList();
+                                                                                exercise.setSolutionSteps(steps);
+                                                                        }
 
-                                                                                                if (exDef.hints != null) {
-                                                                                                        Set<Hint> hints = exDef.hints
-                                                                                                                        .stream()
-                                                                                                                        .map(hintDef -> Hint
-                                                                                                                                        .builder()
-                                                                                                                                        .hintText(hintDef.hintText)
-                                                                                                                                        .cost(hintDef.cost)
-                                                                                                                                        .exercise(exercise)
-                                                                                                                                        .build())
-                                                                                                                        .collect(Collectors
-                                                                                                                                        .toCollection(LinkedHashSet::new));
-                                                                                                        exercise.setHints(
-                                                                                                                        hints);
-                                                                                                }
+                                                                        exerciseRepository.save(exercise); // cascade:
+                                                                                                           // hints/steps
 
-                                                                                                if (exDef.solutionSteps != null) {
-                                                                                                        Set<SolutionStep> steps = exDef.solutionSteps
-                                                                                                                        .stream()
-                                                                                                                        .map(stepDef -> SolutionStep
-                                                                                                                                        .builder()
-                                                                                                                                        .stepNumber(stepDef.stepNumber)
-                                                                                                                                        .explanation(stepDef.explanation)
-                                                                                                                                        .exercise(exercise)
-                                                                                                                                        .active(true)
-                                                                                                                                        .build())
-                                                                                                                        .collect(Collectors
-                                                                                                                                        .toCollection(LinkedHashSet::new));
-                                                                                                        exercise.setSolutionSteps(
-                                                                                                                        steps);
-                                                                                                }
-
-                                                                                                return exercise;
-                                                                                        }).collect(Collectors
-                                                                                                        .toCollection(LinkedHashSet::new));
-                                                                        lo.setExercises(exercises);
+                                                                } catch (Exception e) {
+                                                                        System.err.println(
+                                                                                        "❌ Error cargando ejercicio en LO "
+                                                                                                        + loDef.code
+                                                                                                        + ": "
+                                                                                                        + e.getMessage());
                                                                 }
-
-                                                                return lo;
-                                                        }).collect(Collectors.toCollection(LinkedHashSet::new));
-
-                                        standard.setLearningObjectives(objectives);
-                                        return standard;
-                                }).collect(Collectors.toCollection(LinkedHashSet::new));
-
-                                competency.setStandards(standards);
-                                return competency;
-                        }).collect(Collectors.toCollection(LinkedHashSet::new));
-
-                        curriculum.setCompetencies(competencies);
-
-                        try {
-                                curriculumRepository.saveAndFlush(curriculum);
-                                System.out.println("✅ Currículo cargado exitosamente con ejercicios, pistas y pasos.");
-                        } catch (Exception e) {
-                                System.err.println("❌ Error al guardar currículo:");
-                                e.printStackTrace();
+                                                        }
+                                                }
+                                        }
+                                }
                         }
+
+                        // (opcional) pequeño resumen de verificación
+                        System.out.printf(
+                                        "✅ Seed OK → curricula=%d, competencies=%d, standards=%d, objectives=%d, exercises=%d%n",
+                                        curriculumRepository.count(),
+                                        competencyRepository.count(),
+                                        standardRepository.count(),
+                                        learningObjectiveRepository.count(),
+                                        exerciseRepository.count()
+                        // + (hintRepository != null ? hintRepository.count() : 0),
+                        // + (solutionStepRepository != null ? solutionStepRepository.count() : 0)
+                        );
                 }
         }
 
-        // DTO internos
+        /* ─── Helpers enums (robustos) ─── */
+        private Exercise.Difficulty mapDifficulty(String s) {
+                try {
+                        return Exercise.Difficulty.valueOf(s.toUpperCase(Locale.ROOT));
+                } catch (Exception e) {
+                        return Exercise.Difficulty.BASIC;
+                }
+        }
+
+        private TemplateType mapTemplateType(String s) {
+                String k = s.toUpperCase(Locale.ROOT);
+                if (k.equals("FREQUENCY_ANALYSIS"))
+                        return TemplateType.FREQUENCY_TABLE_QA;
+                if (k.equals("BASIC_OPERATIONS"))
+                        return TemplateType.EQUATION_SINGLE_CHOICE;
+                return TemplateType.valueOf(k);
+        }
+
+        /* ─── DTOs YAML ─── */
         static class CurriculumDef {
                 public String code, name, description, grade;
                 public List<CompetencyDef> competencies;
@@ -173,7 +232,7 @@ public class DataInitializer {
                 public String type;
                 public String templateType;
                 public Map<String, Object> parameters;
-                public String correctAnswer;
+                public String correctAnswer; // legacy
                 public List<HintDef> hints;
                 public List<SolutionStepDef> solutionSteps;
         }

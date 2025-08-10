@@ -64,6 +64,22 @@
 			<!-- La versión se gestiona por el POM padre -->
 		</dependency>
 
+		<!-- Pruebas con junit -->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<version>1.21.3</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- Testcontainers para Postgres (necesario para jdbc:tc:...) -->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>postgresql</artifactId>
+			<version>1.21.3</version>
+			<scope>test</scope>
+		</dependency>
+
+
 		<!-- Lombok (para DTOs, Entidades) -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
@@ -123,11 +139,6 @@
 		<dependency>
 			<groupId>org.springframework.security</groupId>
 			<artifactId>spring-security-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>com.h2database</groupId>
-			<artifactId>h2</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>

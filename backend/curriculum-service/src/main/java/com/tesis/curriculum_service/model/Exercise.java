@@ -9,17 +9,17 @@ import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.type.SqlTypes;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
-/**
- * Entidad JPA que representa un ejercicio matemático.
- * Soporta soft-delete, auditoría automática y parámetros dinámicos en JSON.
- */
 @Entity
-@Table(name = "exercises")
+@Table(name = "exercises", indexes = {
+    @Index(name = "idx_ex_lo_active", columnList = "learning_objective_id, active"),
+    @Index(name = "idx_ex_diag_active", columnList = "is_diagnostic, active")
+})
 @SQLDelete(sql = "UPDATE exercises SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
 @SQLRestriction("active = true")
 @Getter
@@ -71,17 +71,19 @@ public class Exercise extends AuditableEntity {
   @JoinColumn(name = "learning_objective_id", nullable = false)
   private LearningObjective learningObjective;
 
+  // 👇 List + orden por stepNumber
   @OneToMany(mappedBy = "exercise", cascade = CascadeType.ALL, orphanRemoval = true)
+  @OrderBy("stepNumber ASC")
   @Builder.Default
-  private Set<SolutionStep> solutionSteps = new LinkedHashSet<>();
+  private List<SolutionStep> solutionSteps = new ArrayList<>();
 
+  // 👇 List (orden estable por id; puedes usar cost si prefieres)
   @OneToMany(mappedBy = "exercise", cascade = CascadeType.ALL, orphanRemoval = true)
+  @OrderBy("id ASC")
   @Builder.Default
-  private Set<Hint> hints = new LinkedHashSet<>();
+  private List<Hint> hints = new ArrayList<>();
 
   public enum Difficulty {
-    BASIC,
-    INTERMEDIATE,
-    ADVANCED
+    BASIC, INTERMEDIATE, ADVANCED
   }
 }

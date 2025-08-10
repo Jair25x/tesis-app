@@ -2,34 +2,16 @@
 package com.tesis.curriculum_service.repository;
 
 import com.tesis.curriculum_service.model.Curriculum;
-
-import org.springframework.data.jpa.repository.EntityGraph;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
-/**
- * Repositorio JPA para la entidad Curriculum.
- * Proporciona CRUD básico usando UUID como clave primaria.
- */
 @Repository
 public interface CurriculumRepository extends JpaRepository<Curriculum, UUID> {
-  // Métodos personalizados de consulta pueden ir aquí, por ejemplo:
-  // List<Curriculum> findByGrade(String grade);
 
-  /**
-   * Método de ayuda para reactivar un currículo que ha sido borrado lógicamente.
-   * Usamos una consulta nativa para saltarnos el @SQLRestriction.
-   */
-  @Query(value = "SELECT * FROM curricula WHERE id = :id", nativeQuery = true)
-  Optional<Curriculum> findIncludingInactiveById(@Param("id") UUID id);
-
-  /** Trae toda la jerarquía en un solo query (LEFT JOIN FETCH) */
+  /** Trae toda la jerarquía en un solo query (JOIN FETCH) */
   @EntityGraph(attributePaths = {
       "competencies",
       "competencies.standards",
@@ -40,12 +22,29 @@ public interface CurriculumRepository extends JpaRepository<Curriculum, UUID> {
   })
   Optional<Curriculum> findFullById(UUID id);
 
-  @Query(value = "SELECT * FROM curricula", nativeQuery = true)
+  /*
+   * ===== Helpers que bypass-ean @SQLRestriction (ACTIVE=TRUE) con nativos =====
+   */
+
+  /** Verifica existencia por code SIN filtrar por active (evita doble seed). */
+  @Query(value = "select exists(select 1 from curricula where code = :code)", nativeQuery = true)
+  boolean existsByCodeIncludingInactive(@Param("code") String code);
+
+  /** Obtiene un currículo por code SIN filtrar por active. */
+  @Query(value = "select * from curricula where code = :code limit 1", nativeQuery = true)
+  Optional<Curriculum> findIncludingInactiveByCode(@Param("code") String code);
+
+  /** Obtiene por id SIN filtrar por active. */
+  @Query(value = "select * from curricula where id = :id", nativeQuery = true)
+  Optional<Curriculum> findIncludingInactiveById(@Param("id") UUID id);
+
+  /** Listados “raw” si los necesitas para herramientas. */
+  @Query(value = "select * from curricula", nativeQuery = true)
   List<Curriculum> findAllIncludingInactive();
 
-  @Query(value = "SELECT * FROM curricula WHERE active = true", nativeQuery = true)
+  @Query(value = "select * from curricula where active = true", nativeQuery = true)
   List<Curriculum> findAllActive();
 
-  @Query(value = "SELECT * FROM curricula WHERE active = false", nativeQuery = true)
+  @Query(value = "select * from curricula where active = false", nativeQuery = true)
   List<Curriculum> findAllInactive();
 }

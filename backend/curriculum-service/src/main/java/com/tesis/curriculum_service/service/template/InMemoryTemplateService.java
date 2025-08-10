@@ -1,5 +1,7 @@
 package com.tesis.curriculum_service.service.template;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.tesis.curriculum_service.dto.FieldDescriptor;
 import com.tesis.curriculum_service.dto.TemplateSchema;
 import jakarta.annotation.PostConstruct;
@@ -13,77 +15,100 @@ public class InMemoryTemplateService implements ExerciseTemplateService {
         private final Map<TemplateSchema.TemplateType, TemplateSchema> schemas = new EnumMap<>(
                         TemplateSchema.TemplateType.class);
 
+        private final ObjectMapper mapper = new ObjectMapper();
+
         @PostConstruct
         public void init() {
-                // 🌟 Cantidad / Ecuaciones simples
-                schemas.put(TemplateSchema.TemplateType.EQUATION_SOLVE, TemplateSchema.builder()
-                                .templateType(TemplateSchema.TemplateType.EQUATION_SOLVE)
-                                .pattern("{{problemStatement}}")
+                // 1) EQUATION_SINGLE_CHOICE (Mustache + opciones)
+                schemas.put(TemplateSchema.TemplateType.EQUATION_SINGLE_CHOICE, TemplateSchema.builder()
+                                .templateType(TemplateSchema.TemplateType.EQUATION_SINGLE_CHOICE)
+                                .pattern("Resuelve: {{a}} × {{b}} = ?") // ejemplo
                                 .fields(List.of(
-                                                FieldDescriptor.builder().name("problemStatement")
-                                                                .type(FieldDescriptor.FieldType.TEXT)
-                                                                .build()))
-                                .build());
-
-                // 📊 Gestión de datos: moda en tablas
-                schemas.put(TemplateSchema.TemplateType.FREQUENCY_ANALYSIS, TemplateSchema.builder()
-                                .templateType(TemplateSchema.TemplateType.FREQUENCY_ANALYSIS)
-                                .pattern("Observa la tabla y responde: ¿Cuál es la moda? ¿Qué significa este valor?")
-                                .fields(List.of(
-                                                FieldDescriptor.builder().name("tableData")
-                                                                .type(FieldDescriptor.FieldType.TEXT).build()))
-                                .build());
-
-                // 🎲 Probabilidad básica
-                schemas.put(TemplateSchema.TemplateType.BASIC_PROB_DECISION, TemplateSchema.builder()
-                                .templateType(TemplateSchema.TemplateType.BASIC_PROB_DECISION)
-                                .pattern("Si lanzamos un dado, ¿qué probabilidad hay de que salga {{face}}?")
-                                .fields(List.of(
-                                                FieldDescriptor.builder()
-                                                                .name("face")
-                                                                .type(FieldDescriptor.FieldType.CHOICE)
-                                                                .choices(List.of("1", "2", "3", "4", "5", "6"))
-                                                                .build()))
-                                .build());
-
-                // 📦 Formas y construcción 3D (cubo)
-                schemas.put(TemplateSchema.TemplateType.PRISM_CONSTRUCTION, TemplateSchema.builder()
-                                .templateType(TemplateSchema.TemplateType.PRISM_CONSTRUCTION)
-                                .pattern("¿Cuál de las siguientes plantillas permite construir un cubo correctamente?")
-                                .fields(List.of(
-                                                FieldDescriptor.builder().name("optionsImage")
-                                                                .type(FieldDescriptor.FieldType.IMAGE).build()))
-                                .build());
-
-                // 🌀 Regularidad y patrones (espiral con regletas)
-                schemas.put(TemplateSchema.TemplateType.PATTERN_FORMATION, TemplateSchema.builder()
-                                .templateType(TemplateSchema.TemplateType.PATTERN_FORMATION)
-                                .pattern(
-                                                "Según el patrón mostrado, la figura 1 vale {{v1}}, la figura 2 vale {{v2}}. ¿Cómo será la figura {{fn}}?, ¿qué valor tendrá?")
-                                .fields(List.of(
-                                                FieldDescriptor.builder().name("v1")
+                                                FieldDescriptor.builder().name("a")
                                                                 .type(FieldDescriptor.FieldType.NUMBER).build(),
-                                                FieldDescriptor.builder().name("v2")
-                                                                .type(FieldDescriptor.FieldType.NUMBER).build(),
-                                                FieldDescriptor.builder().name("fn")
+                                                FieldDescriptor.builder().name("b")
                                                                 .type(FieldDescriptor.FieldType.NUMBER).build()))
+                                .example(obj(o -> {
+                                        o.put("a", 6);
+                                        o.put("b", 7);
+                                        o.set("choices", arr("36", "40", "42", "48"));
+                                        o.put("answer", "42");
+                                }))
                                 .build());
 
-                // 🧮 Cantidad: descomposición en múltiplos
-                schemas.put(TemplateSchema.TemplateType.MULT_DIV_CHALLENGE, TemplateSchema.builder()
-                                .templateType(TemplateSchema.TemplateType.MULT_DIV_CHALLENGE)
-                                .pattern("Resuelve el problema: {{problemStatement}}")
-                                .fields(List.of(
-                                                FieldDescriptor.builder().name("problemStatement")
-                                                                .type(FieldDescriptor.FieldType.TEXT)
-                                                                .build()))
+                // 2) FREQUENCY_TABLE_QA (tabla con preguntas)
+                schemas.put(TemplateSchema.TemplateType.FREQUENCY_TABLE_QA, TemplateSchema.builder()
+                                .templateType(TemplateSchema.TemplateType.FREQUENCY_TABLE_QA)
+                                .example(obj(o -> {
+                                        o.set("columns", arr("Actividad", "Frecuencia"));
+                                        var rows = mapper.createArrayNode();
+                                        rows.add(obj(r -> {
+                                                r.put("actividad", "Ajedrez");
+                                                r.put("frecuencia", 10);
+                                        }));
+                                        rows.add(obj(r -> {
+                                                r.put("actividad", "Cantar");
+                                                r.put("frecuencia", 12);
+                                        }));
+                                        rows.add(obj(r -> {
+                                                r.put("actividad", "Bailar");
+                                                r.put("frecuencia", 8);
+                                        }));
+                                        rows.add(obj(r -> {
+                                                r.put("actividad", "Otras");
+                                                r.put("frecuencia", 5);
+                                        }));
+                                        o.set("rows", rows);
+
+                                        var qs = mapper.createArrayNode();
+                                        qs.add(obj(q -> {
+                                                q.put("id", "q1");
+                                                q.put("kind", "single_choice");
+                                                q.put("prompt", "¿Cuál es la moda?");
+                                                q.set("options", arr("Ajedrez", "Cantar", "Bailar", "Otras"));
+                                                q.put("answer", "Cantar");
+                                        }));
+                                        qs.add(obj(q -> {
+                                                q.put("id", "q2");
+                                                q.put("kind", "numeric");
+                                                q.put("prompt", "¿Total de estudiantes?");
+                                                q.put("answer", 35);
+                                        }));
+                                        o.set("questions", qs);
+                                }))
                                 .build());
 
-                // ✅ Plantilla libre (MUSTACHE)
-                schemas.put(TemplateSchema.TemplateType.MUSTACHE, TemplateSchema.builder()
-                                .templateType(TemplateSchema.TemplateType.MUSTACHE)
-                                .pattern("Plantilla libre para renderizado con Mustache, usar variables como {{a}} y {{b}}.")
-                                .fields(List.of())
+                // 3) FREQUENCY_TABLE_COMPLETE (completar celdas)
+                schemas.put(TemplateSchema.TemplateType.FREQUENCY_TABLE_COMPLETE, TemplateSchema.builder()
+                                .templateType(TemplateSchema.TemplateType.FREQUENCY_TABLE_COMPLETE)
+                                .example(obj(o -> {
+                                        o.set("columns", arr("Actividad", "Frecuencia"));
+                                        var rows = mapper.createArrayNode();
+                                        rows.add(obj(r -> {
+                                                r.put("actividad", "Ajedrez");
+                                                r.put("frecuencia", 14);
+                                        }));
+                                        rows.add(obj(r -> {
+                                                r.put("actividad", "Cantar");
+                                                r.put("frecuencia", 11);
+                                        }));
+                                        rows.add(obj(r -> {
+                                                r.put("actividad", "Bailar");
+                                                r.put("frecuencia", 10);
+                                        }));
+                                        rows.add(obj(r -> {
+                                                r.put("actividad", "Otras");
+                                                r.put("frecuencia", 5);
+                                        }));
+                                        o.set("rows", rows);
+
+                                        var miss = mapper.createArrayNode();
+                                        miss.add(obj(m -> {
+                                                m.put("cell", "total");
+                                                m.put("answer", 40);
+                                        }));
+                                        o.set("missing", miss); // el frontend pedirá estos campos al estudiante
+                                }))
                                 .build());
         }
 
@@ -95,5 +120,19 @@ public class InMemoryTemplateService implements ExerciseTemplateService {
         @Override
         public Optional<TemplateSchema> schemaFor(TemplateSchema.TemplateType type) {
                 return Optional.ofNullable(schemas.get(type));
+        }
+
+        /* Helpers */
+        private ObjectNode obj(java.util.function.Consumer<ObjectNode> c) {
+                var n = mapper.createObjectNode();
+                c.accept(n);
+                return n;
+        }
+
+        private com.fasterxml.jackson.databind.node.ArrayNode arr(String... values) {
+                var a = mapper.createArrayNode();
+                for (var v : values)
+                        a.add(v);
+                return a;
         }
 }

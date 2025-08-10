@@ -1,21 +1,25 @@
 package com.tesis.curriculum_service.dto;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotBlank;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import jakarta.validation.constraints.NotNull;
+import lombok.*;
 
-/**
- * DTO para representar la respuesta del estudiante al resolver un ejercicio.
- */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@Schema(name = "CheckAnswerRequest", description = "Respuesta del estudiante para validar un ejercicio. Estructura flexible según el templateType.")
 public class CheckAnswerRequest {
-  @Schema(description = "Respuesta que ingresó el estudiante", example = "5")
-  @NotBlank
-  private String studentAnswer;
+
+  @Schema(description = """
+      Estructura de la respuesta del estudiante.
+      Ejemplos:
+      - Single choice: { "value": "Cantar" }
+      - Numérica: { "value": 40 }
+      - Múltiples sub-preguntas: { "answers": { "q1": "Ajedrez", "q2": 40 } }
+      - Geometría (puntos): { "point": [3, 0] }
+      """)
+  @NotNull
+  private JsonNode answer;
 }

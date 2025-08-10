@@ -5,23 +5,16 @@ import com.tesis.curriculum_service.dto.TemplateSchema.TemplateType;
 import com.tesis.curriculum_service.dto.TemplateSchemaResponse;
 import com.tesis.curriculum_service.exception.ErrorResponse;
 import com.tesis.curriculum_service.service.template.ExerciseTemplateService;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.ArraySchema;
-import io.swagger.v3.oas.annotations.media.Schema;
-
+import io.swagger.v3.oas.annotations.responses.*;
+import io.swagger.v3.oas.annotations.media.*;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Tag(name = "Templates", description = "Plantillas parametrizables para generación de ejercicios")
@@ -32,62 +25,53 @@ public class TemplateController {
 
   private final ExerciseTemplateService templateService;
 
-  @Operation(summary = "Listar todas las plantillas", description = "Devuelve la lista completa de esquemas de plantilla disponibles. Solo ADMIN/TEACHER.")
+  @Operation(summary = "Listar plantillas disponibles", description = "Devuelve los esquemas de plantilla disponibles. Solo ADMIN/TEACHER.")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "Listado de plantillas obtenido correctamente", content = @Content(array = @ArraySchema(schema = @Schema(implementation = TemplateSchemaResponse.class)))),
-      @ApiResponse(responseCode = "403", description = "Acceso denegado: el usuario no tiene los roles requeridos")
+      @ApiResponse(responseCode = "200", description = "OK", content = @Content(array = @ArraySchema(schema = @Schema(implementation = TemplateSchemaResponse.class)))),
+      @ApiResponse(responseCode = "403", description = "Acceso denegado")
   })
   @GetMapping
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
-  public ResponseEntity<List<TemplateSchemaResponse>> listAll(
-      @PathVariable UUID curriculumId) {
-
+  public ResponseEntity<List<TemplateSchemaResponse>> listAll(@PathVariable UUID curriculumId) {
     List<TemplateSchema> schemas = templateService.listAll();
-
     List<TemplateSchemaResponse> response = schemas.stream()
-        .map(schema -> new TemplateSchemaResponse(
-            schema.getTemplateType(),
-            generateDescription(schema.getTemplateType()),
-            schema.getPattern()))
+        .map(schema -> TemplateSchemaResponse.builder()
+            .type(schema.getTemplateType())
+            .description(generateDescription(schema.getTemplateType()))
+            .example(schema.getExample())
+            .uiHints(schema.getUiHints()) // puede ser null
+            .build())
         .collect(Collectors.toList());
-
     return ResponseEntity.ok(response);
   }
 
-  @Operation(summary = "Obtener esquema de plantilla por tipo", description = "Busca y devuelve el esquema para un tipo de plantilla concreto. Solo ADMIN/TEACHER.")
+  @Operation(summary = "Obtener esquema por tipo", description = "Devuelve el esquema completo del tipo indicado. Solo ADMIN/TEACHER.")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "Esquema de plantilla encontrado", content = @Content(schema = @Schema(implementation = TemplateSchema.class))),
-      @ApiResponse(responseCode = "404", description = "Tipo de plantilla no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-      @ApiResponse(responseCode = "403", description = "Acceso denegado: el usuario no tiene los roles requeridos")
+      @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = TemplateSchemaResponse.class))),
+      @ApiResponse(responseCode = "404", description = "No encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+      @ApiResponse(responseCode = "403", description = "Acceso denegado")
   })
   @GetMapping("/{type}")
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
-  public ResponseEntity<?> getByType(
-      @PathVariable UUID curriculumId,
+  public ResponseEntity<?> getByType(@PathVariable UUID curriculumId,
       @PathVariable TemplateType type) {
-
     return templateService.schemaFor(type)
+        .map(schema -> TemplateSchemaResponse.builder()
+            .type(schema.getTemplateType())
+            .description(generateDescription(schema.getTemplateType()))
+            .example(schema.getExample())
+            .uiHints(schema.getUiHints())
+            .build())
         .<ResponseEntity<?>>map(ResponseEntity::ok)
-        .orElseGet(() -> {
-          ErrorResponse err = new ErrorResponse(
-              "Template type '" + type + "' not found.",
-              HttpStatus.NOT_FOUND.value(),
-              System.currentTimeMillis());
-          return ResponseEntity.status(HttpStatus.NOT_FOUND).body(err);
-        });
+        .orElseGet(() -> ResponseEntity.status(404).body(
+            new ErrorResponse("Template type '" + type + "' not found.", 404, System.currentTimeMillis())));
   }
 
   private String generateDescription(TemplateType type) {
-    // Puedes mejorar esto luego con un Map o enum con descripciones localizadas
     return switch (type) {
-      case BASIC_OPERATIONS -> "Operaciones básicas (suma, resta, multiplicación, división)";
-      case UNIT_VALUE -> "Problemas con valores unitarios";
-      case FRACTION_PROBLEM_SOLVING -> "Resolución de problemas con fracciones";
-      case DECIMAL_COMPARISON -> "Comparación de decimales";
-      case MULTIPLES_AND_FACTORS -> "Múltiplos y factores (MCM y MCD)";
-      case WORD_PROBLEM_EQUATION -> "Problemas que se resuelven con ecuaciones";
-      case MUSTACHE -> "Plantilla libre con Mustache";
-      default -> type.name().replace("_", " ").toLowerCase();
+      case EQUATION_SINGLE_CHOICE -> "Ecuación simple con opciones (Mustache + opciones).";
+      case FREQUENCY_TABLE_QA -> "Tabla de frecuencias con preguntas asociadas (moda/total/etc.).";
+      case FREQUENCY_TABLE_COMPLETE -> "Completar celdas faltantes en una tabla de frecuencias.";
     };
   }
 }

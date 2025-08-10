@@ -9,9 +9,6 @@ import org.hibernate.annotations.SQLRestriction;
 
 import java.util.UUID;
 
-/**
- * Entidad JPA que representa una pista (hint) para un ejercicio.
- */
 @Entity
 @Table(name = "hints")
 @Getter
@@ -19,7 +16,6 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@EqualsAndHashCode(onlyExplicitlyIncluded = true, callSuper = false)
 @ToString(onlyExplicitlyIncluded = true)
 @SQLDelete(sql = "UPDATE hints SET active = false, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
 @SQLRestriction("active = true")
@@ -28,7 +24,6 @@ public class Hint extends AuditableEntity {
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
   @Column(updatable = false, nullable = false, columnDefinition = "UUID")
-  @EqualsAndHashCode.Include
   private UUID id;
 
   @Column(name = "hint_text", nullable = false, columnDefinition = "TEXT")
