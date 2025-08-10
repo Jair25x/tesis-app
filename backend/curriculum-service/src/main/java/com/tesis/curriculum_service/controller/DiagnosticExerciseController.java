@@ -39,5 +39,5 @@ public class DiagnosticExerciseController {
     List<ExerciseResponse> list = exerciseService.getAllDiagnosticExercises();
     return ResponseEntity.ok(list);
   }
-
+ 
 }
