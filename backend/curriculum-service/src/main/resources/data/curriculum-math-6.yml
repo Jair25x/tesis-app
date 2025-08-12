@@ -78,7 +78,7 @@ competencies:
                     explanation: "90 x 18 = S/ 1620.00."
 
               # (C) FREQUENCY_TABLE_COMPLETE
-              - statement: "Completa el dato faltante."
+              - statement: "Completa el dato faltante indicando el total de personas que realizan estas actividades."
                 difficulty: "BASIC"
                 type: "TABLE_COMPLETE"
                 templateType: "FREQUENCY_TABLE_COMPLETE"

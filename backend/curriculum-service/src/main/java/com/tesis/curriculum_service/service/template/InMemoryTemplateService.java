@@ -76,6 +76,53 @@ public class InMemoryTemplateService implements ExerciseTemplateService {
                                         }));
                                         o.set("questions", qs);
                                 }))
+                                .uiHints(obj(h -> {
+                                        h.put("notes",
+                                                        "Estructura: 'columns' y 'rows' definen la tabla. 'questions' es una lista de preguntas sobre la tabla. "
+                                                                        + "Soportado: 'single_choice' y 'numeric'. Para 'single_choice' debes incluir 'options' (string[]) y 'answer' como string. "
+                                                                        + "Para 'numeric', 'answer' es un número. 'id' debe ser único por pregunta.");
+
+                                        // Descripción de tipos de pregunta soportados
+                                        var kinds = mapper.createObjectNode();
+                                        var sc = mapper.createObjectNode();
+                                        sc.put("answerType", "string");
+                                        sc.put("optionsRequired", true);
+                                        sc.put("optionsType", "string[]");
+                                        sc.put("exampleAnswer", "Cantar");
+
+                                        var num = mapper.createObjectNode();
+                                        num.put("answerType", "number");
+                                        num.put("optionsRequired", false);
+                                        num.put("exampleAnswer", 35);
+
+                                        kinds.set("single_choice", sc);
+                                        kinds.set("numeric", num);
+                                        h.set("questionKinds", kinds);
+
+                                        // Esquema lógico de cada pregunta (en lenguaje humano/JSON-suave)
+                                        var qSchema = mapper.createObjectNode();
+                                        qSchema.put("id", "string (único, obligatorio)");
+                                        qSchema.put("kind", "\"single_choice\" | \"numeric\"");
+                                        qSchema.put("prompt", "string (obligatorio)");
+                                        qSchema.put("options", "string[] (obligatorio si kind = single_choice)");
+                                        qSchema.put("answer", "string | number (tipo acorde a kind)");
+                                        h.set("questionSchema", qSchema);
+
+                                        // Reglas/validaciones útiles para el autor
+                                        var rules = mapper.createArrayNode();
+                                        rules.add("columns: mínimo 2 columnas (p. ej., 'Actividad', 'Frecuencia').");
+                                        rules.add("rows: cada fila debe tener al menos una clave/valor; típicamente { actividad: string, frecuencia: number }.");
+                                        rules.add("questions: lista no vacía; cada 'id' debe ser único.");
+                                        rules.add("single_choice: 'options' no vacío y 'answer' debe existir dentro de 'options'.");
+                                        rules.add("numeric: 'answer' numérico.");
+                                        h.set("authoringRules", rules);
+
+                                        // Sugerencias de UI (el front puede usarlas o ignorarlas)
+                                        var ui = mapper.createObjectNode();
+                                        ui.put("showTableCompact", true);
+                                        ui.put("align", "center");
+                                        h.set("ui", ui);
+                                }))
                                 .build());
 
                 // 3) FREQUENCY_TABLE_COMPLETE (completar celdas)
@@ -107,7 +154,23 @@ public class InMemoryTemplateService implements ExerciseTemplateService {
                                                 m.put("cell", "total");
                                                 m.put("answer", 40);
                                         }));
-                                        o.set("missing", miss); // el frontend pedirá estos campos al estudiante
+                                        // Ejemplo alternativo de celda faltante por etiqueta de fila:
+                                        // miss.add(obj(m -> { m.put("cell", "Cantar"); m.put("answer", 11); }));
+
+                                        o.set("missing", miss);
+
+                                        // 💡 Nuevo: documentamos el total objetivo opcional para la UI
+                                        o.put("targetTotal", 40);
+                                }))
+                                // 💡 Pista para el front: claves válidas en "missing.cell" y uso de targetTotal
+                                .uiHints(obj(h -> {
+                                        h.put("notes", "Las celdas faltantes pueden indicarse como 'total', 'row_{i}_frecuencia' (clave técnica) o con la etiqueta exacta de la fila (p.ej. 'Cantar'). 'targetTotal' (número) es opcional y solo afecta a la visualización del total en la UI.");
+                                        var accepted = mapper.createArrayNode();
+                                        accepted.add("total");
+                                        accepted.add("row_{i}_frecuencia");
+                                        accepted.add("<Etiqueta de la fila>");
+                                        h.set("acceptedMissingKeys", accepted);
+                                        h.put("targetTotal", "number | optional");
                                 }))
                                 .build());
         }

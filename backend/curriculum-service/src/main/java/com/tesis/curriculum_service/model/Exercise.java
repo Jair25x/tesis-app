@@ -1,16 +1,19 @@
 package com.tesis.curriculum_service.model;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.tesis.curriculum_service.dto.TemplateSchema.TemplateType;
 import com.tesis.curriculum_service.model.base.AuditableEntity;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.FetchMode;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.type.SqlTypes;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -71,16 +74,22 @@ public class Exercise extends AuditableEntity {
   @JoinColumn(name = "learning_objective_id", nullable = false)
   private LearningObjective learningObjective;
 
-  // 👇 List + orden por stepNumber
+  // Ordenada por stepNumber; evita N+1/MultipleBagFetch con SUBSELECT
   @OneToMany(mappedBy = "exercise", cascade = CascadeType.ALL, orphanRemoval = true)
   @OrderBy("stepNumber ASC")
+  @Fetch(FetchMode.SUBSELECT)
+  @BatchSize(size = 64)
   @Builder.Default
+  @JsonManagedReference
   private List<SolutionStep> solutionSteps = new ArrayList<>();
 
-  // 👇 List (orden estable por id; puedes usar cost si prefieres)
+  // Orden estable; idem SUBSELECT para evitar MultipleBagFetch
   @OneToMany(mappedBy = "exercise", cascade = CascadeType.ALL, orphanRemoval = true)
   @OrderBy("id ASC")
+  @Fetch(FetchMode.SUBSELECT)
+  @BatchSize(size = 64)
   @Builder.Default
+  @JsonManagedReference
   private List<Hint> hints = new ArrayList<>();
 
   public enum Difficulty {
