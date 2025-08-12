@@ -1,9 +1,11 @@
+// src/routes/AppRoutes.tsx
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import { lazy, Suspense } from "react";
 
 /* Layouts */
 import MainLayout from "../layouts/MainLayout";
 import SettingsLayout from "../layouts/SettingsLayout";
+import MinimalLayout from "../layouts/MinimalLayout"; // ✅ NUEVO
 
 /* Páginas públicas */
 import Login from "../pages/Login";
@@ -118,7 +120,12 @@ import { ExerciseProvider } from "../context/ExerciseProvider";
 import { HintProvider } from "../context/HintProvider";
 import { SolutionStepProvider } from "../context/SolutionStepProvider";
 
+/* Student extras */
+import ExercisePlayerByHierarchy from "../pages/student/ExercisePlayerByHierarchy";
+import RoadmapLauncher from "../pages/student/RoadmapLauncher";
+
 export const router = createBrowserRouter([
+  // ✅ BLOQUE PRINCIPAL (con sidebar / MainLayout)
   {
     path: "/",
     element: (
@@ -143,11 +150,12 @@ export const router = createBrowserRouter([
             path: "practice/:curriculumId/:competencyId/:standardId/:learningObjectiveId",
             element: <Practice />,
           },
-          { path: "roadmap", element: <Roadmap /> },
+          { path: "roadmap", element: <RoadmapLauncher /> },
+          { path: "roadmap/:id", element: <Roadmap /> },
           { path: "profile", element: <StudentProfile /> },
           { path: "achievements", element: <Achievements /> },
-
-          // ✅ Nueva ruta para el test diagnóstico
+          // ⛔️ IMPORTANTE: eliminamos la ruta anidada del reproductor aquí
+          // para que no renderice dentro de MainLayout con sidebar.
           {
             path: "diagnostic",
             element: (
@@ -392,6 +400,7 @@ export const router = createBrowserRouter([
               </ExerciseProvider>
             ),
           },
+
           // Pistas
           {
             path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/hints",
@@ -433,6 +442,7 @@ export const router = createBrowserRouter([
               </HintProvider>
             ),
           },
+
           // Solution Steps
           {
             path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/solution-steps",
@@ -479,6 +489,20 @@ export const router = createBrowserRouter([
 
       { path: "*", element: <NotFound /> },
     ],
+  },
+
+  // ✅ RUTA TOP-LEVEL DEL REPRODUCTOR (sin sidebar)
+  {
+    path: "/student/exercises/:curriculumId/:competencyId/:standardId/:learningObjectiveId/:exerciseId",
+    element: (
+      <ProtectedRoute>
+        <RoleRoute roles={["ROLE_STUDENT"]}>
+          <MinimalLayout>
+            <ExercisePlayerByHierarchy />
+          </MinimalLayout>
+        </RoleRoute>
+      </ProtectedRoute>
+    ),
   },
 
   // Rutas públicas

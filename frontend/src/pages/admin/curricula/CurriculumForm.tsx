@@ -5,7 +5,9 @@ import {
   getCurriculumById,
   updateCurriculum,
 } from "../../../services/curriculumService";
-import type { CurriculumRequest, CurriculumResponse } from "../../../types/curriculum/Curriculum";
+import type {
+  CurriculumRequest,
+} from "../../../types/curriculum/Curriculum";
 import { showToast } from "../../../utils/showToast";
 import { useCurriculum } from "../../../hooks/useCurriculum"; // ✅ Nuevo
 
@@ -29,8 +31,7 @@ export default function CurriculumForm() {
     if (isEditMode && id) {
       setLoading(true);
       getCurriculumById(id)
-        .then((res) => {
-          const data = res.data as CurriculumResponse;
+        .then((data) => {
           setForm({
             name: data.name,
             description: data.description,

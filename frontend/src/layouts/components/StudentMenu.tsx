@@ -39,20 +39,16 @@ export default function StudentMenu({
           >
             🏠 Dashboard
           </Link>
-          <Link
-            to="/student/practice"
-            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
-            onClick={() => setSidebarOpen(false)}
-          >
-            📝 Práctica
-          </Link>
+
+          {/* 🔹 Solo launcher del mapa */}
           <Link
             to="/student/roadmap"
             className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
             onClick={() => setSidebarOpen(false)}
           >
-            🗺️ Mapa
+            🗺️ Mapa de estudio
           </Link>
+
           <Link
             to="/student/achievements"
             className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"

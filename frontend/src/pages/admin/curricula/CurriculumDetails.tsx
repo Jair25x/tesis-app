@@ -9,7 +9,7 @@ import LoadingScreen from "../../../components/LoadingScreen";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { formatDate } from "../../../utils/formatDate";
 import { showToast } from "../../../utils/showToast";
-import { useCurriculum } from "../../../hooks/useCurriculum"; 
+import { useCurriculum } from "../../../hooks/useCurriculum";
 
 export default function CurriculumDetails() {
   const { id } = useParams<{ id: string }>();
@@ -20,13 +20,13 @@ export default function CurriculumDetails() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
-  const { refreshCurricula } = useCurriculum(); 
+  const { refreshCurricula } = useCurriculum();
 
   useEffect(() => {
     const fetchCurriculum = async () => {
       try {
-        const response = await getCurriculumById(id || "");
-        setCurriculum(response.data);
+        const data = await getCurriculumById(id || "");
+        setCurriculum(data);
       } catch (err) {
         console.error("Error al obtener el currículo:", err);
         setError("No se pudo cargar el currículo.");

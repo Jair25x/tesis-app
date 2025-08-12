@@ -173,7 +173,7 @@ export default function ExerciseDetails() {
           </pre>
         </Detail>
         {/* Vista previa del enunciado Mustache renderizado */}
-        {exercise.templateType === "MUSTACHE" && (
+        {exercise.templateType === "EQUATION_SINGLE_CHOICE" && (
           <div>
             <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-1">
               Vista previa del ejercicio

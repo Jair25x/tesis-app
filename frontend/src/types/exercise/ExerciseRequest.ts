@@ -1,5 +1,6 @@
 import type { Difficulty } from "./Difficulty";
-import type { TemplateType } from "./TemplateType";
+import type { TemplateType } from "./TemplateSchemaResponse";
+
 
 export interface ExerciseRequest {
   statement: string;

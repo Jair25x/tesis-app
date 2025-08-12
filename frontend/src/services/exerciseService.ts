@@ -110,8 +110,8 @@ export const checkAnswer = async (
   payload: CheckAnswerRequest
 ): Promise<CheckAnswerResponse> => {
   const { data } = await api.post(
-    `${BASE_PATH}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/check`,
-    payload
+    `/curricula/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/check`,
+    payload // <-- ahora es { answer: ... }
   );
   return data;
 };
@@ -126,5 +126,22 @@ export const submitExerciseAttempt = async (
 // ✅ Obtener todos los ejercicios del cuestionario diagnóstico
 export const getDiagnosticExercises = async (): Promise<ExerciseResponse[]> => {
   const { data } = await api.get("/curricula/exercises/diagnostic");
+  return data;
+};
+
+export interface ExerciseAdminResponse extends ExerciseResponse {
+  correctAnswer?: string | null;
+}
+
+export const getExerciseAdminById = async (
+  curriculumId: string,
+  competencyId: string,
+  standardId: string,
+  learningObjectiveId: string,
+  exerciseId: string
+): Promise<ExerciseAdminResponse> => {
+  const { data } = await api.get(
+    `/curricula/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises/${exerciseId}/admin`
+  );
   return data;
 };

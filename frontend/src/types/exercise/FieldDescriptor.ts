@@ -1,19 +1,19 @@
 /**
  * Tipos posibles de variable que se usan en una plantilla dinámica.
  */
-export type FieldType = "NUMBER" | "CHOICE" | "TEXT";
+export type FieldType = "NUMBER" | "CHOICE" | "TEXT" | "BOOLEAN";
 
 /**
  * Describe una variable en una plantilla Mustache o similar.
  */
 export interface FieldDescriptor {
-  name: string;                     // Nombre como aparece en la plantilla (ej. {{a}})
-  type: FieldType;                 // Tipo de dato: NUMBER, CHOICE, TEXT
+  name: string; // ej. {{a}}
+  type: FieldType;
 
-  // Solo para type = NUMBER
+  // Solo para NUMBER
   min?: number;
   max?: number;
 
-  // Solo para type = CHOICE
+  // Solo para CHOICE
   choices?: string[];
 }

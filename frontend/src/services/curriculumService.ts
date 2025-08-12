@@ -15,8 +15,15 @@ export const getAllCurricula = async (
 };
 
 /* 🔎 2. Obtener currículo simple por ID */
-export const getCurriculumById = (id: string, includeFull = false) =>
-  api.get<CurriculumResponse>(`/curricula/${id}?includeFull=${includeFull}`);
+export const getCurriculumById = async (
+  id: string,
+  includeFull = false
+): Promise<CurriculumResponse> => {
+  const { data } = await api.get<CurriculumResponse>(`/curricula/${id}`, {
+    params: { includeFull },
+  });
+  return data;
+};
 
 /* 🔎 3. Obtener currículo completo (incluye jerarquía) */
 export const getCurriculumFull = async (
@@ -44,7 +51,10 @@ export const reactivateCurriculum = (id: string) =>
   api.patch(`/curricula/${id}/reactivate`);
 
 /* 🧩 8. Obtener solo los currículos activos (para el menú dinámico) */
+// src/services/curriculumService.ts
 export const getActiveCurricula = async (): Promise<CurriculumResponse[]> => {
-  const res = await api.get<CurriculumResponse[]>("/curricula/active");
-  return res.data;
+  const { data } = await api.get<CurriculumResponse[]>("/curricula", {
+    params: { status: "active" },
+  });
+  return data;
 };

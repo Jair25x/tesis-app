@@ -1,11 +1,11 @@
 export interface CheckAnswerRequest {
-  studentAnswer: string;
+  // backend: JsonNode flexible según template
+  answer: unknown;
 }
 
 export interface CheckAnswerResponse {
   correct: boolean;
-  feedback: string;
-  xpAwarded: number;
-  remainingHints: number;
-  nextExerciseId: string | null;
+  score?: number | null;
+  questionResults?: Record<string, boolean> | null;
+  feedback?: string | null;
 }

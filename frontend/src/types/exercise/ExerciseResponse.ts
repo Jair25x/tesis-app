@@ -1,7 +1,7 @@
 import type { Difficulty } from "./Difficulty";
-import type { TemplateType } from "./TemplateType";
 import type { HintResponse } from "./HintResponse";
 import type { SolutionStepResponse } from "./SolutionStepResponse";
+import type { TemplateType } from "./TemplateSchemaResponse";
 
 export interface ExerciseResponse {
   id: string;
@@ -19,13 +19,12 @@ export interface ExerciseResponse {
   competencyName?: string;
   curriculumId?: string;
 
-  correctAnswer: string;
+  // OJO: correctAnswer NO va aquí (solo en vista admin)
   solutionSteps: SolutionStepResponse[];
   hints: HintResponse[];
 
   createdAt: string;
   updatedAt: string;
   active: boolean;
-
   isDiagnostic: boolean;
 }

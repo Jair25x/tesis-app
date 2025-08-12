@@ -1,9 +1,4 @@
 // src/types/curriculum/CurriculumFullResponse.ts
-
-/**
- * Representa la estructura jerárquica completa de un currículo educativo.
- * Se utiliza para construir el Roadmap del estudiante (Curriculum → Competencias → Estándares → Objetivos → Ejercicios).
- */
 export interface CurriculumFullResponse {
   id: string;
   code: string;
@@ -13,9 +8,6 @@ export interface CurriculumFullResponse {
   competencies: CompetencyNode[];
 }
 
-/**
- * Nodo que representa una competencia dentro del currículo.
- */
 export interface CompetencyNode {
   id: string;
   code: string;
@@ -23,9 +15,6 @@ export interface CompetencyNode {
   standards: StandardNode[];
 }
 
-/**
- * Nodo que representa un estándar asociado a una competencia.
- */
 export interface StandardNode {
   id: string;
   code: string;
@@ -33,9 +22,6 @@ export interface StandardNode {
   learningObjectives: LearningObjectiveNode[];
 }
 
-/**
- * Nodo que representa un objetivo de aprendizaje dentro de un estándar.
- */
 export interface LearningObjectiveNode {
   id: string;
   code: string;
@@ -43,11 +29,18 @@ export interface LearningObjectiveNode {
   exercises: ExerciseLeaf[];
 }
 
-/**
- * Hoja final de ejercicios asociados a un objetivo de aprendizaje.
- */
 export interface ExerciseLeaf {
   id: string;
   statement: string;
   difficulty: string;
+  // extras del back (opcionales para no romper)
+  type?: string;
+  templateType?:
+    | "EQUATION_SINGLE_CHOICE"
+    | "FREQUENCY_TABLE_QA"
+    | "FREQUENCY_TABLE_COMPLETE";
+  parameters?: Record<string, unknown>;
+  // correctAnswer existe en admin, pero en el árbol no lo usamos
+  hints?: { id: string; hintText: string; cost: number }[];
+  solutionSteps?: { id: string; stepNumber: number; explanation: string }[];
 }
