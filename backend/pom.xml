@@ -79,6 +79,7 @@
     <module>gateway-service</module>
     <module>auth-service</module>
     <module>curriculum-service</module>
+    <module>progress-service</module>
   </modules>
 
   <build>

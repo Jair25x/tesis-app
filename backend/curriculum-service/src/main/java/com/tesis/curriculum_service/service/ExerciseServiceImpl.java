@@ -214,34 +214,44 @@ public class ExerciseServiceImpl implements ExerciseService {
           .build();
     }
 
+    com.fasterxml.jackson.databind.JsonNode answerNode = Optional.ofNullable(request.getAnswer())
+        .orElse(objectMapper.createObjectNode());
+
+    String templateInReq = answerNode.path("template").asText(null);
+    if (templateInReq != null && !templateInReq.equalsIgnoreCase(type.name())) {
+      return CheckAnswerResponse.builder()
+          .correct(false).score(0.0)
+          .feedback("La respuesta no corresponde al tipo de plantilla del ejercicio.")
+          .build();
+    }
+
     switch (type) {
       case EQUATION_SINGLE_CHOICE:
-        return validateEquationSingleChoice(exercise, request);
+        return validateEquationSingleChoice(exercise, answerNode);
 
       case FREQUENCY_TABLE_QA:
-        return validateFrequencyTableQa(exercise, request);
+        return validateFrequencyTableQa(exercise, answerNode);
 
       case FREQUENCY_TABLE_COMPLETE:
-        return validateFrequencyTableComplete(exercise, request);
+        return validateFrequencyTableComplete(exercise, answerNode);
 
       default:
-        // Fallback temporal (si tienes ejercicios legacy con MUSTACHE u otros)
-        return validateLegacyByCorrectAnswer(exercise, request);
+        // Fallback legacy
+        return validateLegacyByCorrectAnswer(exercise, answerNode);
     }
   }
 
   /* === Validadores MVP === */
 
-  private CheckAnswerResponse validateEquationSingleChoice(Exercise ex, CheckAnswerRequest req) {
-    // parameters: { "choices": [...], "answer": "Cantar" }
-    // request.answer: { "value": "Cantar" }
+  private CheckAnswerResponse validateEquationSingleChoice(
+      Exercise ex,
+      com.fasterxml.jackson.databind.JsonNode answerNode) {
     var params = asJson(ex.getParameters());
     String expected = params.path("answer").asText(null);
     if (expected == null || expected.isBlank()) {
-      // Soporte backward: usa ex.getCorrectAnswer() si aún existe
-      expected = ex.getCorrectAnswer();
+      expected = ex.getCorrectAnswer(); // soporte legacy
     }
-    String given = req.getAnswer().path("value").asText("");
+    String given = answerNode.path("value").asText("");
 
     boolean ok = expected != null && expected.equalsIgnoreCase(given.trim());
     return CheckAnswerResponse.builder()
@@ -251,23 +261,23 @@ public class ExerciseServiceImpl implements ExerciseService {
         .build();
   }
 
-  private CheckAnswerResponse validateFrequencyTableQa(Exercise ex, CheckAnswerRequest req) {
-    // parameters: { rows:[{actividad,frecuencia}], questions:[{id,kind,answer,...}]
-    // }
-    // request.answer: { answers: { "q1": "Ajedrez", "q2": 40 } }
+  private CheckAnswerResponse validateFrequencyTableQa(
+      Exercise ex,
+      com.fasterxml.jackson.databind.JsonNode answerNode) {
     var params = asJson(ex.getParameters());
     var questions = params.path("questions");
-    var answersNode = req.getAnswer().path("answers");
+    var answersNode = answerNode.path("answers");
 
     if (!questions.isArray()) {
       return CheckAnswerResponse.builder()
-          .correct(false).score(0.0).feedback("Plantilla inválida: questions no es un arreglo.")
+          .correct(false).score(0.0)
+          .feedback("Plantilla inválida: questions no es un arreglo.")
           .build();
     }
 
     int total = questions.size();
     int correctCount = 0;
-    java.util.Map<String, Boolean> perQuestion = new java.util.LinkedHashMap<>();
+    Map<String, Boolean> perQuestion = new LinkedHashMap<>();
 
     for (var q : questions) {
       String id = q.path("id").asText();
@@ -289,23 +299,24 @@ public class ExerciseServiceImpl implements ExerciseService {
 
     double score = total == 0 ? 0.0 : (double) correctCount / total;
     return CheckAnswerResponse.builder()
-        .correct(score == 1.0) // puedes cambiar a >= umbral si deseas parcial
+        .correct(score == 1.0)
         .score(score)
         .questionResults(perQuestion)
         .feedback(score == 1.0 ? "¡Muy bien!" : "Revisa las preguntas marcadas.")
         .build();
   }
 
-  private CheckAnswerResponse validateFrequencyTableComplete(Exercise ex, CheckAnswerRequest req) {
-    // parameters: { "missing": [{ "cell":"total", "answer": 40 }, ...], ... }
-    // request.answer: { "filled": { "total": 40, ... } }
+  private CheckAnswerResponse validateFrequencyTableComplete(
+      Exercise ex,
+      com.fasterxml.jackson.databind.JsonNode answerNode) {
     var params = asJson(ex.getParameters());
-    var missing = params.path("missing"); // define tú la convención de celdas a completar
-    var filled = req.getAnswer().path("filled");
+    var missing = params.path("missing");
+    var filled = answerNode.path("filled");
 
     if (!missing.isArray()) {
       return CheckAnswerResponse.builder()
-          .correct(false).score(0.0).feedback("Plantilla inválida: missing no es un arreglo.")
+          .correct(false).score(0.0)
+          .feedback("Plantilla inválida: missing no es un arreglo.")
           .build();
     }
 
@@ -334,11 +345,11 @@ public class ExerciseServiceImpl implements ExerciseService {
         .build();
   }
 
-  private CheckAnswerResponse validateLegacyByCorrectAnswer(Exercise ex, CheckAnswerRequest req) {
-    // Fallback temporal para ejercicios antiguos basados en correctAnswer +
-    // studentAnswer:string
+  private CheckAnswerResponse validateLegacyByCorrectAnswer(
+      Exercise ex,
+      com.fasterxml.jackson.databind.JsonNode answerNode) {
     String expected = ex.getCorrectAnswer();
-    String given = req.getAnswer().path("value").asText(""); // o "text", según legacy
+    String given = answerNode.path("value").asText("");
     boolean ok = expected != null && expected.trim().equalsIgnoreCase(given.trim());
     return CheckAnswerResponse.builder()
         .correct(ok)

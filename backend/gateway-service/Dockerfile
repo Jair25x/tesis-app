@@ -1,24 +1,19 @@
-# Etapa 1: Compilación
+# ---------- build ----------
 FROM maven:3.9.6-eclipse-temurin-21-alpine AS builder
+WORKDIR /workspace
 
-WORKDIR /app
-COPY ../pom.xml ../
-COPY ../gateway-service /app
-RUN mvn -f /app/pom.xml clean package -DskipTests
+COPY ./pom.xml ./pom.xml
+COPY ./curriculum-service ./curriculum-service
 
-# Etapa 2: Ejecución
+RUN mvn -q -f curriculum-service/pom.xml -DskipTests package
+
+# ---------- runtime ----------
 FROM eclipse-temurin:21-jdk-alpine
-
 WORKDIR /app
 
-# Copiar el binario dockerize desde el contexto local
-COPY ../dockerize/dockerize /usr/local/bin/dockerize
-RUN chmod +x /usr/local/bin/dockerize
+RUN apk add --no-cache wget
 
-# Copiar el JAR compilado
-COPY --from=builder /app/target/gateway-service-0.0.1-SNAPSHOT.jar app.jar
+COPY --from=builder /workspace/curriculum-service/target/curriculum-service-0.0.1-SNAPSHOT.jar app.jar
 
-EXPOSE 8080
-
-# Esperar a que config-service y eureka estén listos
-ENTRYPOINT ["sh", "-c", "dockerize -wait http://config-service:8888/actuator/health -wait http://eureka-server:8761/eureka/apps -timeout 60s -- java -jar app.jar"]
+EXPOSE 8082
+ENTRYPOINT ["java", "-jar", "app.jar"]

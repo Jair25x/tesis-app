@@ -1,0 +1,19 @@
+**/target/
+**/.gradle/
+**/build/
+
+!.mvn/
+!.mvn/wrapper/
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE / SO
+.idea/
+.vscode/
+.DS_Store
+
+# Logs / artefactos
+*.log
+
+# Front opcional
+node_modules/
+dist/

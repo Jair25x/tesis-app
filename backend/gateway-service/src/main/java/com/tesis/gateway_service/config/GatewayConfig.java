@@ -56,7 +56,7 @@ public class GatewayConfig {
                                 // Asumimos que el frontend envía /api/curricula/... y el servicio espera
                                 // /api/curricula/...
                                 // Por lo tanto, el Gateway debe reenviar la ruta tal cual.
-                                .route("curricula-service", r -> r
+                                .route("curriculum-service", r -> r
                                                 .path("/api/curricula/**") // Coincide con la ruta que envía el frontend
                                                                            // (con /api)
                                                 .filters(f -> f
@@ -71,7 +71,17 @@ public class GatewayConfig {
                                                 .uri("lb://CURRICULUM-SERVICE"))
 
                                 // ... añade más rutas aquí siguiendo el mismo patrón
-
+                                .route("progress-service", r -> r
+                                                .path("/api/progress/**")
+                                                .filters(f -> f
+                                                                .filter(jwtFilter) // tu filtro valida JWT, libera
+                                                                                   // /api/auth/**, etc.
+                                                                .addRequestHeader("X-Internal-Call", "gateway")
+                                                // Estas 2 cabeceras deben ser puestas por tu JwtGatewayFilter al
+                                                // validar el token:
+                                                // X-Auth-Username y X-Auth-Roles
+                                                )
+                                                .uri("lb://PROGRESS-SERVICE"))
                                 .build();
         }
 }

@@ -20,21 +20,31 @@ public class InMemoryTemplateService implements ExerciseTemplateService {
         @PostConstruct
         public void init() {
                 // 1) EQUATION_SINGLE_CHOICE (Mustache + opciones)
-                schemas.put(TemplateSchema.TemplateType.EQUATION_SINGLE_CHOICE, TemplateSchema.builder()
-                                .templateType(TemplateSchema.TemplateType.EQUATION_SINGLE_CHOICE)
-                                .pattern("Resuelve: {{a}} × {{b}} = ?") // ejemplo
-                                .fields(List.of(
-                                                FieldDescriptor.builder().name("a")
-                                                                .type(FieldDescriptor.FieldType.NUMBER).build(),
-                                                FieldDescriptor.builder().name("b")
-                                                                .type(FieldDescriptor.FieldType.NUMBER).build()))
-                                .example(obj(o -> {
-                                        o.put("a", 6);
-                                        o.put("b", 7);
-                                        o.set("choices", arr("36", "40", "42", "48"));
-                                        o.put("answer", "42");
-                                }))
-                                .build());
+                schemas.put(TemplateSchema.TemplateType.EQUATION_SINGLE_CHOICE,
+                                TemplateSchema.builder()
+                                                .templateType(TemplateSchema.TemplateType.EQUATION_SINGLE_CHOICE)
+                                                .pattern("Resuelve: {{a}} × {{b}} = ?")
+                                                .fields(List.of(
+                                                                FieldDescriptor.builder().name("a")
+                                                                                .type(FieldDescriptor.FieldType.NUMBER)
+                                                                                .build(),
+                                                                FieldDescriptor.builder().name("b")
+                                                                                .type(FieldDescriptor.FieldType.NUMBER)
+                                                                                .build()))
+                                                .example(obj(o -> {
+                                                        o.put("a", 6);
+                                                        o.put("b", 7);
+                                                        o.set("choices", arr("36", "40", "42", "48"));
+                                                        o.put("answer", "42");
+                                                }))
+                                                .uiHints(obj(h -> {
+                                                        h.put("notes", "Usa 'a' y 'b' para renderizar el enunciado. 'choices' (string[]) y 'answer' (string) son requeridos para corrección automática.");
+                                                        var rules = mapper.createArrayNode();
+                                                        rules.add("'choices' no vacío.");
+                                                        rules.add("'answer' debe existir dentro de 'choices'.");
+                                                        h.set("authoringRules", rules);
+                                                }))
+                                                .build());
 
                 // 2) FREQUENCY_TABLE_QA (tabla con preguntas)
                 schemas.put(TemplateSchema.TemplateType.FREQUENCY_TABLE_QA, TemplateSchema.builder()

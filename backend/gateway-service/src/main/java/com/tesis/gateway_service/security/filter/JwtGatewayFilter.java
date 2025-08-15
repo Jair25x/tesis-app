@@ -59,25 +59,21 @@ public class JwtGatewayFilter implements GatewayFilter, Ordered {
     ServerHttpRequest request = exchange.getRequest();
     ServerHttpResponse response = exchange.getResponse();
 
-    // Rutas públicas que no requieren autenticación
+    // Rutas abiertas
     List<String> openApiEndpoints = List.of(
-        "/api/auth/login", "/api/auth/register", "/api/auth/refresh-token",
-        "/api/auth/roles", "/api/auth/logout");
-
+        "/api/auth/login", "/api/auth/register");
     if (openApiEndpoints.contains(request.getURI().getPath())) {
-      logger.debug("Ruta abierta sin autenticación: {}", request.getURI().getPath());
       return chain.filter(exchange);
     }
 
     String authHeader = request.getHeaders().getFirst("Authorization");
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-      logger.warn("Falta cabecera Authorization o formato incorrecto.");
       response.setStatusCode(HttpStatus.UNAUTHORIZED);
       return response.setComplete();
     }
+    
 
     String token = authHeader.substring(7);
-
     try {
       Claims claims = Jwts.parser()
           .verifyWith(this.cachedSigningKey)
@@ -85,43 +81,67 @@ public class JwtGatewayFilter implements GatewayFilter, Ordered {
           .parseSignedClaims(token)
           .getPayload();
 
-      String username = claims.getSubject();
-      List<String> roles = claims.get("roles", List.class);
-      // Agregar userId si fue incluido en el JWT (debe estar como Number o Integer)
-      Number userId = claims.get("userId", Number.class);
+      // 1) Tomar userId preferentemente desde claim "userId" como String (UUID).
+      String userIdStr = claims.get("userId", String.class);
 
-      if (userId == null) {
-        logger.warn("El JWT no contiene el claim userId. No se puede enrutar correctamente.");
+      // 2) Si no lo trae, intentar con subject si es un UUID.
+      if (userIdStr == null || userIdStr.isBlank()) {
+        String sub = claims.getSubject();
+        if (sub != null && !sub.isBlank()) {
+          userIdStr = sub; // si tu subject es UUID, esto funcionará
+        }
+      }
+
+      if (userIdStr == null || userIdStr.isBlank()) {
         response.setStatusCode(HttpStatus.UNAUTHORIZED);
         return response.setComplete();
       }
 
-      // Enriquecer la petición con los headers necesarios
-      ServerHttpRequest modifiedRequest = request.mutate()
-          .header("x-user-id", String.valueOf(userId.longValue())) // NUEVO HEADER NECESARIO PARA CURRICULUM-SERVICE
-          .header("X-Auth-Username", username)
+      @SuppressWarnings("unchecked")
+      List<String> rawRoles = claims.get("roles", List.class);
+      if (rawRoles == null)
+        rawRoles = List.of();
+
+      // 3) Normalizar con ROLE_*
+      List<String> roles = rawRoles.stream()
+          .map(r -> r.startsWith("ROLE_") ? r : "ROLE_" + r.toUpperCase())
+          .toList();
+
+      // 4) Mutar request con cabeceras internas
+      ServerHttpRequest mutated = request.mutate()
+          .header("X-Internal-Call", "gateway")
+          .header("X-Auth-Username", userIdStr) // <- ¡IMPORTANTE! que sea el UUID
           .header("X-Auth-Roles", String.join(",", roles))
+          .header("x-user-id", userIdStr) // opcional, por compatibilidad
           .build();
 
-      logger.info("JWT válido para '{}'. ID: {} Roles: {}", username, userId, roles);
-      return chain.filter(exchange.mutate().request(modifiedRequest).build());
+      return chain.filter(exchange.mutate().request(mutated).build());
 
-    } catch (SignatureException ex) {
+    } catch (io.jsonwebtoken.security.SignatureException ex) {
       logger.warn("Firma JWT inválida: {}", ex.getMessage());
-    } catch (MalformedJwtException ex) {
+      response.setStatusCode(HttpStatus.UNAUTHORIZED);
+      return response.setComplete();
+    } catch (io.jsonwebtoken.MalformedJwtException ex) {
       logger.warn("JWT mal formado: {}", ex.getMessage());
-    } catch (ExpiredJwtException ex) {
+      response.setStatusCode(HttpStatus.UNAUTHORIZED);
+      return response.setComplete();
+    } catch (io.jsonwebtoken.ExpiredJwtException ex) {
       logger.warn("JWT expirado: {}", ex.getMessage());
-    } catch (UnsupportedJwtException ex) {
+      response.setStatusCode(HttpStatus.UNAUTHORIZED);
+      return response.setComplete();
+    } catch (io.jsonwebtoken.UnsupportedJwtException ex) {
       logger.warn("JWT no soportado: {}", ex.getMessage());
+      response.setStatusCode(HttpStatus.UNAUTHORIZED);
+      return response.setComplete();
     } catch (IllegalArgumentException ex) {
       logger.warn("Claims JWT vacíos o nulos: {}", ex.getMessage());
+      response.setStatusCode(HttpStatus.UNAUTHORIZED);
+      return response.setComplete();
     } catch (Exception ex) {
-      logger.error("Error inesperado al procesar JWT: {}", ex.getMessage(), ex);
-      response.setStatusCode(HttpStatus.INTERNAL_SERVER_ERROR);
+      logger.error("Error inesperado al procesar JWT", ex);
+      response.setStatusCode(HttpStatus.UNAUTHORIZED);
+      return response.setComplete();
     }
-
-    return response.setComplete();
   }
 
   @Override

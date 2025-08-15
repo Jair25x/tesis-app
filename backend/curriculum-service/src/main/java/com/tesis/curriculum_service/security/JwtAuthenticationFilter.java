@@ -1,16 +1,10 @@
 // src/main/java/com/tesis/curriculum_service/security/JwtAuthenticationFilter.java
 package com.tesis.curriculum_service.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.tesis.curriculum_service.security.JwtProperties;
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.ExpiredJwtException;
-import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.MalformedJwtException;
-import io.jsonwebtoken.UnsupportedJwtException;
+import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
-import io.jsonwebtoken.security.SignatureException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,17 +24,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
-/**
- * Filtro que intercepta todas las solicitudes y:
- * 1) Si viene de nuestro gateway (X-Internal-Call=gateway), confía en
- * X-Auth-Username y X-Auth-Roles para poblar el SecurityContext.
- * 2) Si no, extrae y valida el JWT de Authorization: Bearer &lt;token&gt;.
- */
-/**
- * Filtro JWT adaptado a JJWT 0.12.x sin usar parserBuilder().
- */
 @Component
 @Profile("!test")
 @RequiredArgsConstructor
@@ -54,35 +38,39 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       HttpServletResponse res,
       FilterChain chain) throws ServletException, IOException {
 
-    /* 1️⃣ – Confianza en llamadas internas desde el Gateway */
-    if ("gateway".equals(req.getHeader("X-Internal-Call"))) {
-      String user = req.getHeader("X-Auth-Username");
-      String roles = req.getHeader("X-Auth-Roles"); // "ROLE_ADMIN,ROLE_STUDENT"
+    // 1) Confiar en llamadas internas (desde gateway u otros servicios) si envían
+    // cabeceras S2S
+    String internal = req.getHeader("X-Internal-Call");
+    if (internal != null && !internal.isBlank()) {
+      String idHeader = req.getHeader("x-user-id");
+      String userHeader = req.getHeader("X-Auth-Username");
+      String roles = req.getHeader("X-Auth-Roles");
 
-      if (user != null && roles != null) {
+      String principal = (idHeader != null && !idHeader.isBlank()) ? idHeader : userHeader;
+
+      if (principal != null && roles != null) {
         var auth = new UsernamePasswordAuthenticationToken(
-            user,
+            principal,
             null,
             Arrays.stream(roles.split(","))
                 .map(String::trim)
                 .map(SimpleGrantedAuthority::new)
                 .toList());
-
         SecurityContextHolder.getContext().setAuthentication(auth);
-        log.debug("⚡ Auth por cabeceras internas: {}", user);
+        log.debug("⚡ curriculum-service: auth interna principal={} roles={}", principal, roles);
       }
       chain.doFilter(req, res);
       return;
     }
 
-    /* 2️⃣ – Fallback: validar JWT normal si llega directo */
+    // 2) Fallback: validar JWT normal si llega directo (útil en tests o sin
+    // gateway)
     String bearer = req.getHeader(HttpHeaders.AUTHORIZATION);
     if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
       String token = bearer.substring(7);
       try {
         Claims claims = Jwts.parser()
-            .verifyWith(Keys.hmacShaKeyFor(
-                io.jsonwebtoken.io.Decoders.BASE64.decode(jwtProperties.getSecretKey())))
+            .verifyWith(Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.getSecretKey())))
             .build()
             .parseSignedClaims(token)
             .getPayload();
@@ -99,10 +87,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                   .map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase()))
                   .toList());
           SecurityContextHolder.getContext().setAuthentication(auth);
-          log.debug("🔐 Auth por JWT: {}", username);
+          log.debug("🔐 curriculum-service: auth por JWT {}", username);
         }
       } catch (Exception ex) {
-        log.warn("JWT inválido: {}", ex.getMessage());
+        log.warn("curriculum-service: JWT inválido: {}", ex.getMessage());
       }
     }
 
