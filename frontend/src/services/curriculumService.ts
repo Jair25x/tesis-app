@@ -5,36 +5,42 @@ import type {
   CurriculumResponse,
 } from "../types/curriculum/Curriculum";
 import type { CurriculumFullResponse } from "../types/curriculum/CurriculumFullResponse";
-
-/* 🔎 1. Listar currículos por estado: all | active | inactive */
+type Page<T> = { content: T[] };
+/* 1) Listar currículos */
 export const getAllCurricula = async (
-  status: "all" | "active" | "inactive" = "all"
+  status: "all" | "active" | "inactive" = "all",
+  signal?: AbortSignal
 ): Promise<CurriculumResponse[]> => {
-  const res = await api.get(`/curricula?status=${status}`);
-  return Array.isArray(res.data) ? res.data : res.data.content || [];
+  const { data } = await api.get<
+    CurriculumResponse[] | Page<CurriculumResponse>
+  >("/curricula", { params: { status }, signal });
+  return Array.isArray(data) ? data : data.content;
 };
 
-/* 🔎 2. Obtener currículo simple por ID */
+/* 2) Obtener currículo simple por ID */
 export const getCurriculumById = async (
   id: string,
-  includeFull = false
+  includeFull = false,
+  signal?: AbortSignal
 ): Promise<CurriculumResponse> => {
   const { data } = await api.get<CurriculumResponse>(`/curricula/${id}`, {
     params: { includeFull },
+    signal,
   });
   return data;
 };
 
-/* 🔎 3. Obtener currículo completo (incluye jerarquía) */
+/* 3) Obtener currículo completo */
 export const getCurriculumFull = async (
-  curriculumId: string
+  curriculumId: string,
+  signal?: AbortSignal
 ): Promise<CurriculumFullResponse> => {
-  const res = await api.get<CurriculumFullResponse>(
-    `/curricula/${curriculumId}?includeFull=true`
+  const { data } = await api.get<CurriculumFullResponse>(
+    `/curricula/${curriculumId}`,
+    { params: { includeFull: true }, signal }
   );
-  return res.data;
+  return data;
 };
-
 /* ✅ 4. Crear currículo */
 export const createCurriculum = (data: CurriculumRequest) =>
   api.post("/curricula", data);

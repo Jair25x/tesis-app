@@ -5,6 +5,25 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tesis App</title>
+
+    <!-- Decide tema antes de hidratar React -->
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem("theme"); // "dark" | "light" | null
+          const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const theme = saved ?? (prefersDark ? "dark" : "light");
+          const root = document.documentElement;
+          if (theme === "dark") {
+            root.classList.add("dark");
+            root.style.colorScheme = "dark";
+          } else {
+            root.classList.remove("dark");
+            root.style.colorScheme = "light";
+          }
+        } catch {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

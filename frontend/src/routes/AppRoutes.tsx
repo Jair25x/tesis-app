@@ -106,7 +106,7 @@ const SolutionStepDetails = lazy(
 );
 
 /* Test de Inicio */
-const DiagnosticTest = lazy(() => import("../pages/student/DiagnosticTest"));
+// const DiagnosticTest = lazy(() => import("../pages/student/DiagnosticTest"));
 
 /* Explorador Curricular */
 import ExplorerDashboard from "../pages/admin/explorer/ExplorerDashboard";
@@ -123,6 +123,7 @@ import { SolutionStepProvider } from "../context/SolutionStepProvider";
 /* Student extras */
 import ExercisePlayerByHierarchy from "../pages/student/ExercisePlayerByHierarchy";
 import RoadmapLauncher from "../pages/student/RoadmapLauncher";
+import { CurriculumProvider } from "../context/CurriculumProvider";
 
 export const router = createBrowserRouter([
   // ✅ BLOQUE PRINCIPAL (con sidebar / MainLayout)
@@ -130,13 +131,14 @@ export const router = createBrowserRouter([
     path: "/",
     element: (
       <ProtectedRoute>
-        <MainLayout />
+        {/* ⬇️ monta el provider solo una vez, alrededor del layout */}
+        <CurriculumProvider>
+          <MainLayout />
+        </CurriculumProvider>
       </ProtectedRoute>
     ),
     children: [
       { index: true, element: <Navigate to="student/dashboard" replace /> },
-
-      // Estudiante
       {
         path: "student",
         element: (
@@ -146,6 +148,7 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "dashboard", element: <StudentDashboard /> },
+          // ✅ Practice con sidebar
           {
             path: "practice/:curriculumId/:competencyId/:standardId/:learningObjectiveId",
             element: <Practice />,
@@ -154,16 +157,14 @@ export const router = createBrowserRouter([
           { path: "roadmap/:id", element: <Roadmap /> },
           { path: "profile", element: <StudentProfile /> },
           { path: "achievements", element: <Achievements /> },
-          // ⛔️ IMPORTANTE: eliminamos la ruta anidada del reproductor aquí
-          // para que no renderice dentro de MainLayout con sidebar.
-          {
-            path: "diagnostic",
-            element: (
-              <Suspense fallback={<LoadingScreen />}>
-                <DiagnosticTest />
-              </Suspense>
-            ),
-          },
+          // {
+          //   path: "diagnostic",
+          //   element: (
+          //     <Suspense fallback={<LoadingScreen />}>
+          //       <DiagnosticTest />
+          //     </Suspense>
+          //   ),
+          // },
         ],
       },
 
@@ -187,7 +188,7 @@ export const router = createBrowserRouter([
         path: "admin",
         element: (
           <RoleRoute roles={["ROLE_ADMIN"]}>
-            <MainLayout />
+            <Outlet />
           </RoleRoute>
         ),
         children: [

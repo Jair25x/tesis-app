@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { AuthContext, type User } from "./AuthContext";
 import { logout as logoutRequest } from "../services/authService";
-import LoadingScreen from "../components/LoadingScreen"; // Loading indicator component
+import LoadingScreen from "../components/LoadingScreen";
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(true); // Track loading state
+  const [loading, setLoading] = useState(true);
 
   const [impersonateStudentView, setImpersonateStudentView] = useState<boolean>(
     () => {
@@ -17,19 +17,36 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   );
 
   useEffect(() => {
-    const token =
-      localStorage.getItem("accessToken") ||
-      sessionStorage.getItem("accessToken");
-    const storedUser =
-      localStorage.getItem("user") || sessionStorage.getItem("user");
+    let canceled = false;
 
-    if (token && storedUser) {
-      setIsAuthenticated(true);
-      setUser(JSON.parse(storedUser));
-    }
+    const bootstrap = async () => {
+      try {
+        const token =
+          localStorage.getItem("accessToken") ||
+          sessionStorage.getItem("accessToken");
+        const storedUser =
+          localStorage.getItem("user") || sessionStorage.getItem("user");
 
-    // Simular carga breve
-    setTimeout(() => setLoading(false), 3000);
+        if (token && storedUser) {
+          if (!canceled) {
+            setUser(JSON.parse(storedUser));
+            setIsAuthenticated(true);
+          }
+        } else {
+          if (!canceled) {
+            setUser(null);
+            setIsAuthenticated(false);
+          }
+        }
+      } finally {
+        if (!canceled) setLoading(false);
+      }
+    };
+
+    void bootstrap();
+    return () => {
+      canceled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -49,7 +66,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     storage.setItem("accessToken", accessToken);
     storage.setItem("refreshToken", refreshToken);
     storage.setItem("user", JSON.stringify(userData));
-
     setUser(userData);
     setIsAuthenticated(true);
   };
@@ -65,7 +81,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.error("Error al cerrar sesión:", error);
       }
     }
-
     localStorage.removeItem("accessToken");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
@@ -78,7 +93,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setImpersonateStudentView(false);
   };
 
-  if (loading) return <LoadingScreen />; // Show a spinner while validating the session
+  if (loading) return <LoadingScreen />;
 
   return (
     <AuthContext.Provider
@@ -87,8 +102,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         user,
         login,
         logout,
-        impersonateStudentView, // 👈 NUEVO
-        setImpersonateStudentView, // 👈 NUEVO
+        impersonateStudentView,
+        setImpersonateStudentView,
       }}
     >
       {children}

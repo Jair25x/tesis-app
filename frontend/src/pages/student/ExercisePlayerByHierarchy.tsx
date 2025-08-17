@@ -1,4 +1,3 @@
-// src/pages/student/ExercisePlayerByHierarchy.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { showToast } from "../../utils/showToast";
@@ -6,7 +5,6 @@ import { renderStatement } from "../../utils/renderStatement";
 
 import {
   getExerciseById,
-  checkAnswer,
   getExercisesByObjective as getExercises,
 } from "../../services/exerciseService";
 
@@ -15,7 +13,6 @@ import type {
   EquationParams,
   FreqQAParams,
   FreqCompleteParams,
-  StudentAnswerShape,
 } from "../../types/exercise/TemplateParams";
 
 import FreqTableQAView from "../../components/student/FreqTableQAView";
@@ -24,22 +21,19 @@ import FreqTableCompleteInlineCells from "../../components/student/FreqTableComp
 import LoadingScreen from "../../components/LoadingScreen";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import { SingleChoiceGroup } from "../../components/student/SingleChoiceGroup";
+import WhiteboardFloatingPanel from "../../components/student/WhiteboardFloatingPanel";
+import { useAttemptMutation } from "../../hooks/progress/useAttemptMutation";
+import { showAchievementToast } from "../../utils/showAchievementToast";
 
 /** ---------- Helpers: type guards sin 'any' ---------- **/
-
 function toEquationParams(p: unknown): EquationParams | undefined {
   if (typeof p !== "object" || p === null) return undefined;
   const maybe = p as { choices?: unknown };
   return Array.isArray(maybe.choices) ? (p as EquationParams) : undefined;
 }
-
 function toFreqQAParams(p: unknown): FreqQAParams | undefined {
   if (typeof p !== "object" || p === null) return undefined;
-  const o = p as {
-    columns?: unknown;
-    rows?: unknown;
-    questions?: unknown;
-  };
+  const o = p as { columns?: unknown; rows?: unknown; questions?: unknown };
   if (
     Array.isArray(o.columns) &&
     Array.isArray(o.rows) &&
@@ -49,7 +43,6 @@ function toFreqQAParams(p: unknown): FreqQAParams | undefined {
   }
   return undefined;
 }
-
 function toFreqCompleteParams(p: unknown): FreqCompleteParams | undefined {
   if (typeof p !== "object" || p === null) return undefined;
   const o = p as { columns?: unknown; rows?: unknown; missing?: unknown };
@@ -68,6 +61,7 @@ const USE_INLINE_CELLS = true;
 
 export default function ExercisePlayerByHierarchy() {
   const navigate = useNavigate();
+  const [wbOpen, setWbOpen] = useState(false);
   const {
     curriculumId = "",
     competencyId = "",
@@ -100,12 +94,27 @@ export default function ExercisePlayerByHierarchy() {
   const [revealedHints, setRevealedHints] = useState(0);
   const [revealedSteps, setRevealedSteps] = useState(0);
 
-  // Resultado del envío
-  const [result, setResult] = useState<
-    | { mode: "correct"; feedback?: string; score?: number }
-    | { mode: "incorrect"; feedback?: string; score?: number }
-    | null
-  >(null);
+  const attemptMutation = useAttemptMutation();
+
+  // marca el momento en que el alumno “entra” al ejercicio
+  const [startedAt, setStartedAt] = useState<number>(() => Date.now());
+
+  // Resultado del envío (+SOP y racha actualizada)
+  const [result, setResult] = useState<{
+    mode: "correct" | "incorrect";
+    feedback?: string;
+    score?: number;
+    sop?: {
+      learningObjectiveId?: string;
+      attemptsCount?: number | null;
+      correctCount?: number | null;
+      streakCorrect?: number | null;
+      accuracy?: number | null; // 0..1
+      status?: string | null;
+      masteryLevel?: string | null;
+    };
+    updatedStreak?: { current: number; longest: number; lastUpdated?: string };
+  } | null>(null);
 
   // Confirmación al salir
   const [showExitConfirm, setShowExitConfirm] = useState(false);
@@ -135,6 +144,7 @@ export default function ExercisePlayerByHierarchy() {
         if (!active) return;
         setExercise(ex);
         setLoExercises(list);
+
         // Reset de estados por si navegas entre ejercicios
         setChoiceValue("");
         setQaAnswers({});
@@ -142,6 +152,9 @@ export default function ExercisePlayerByHierarchy() {
         setRevealedHints(0);
         setRevealedSteps(0);
         setResult(null);
+
+        // ⏱️ arranca el cronómetro del intento
+        setStartedAt(Date.now());
       })
       .catch(() => showToast.error("No se pudo cargar el ejercicio."))
       .finally(() => {
@@ -173,55 +186,148 @@ export default function ExercisePlayerByHierarchy() {
     }
   }, [exercise]);
 
+  // Estado del botón Enviar (sin 'any', compatible v4/v5 de RQ)
+
+  type MutationStateLike = { isPending?: boolean; isLoading?: boolean };
+  const mu = attemptMutation as unknown as MutationStateLike;
+  const isSubmitting = Boolean(mu.isPending ?? mu.isLoading ?? false);
+
+  const retry = () => {
+    setResult(null);
+    setStartedAt(Date.now());
+  };
+  // Params tipados (sin 'any') — OK si exercise es null
+  const eqParams = toEquationParams(exercise?.parameters);
+  const qaParams = toFreqQAParams(exercise?.parameters);
+  const fcParams = toFreqCompleteParams(exercise?.parameters);
+
+  const tpl = exercise?.templateType;
+
+  const isAnswerValid = useMemo<boolean>(() => {
+    if (!tpl) return false;
+
+    if (tpl === "EQUATION_SINGLE_CHOICE") {
+      return typeof choiceValue === "string" && choiceValue.trim().length > 0;
+    }
+
+    if (tpl === "FREQUENCY_TABLE_QA") {
+      if (qaParams?.questions?.length) {
+        return qaParams.questions.every((q) => {
+          const v = qaAnswers[q.id];
+          return v !== "" && v !== null && v !== undefined;
+        });
+      }
+      return Object.keys(qaAnswers).length > 0;
+    }
+
+    if (tpl === "FREQUENCY_TABLE_COMPLETE") {
+      if (fcParams?.missing?.length) {
+        return fcParams.missing.every((key) => {
+          const val = filledCells[String(key)];
+          return typeof val === "number" && Number.isFinite(val);
+        });
+      }
+      return Object.values(filledCells).some(
+        (v) => typeof v === "number" && Number.isFinite(v)
+      );
+    }
+
+    return false;
+  }, [
+    tpl, // 👈 en vez de exercise y exercise.templateType
+    qaParams?.questions, // 👈 ok referenciar props internas
+    fcParams?.missing, // 👈 idem
+    choiceValue,
+    qaAnswers,
+    filledCells,
+  ]);
+
   const handleSubmit = async () => {
     if (!exercise) return;
 
-    let payload: StudentAnswerShape | null = null;
+    // 1) Construir el payload "answer" según plantilla
+    let answer: Record<string, unknown> | null = null;
 
     if (exercise.templateType === "EQUATION_SINGLE_CHOICE") {
-      payload = { template: "EQUATION_SINGLE_CHOICE", value: choiceValue };
+      answer = { template: "EQUATION_SINGLE_CHOICE", value: choiceValue };
     } else if (exercise.templateType === "FREQUENCY_TABLE_QA") {
-      payload = { template: "FREQUENCY_TABLE_QA", answers: qaAnswers };
+      answer = { template: "FREQUENCY_TABLE_QA", answers: qaAnswers };
     } else if (exercise.templateType === "FREQUENCY_TABLE_COMPLETE") {
-      payload = { template: "FREQUENCY_TABLE_COMPLETE", filled: filledCells };
+      answer = { template: "FREQUENCY_TABLE_COMPLETE", filled: filledCells };
     }
 
-    if (!payload) {
+    if (!answer) {
       showToast.error("Este ejercicio no tiene un template soportado.");
       return;
     }
 
-    try {
-      const res = await checkAnswer(
-        curriculumId,
-        competencyId,
-        standardId,
-        learningObjectiveId,
-        exercise.id,
-        { answer: payload }
-      );
+    // 2) Metadatos: duración y sessionId (para agrupar analítica)
+    const durationMs = Math.max(0, Date.now() - startedAt);
+    const sessionId = `practice:${curriculumId}:${learningObjectiveId}`;
 
-      // ⚠️ Backend puede devolver feedback = string | null
-      const fb: string | undefined =
-        typeof res.feedback === "string" ? res.feedback : undefined;
+    try {
+      // 3) Enviar intento al progress-service
+      const res = await attemptMutation.mutateAsync({
+        curriculumId,
+        learningObjectiveId,
+        exerciseId: exercise.id,
+        templateType: exercise.templateType,
+        difficulty: exercise.difficulty,
+        answer,
+        hintsUsed: revealedHints,
+        durationMs,
+        sessionId,
+        source: "PRACTICE",
+      });
+
+      // 4) Feedback “amigable”
+      const fb =
+        typeof res.feedback === "string"
+          ? res.feedback.trim() || undefined
+          : extractFeedbackText(res.feedback);
+
+      // Telemetría dev (solo en desarrollo)
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.debug("[attempt]", {
+          attemptId: res.attemptId,
+          score: res.score,
+          durationMs,
+          sop: res.sop,
+        });
+      }
 
       if (res.correct) {
         setResult({
           mode: "correct",
           feedback: fb,
-          score: res.score ?? undefined,
+          score: typeof res.score === "number" ? res.score : undefined,
+          sop: res.sop,
+          updatedStreak: res.updatedStreak,
         });
-        showToast.success("¡Correcto! 🎉");
+        showToast.success(fb ?? "¡Correcto! 🎉");
+
+        // 5) Logros desbloqueados (si vienen)
+        res.awardedAchievements?.forEach((a) => {
+          showAchievementToast({
+            title: a.name,
+            description: a.description ?? "¡Nuevo logro desbloqueado!",
+            icon: "🏅",
+          });
+        });
       } else {
         setResult({
           mode: "incorrect",
           feedback: fb,
-          score: res.score ?? undefined,
+          score: typeof res.score === "number" ? res.score : undefined,
+          sop: res.sop,
+          updatedStreak: res.updatedStreak,
         });
-        showToast.info("Sigue intentando 😉");
+        showToast.info(fb ?? "Sigue intentando 😉");
       }
     } catch {
-      showToast.error("No se pudo evaluar tu respuesta.");
+      // 503 ya lo notifica el interceptor; aquí solo un fallback
+      showToast.error("No pudimos evaluar ahora. Intenta de nuevo.");
     }
   };
 
@@ -243,10 +349,9 @@ export default function ExercisePlayerByHierarchy() {
 
   if (loading || !exercise) return <LoadingScreen />;
 
-  // Params tipados (sin 'any' ni doble cast forzado)
-  const eqParams = toEquationParams(exercise.parameters);
-  const qaParams = toFreqQAParams(exercise.parameters);
-  const fcParams = toFreqCompleteParams(exercise.parameters);
+  // Formateo SOP
+  const formatAccuracy = (acc?: number | null) =>
+    typeof acc === "number" && acc >= 0 ? `${Math.round(acc * 100)}%` : "—";
 
   return (
     <div className="min-h-screen bg-transparent pb-16">
@@ -259,7 +364,12 @@ export default function ExercisePlayerByHierarchy() {
           >
             ← Volver
           </button>
-
+          <button
+            onClick={() => setWbOpen(true)}
+            className="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
+          >
+            ✏️ Pizarra
+          </button>
           <div className="flex items-center gap-2 text-sm">
             <button
               onClick={handleShowHint}
@@ -331,7 +441,7 @@ export default function ExercisePlayerByHierarchy() {
         ) : null}
 
         {/* Vista según plantilla */}
-        <div className="mx-auto max-w-[720px] space-y-6">
+        <div className="mx-auto max-w-[720px] space-y-6" aria-live="polite">
           {exercise.templateType === "EQUATION_SINGLE_CHOICE" && eqParams && (
             <div className="rounded-lg border bg-white p-4 dark:border-gray-800 dark:bg-gray-800">
               <SingleChoiceGroup
@@ -376,13 +486,15 @@ export default function ExercisePlayerByHierarchy() {
             </div>
             <button
               onClick={handleSubmit}
-              className="rounded-md bg-green-600 px-4 py-2 text-white hover:bg-green-700"
+              disabled={isSubmitting || !isAnswerValid}
+              aria-busy={isSubmitting}
+              className="rounded-md bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-60"
             >
-              Enviar respuesta
+              {isSubmitting ? "Enviando..." : "Enviar respuesta"}
             </button>
           </div>
 
-          {/* Banner de resultado */}
+          {/* Banner de resultado + SOP */}
           {result && (
             <div
               className={`mt-4 rounded-lg border p-4 ${
@@ -390,15 +502,40 @@ export default function ExercisePlayerByHierarchy() {
                   ? "border-emerald-600 bg-emerald-50 dark:border-emerald-500 dark:bg-emerald-900/20"
                   : "border-red-600 bg-red-50 dark:border-red-500 dark:bg-red-900/20"
               }`}
+              role="status"
+              aria-live="polite"
             >
               <div className="mb-2 font-semibold">
                 {result.mode === "correct"
                   ? "¡Respuesta correcta!"
                   : "Respuesta incorrecta"}
               </div>
+
+              {/* Feedback */}
               {result.feedback && (
                 <div className="mb-3 text-sm opacity-90">{result.feedback}</div>
               )}
+
+              {/* Mini resumen SOP (si viene) */}
+              {result.sop ? (
+                <div className="mb-3 text-xs text-gray-700 dark:text-gray-200">
+                  <span className="mr-3">
+                    Precisión:{" "}
+                    <strong>{formatAccuracy(result.sop.accuracy)}</strong>
+                  </span>
+                  {result.sop.status ? (
+                    <span className="mr-3">
+                      Estado: <strong>{result.sop.status}</strong>
+                    </span>
+                  ) : null}
+                  {typeof result.sop.streakCorrect === "number" ? (
+                    <span>
+                      Racha OA: <strong>{result.sop.streakCorrect}</strong>
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap gap-2">
                 {result.mode === "correct" ? (
                   <>
@@ -426,7 +563,7 @@ export default function ExercisePlayerByHierarchy() {
                 ) : (
                   <>
                     <button
-                      onClick={() => setResult(null)}
+                      onClick={retry}
                       className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
                     >
                       Intentar de nuevo
@@ -459,7 +596,7 @@ export default function ExercisePlayerByHierarchy() {
         </div>
       </div>
 
-      {/* Confirmación al salir (tu ConfirmModal usa isOpen/onClose) */}
+      {/* Confirmación al salir */}
       <ConfirmModal
         isOpen={showExitConfirm}
         onClose={() => setShowExitConfirm(false)}
@@ -468,6 +605,28 @@ export default function ExercisePlayerByHierarchy() {
         description="Perderás tu progreso no enviado en este ejercicio."
         variant="warning"
       />
+      <WhiteboardFloatingPanel
+        isOpen={wbOpen}
+        onClose={() => setWbOpen(false)}
+        storageKey={`wb:${curriculumId}:${learningObjectiveId}:${
+          exercise?.id ?? "unk"
+        }`}
+      />
     </div>
   );
+}
+
+function extractFeedbackText(fb: unknown): string | undefined {
+  if (!fb || typeof fb !== "object") return undefined;
+  const obj = fb as Record<string, unknown>;
+  const candidateKeys = ["message", "msg", "text", "reason", "detail"];
+  for (const k of candidateKeys) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    return undefined;
+  }
 }

@@ -17,9 +17,9 @@ export default function MainLayout() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const roles = user?.roles || [];
-
-  const hideSidebar = location.pathname.startsWith("/student/practice");
-
+  const isPlayer = location.pathname.startsWith("/student/exercises/");
+  const hideSidebar = isPlayer; // ✅ ocultar solo en el reproductor
+  const showMobileHeader = !hideSidebar;
   const toggleStudentView = () => {
     setImpersonateStudentView(!impersonateStudentView);
   };
@@ -29,7 +29,7 @@ export default function MainLayout() {
 
   // 🎯 Mostrar pizarra solo en estas rutas
   const showWhiteboard =
-    location.pathname.startsWith("/student/practice") ||
+    location.pathname.startsWith("/student/exercises/") ||
     location.pathname.startsWith("/student/diagnostic");
 
   return (
@@ -43,6 +43,7 @@ export default function MainLayout() {
             />
           )}
           <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+          {/* 👇 Si tu MobileHeader es fixed, mantenlo y compensa en <main> */}
           <MobileHeader onOpenSidebar={() => setSidebarOpen(true)} />
         </>
       )}
@@ -53,7 +54,7 @@ export default function MainLayout() {
           hideSidebar ? "ml-0" : "md:ml-64"
         )}
       >
-        {/* 🎭 Vista como estudiante */}
+        {/* Aviso de impersonación */}
         {impersonateStudentView &&
           (roles.includes("ROLE_TEACHER") || roles.includes("ROLE_ADMIN")) && (
             <div className="bg-yellow-100 text-yellow-800 text-center py-2 text-sm">
@@ -67,8 +68,15 @@ export default function MainLayout() {
             </div>
           )}
 
-        {/* 🧩 Contenido principal */}
-        <main className="flex-1 overflow-y-auto p-6 bg-gray-50 dark:bg-[#1e2a34]">
+        {/* 👇 Antes tenías `p-6`. Cambiamos a padding dinámico:
+              - En móvil: deja espacio para el header (h-14 ≈ 56px => pt-14)
+              - En md+: el header ya no es fijo, así que usamos padding normal */}
+        <main
+          className={cn(
+            "flex-1 overflow-y-auto bg-gray-50 dark:bg-[#1e2a34]",
+            showMobileHeader ? "pt-14 px-4 pb-6 md:pt-6 md:px-6" : "p-6"
+          )}
+        >
           <Outlet />
         </main>
 

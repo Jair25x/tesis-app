@@ -1,4 +1,3 @@
-// src/components/student/WhiteboardFloatingPanel.tsx
 import { useEffect, useRef, useState } from "react";
 import {
   ReactSketchCanvas,
@@ -6,25 +5,25 @@ import {
 } from "react-sketch-canvas";
 import { X, Trash2, Eraser, Pencil, Download } from "lucide-react";
 
-const LOCAL_STORAGE_KEY = "whiteboard-sketch-paths";
-
 interface WhiteboardFloatingPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  storageKey?: string; // clave por ejercicio
 }
 
 export default function WhiteboardFloatingPanel({
   isOpen,
   onClose,
+  storageKey = "whiteboard-sketch-paths",
 }: WhiteboardFloatingPanelProps) {
   const canvasRef = useRef<ReactSketchCanvasRef>(null);
   const [isEraser, setIsEraser] = useState(false);
 
-  // Restaurar trazos previos cuando se abre la pizarra
+  // Restaurar trazos previos al abrir
   useEffect(() => {
     const restorePaths = async () => {
       try {
-        const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+        const saved = localStorage.getItem(storageKey);
         if (saved && canvasRef.current) {
           const parsed = JSON.parse(saved);
           await canvasRef.current.loadPaths(parsed);
@@ -33,31 +32,26 @@ export default function WhiteboardFloatingPanel({
         console.error("Error al restaurar la pizarra:", error);
       }
     };
-
-    if (isOpen) {
-      restorePaths();
-    }
-  }, [isOpen]);
+    if (isOpen) restorePaths();
+  }, [isOpen, storageKey]); // ⬅️ incluye storageKey
 
   // Guardar trazos automáticamente
   const handleStroke = async () => {
     try {
       const paths = await canvasRef.current?.exportPaths();
       if (paths) {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(paths));
+        localStorage.setItem(storageKey, JSON.stringify(paths)); // ⬅️ usa storageKey
       }
     } catch (error) {
       console.error("Error al guardar los trazos:", error);
     }
   };
 
-  // Cambiar entre lápiz y borrador
   const toggleTool = () => {
     canvasRef.current?.eraseMode(!isEraser);
     setIsEraser(!isEraser);
   };
 
-  // Descargar como PNG
   const handleExportImage = async () => {
     try {
       const dataUrl = await canvasRef.current?.exportImage("png");
@@ -72,18 +66,17 @@ export default function WhiteboardFloatingPanel({
     }
   };
 
-  // No renderizar si no debe mostrarse
+  const handleClear = async () => {
+    await canvasRef.current?.clearCanvas();
+    localStorage.removeItem(storageKey); // ⬅️ limpia también persistencia
+  };
+
   if (!isOpen) return null;
 
   return (
     <div
       className="fixed z-40 shadow-2xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-900 rounded-lg flex flex-col overflow-hidden"
-      style={{
-        width: "380px",
-        height: "420px",
-        bottom: "1rem",
-        right: "1rem",
-      }}
+      style={{ width: 380, height: 420, bottom: "1rem", right: "1rem" }}
     >
       {/* Encabezado */}
       <div className="flex justify-between items-center px-3 py-2 bg-indigo-100 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-200">
@@ -117,16 +110,16 @@ export default function WhiteboardFloatingPanel({
           onClick={toggleTool}
           className={`flex items-center gap-1 px-3 py-1 rounded text-white font-semibold ${
             isEraser
-              ? "bg-rose-500 hover:bg-rose-600"
-              : "bg-blue-500 hover:bg-blue-600"
+              ? "bg-blue-500 hover:bg-blue-600"
+              : "bg-rose-500 hover:bg-rose-600"
           }`}
         >
-          {isEraser ? <Eraser size={16} /> : <Pencil size={16} />}
-          {isEraser ? "Borrador" : "Lápiz"}
+          {isEraser ? <Pencil size={16} /> : <Eraser size={16} />}
+          {isEraser ? "Lápiz" : "Borrador"}
         </button>
 
         <button
-          onClick={() => canvasRef.current?.clearCanvas()}
+          onClick={handleClear}
           className="flex items-center gap-1 px-3 py-1 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold rounded"
         >
           <Trash2 size={16} />

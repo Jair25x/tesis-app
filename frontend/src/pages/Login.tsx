@@ -47,9 +47,9 @@ export default function Login() {
         data.refreshToken,
         rememberMe
       );
-      setTimeout(() => {
-        navigate("/dashboard");
-      }, 3000);
+
+      // Redirección inmediata y segura
+      navigate("/profile-dashboard", { replace: true });
     } catch (err) {
       setLoading(false);
       const axiosError = err as TypedAxiosError;

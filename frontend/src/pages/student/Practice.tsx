@@ -6,7 +6,7 @@ import type { ExerciseResponse } from "../../types/exercise/ExerciseResponse";
 import LoadingScreen from "../../components/LoadingScreen";
 import { showToast } from "../../utils/showToast";
 import ExerciseCard from "../../components/student/ExerciseCard";
-
+import axios, { AxiosError } from "axios";
 
 export default function Practice() {
   const { curriculumId, competencyId, standardId, learningObjectiveId } =
@@ -27,6 +27,7 @@ export default function Practice() {
       setLoading(false);
       return;
     }
+    const ac = new AbortController();
     (async () => {
       try {
         const data = await getExercises(
@@ -34,10 +35,12 @@ export default function Practice() {
           competencyId,
           standardId,
           learningObjectiveId,
-          "active"
+          "active",
+          ac.signal
         );
         setItems(data ?? []);
       } catch (e) {
+        if (isAbortError(e)) return; // ⬅️ sin warnings de any
         console.error(e);
         setError("No se pudieron cargar los ejercicios.");
         showToast.error("No se pudieron cargar los ejercicios.");
@@ -45,6 +48,7 @@ export default function Practice() {
         setLoading(false);
       }
     })();
+    return () => ac.abort();
   }, [curriculumId, competencyId, standardId, learningObjectiveId]);
 
   if (loading) return <LoadingScreen />;
@@ -77,5 +81,19 @@ export default function Practice() {
         </ul>
       )}
     </div>
+  );
+}
+
+function isAbortError(e: unknown): boolean {
+  // axios v1 cancela con code 'ERR_CANCELED'
+  if (axios.isCancel && axios.isCancel(e)) return true;
+  const ax = e as AxiosError;
+  if (ax && ax.code === "ERR_CANCELED") return true;
+
+  // fetch/Dom AbortController
+  return (
+    typeof DOMException !== "undefined" &&
+    e instanceof DOMException &&
+    e.name === "AbortError"
   );
 }
