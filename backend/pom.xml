@@ -80,6 +80,7 @@
     <module>auth-service</module>
     <module>curriculum-service</module>
     <module>progress-service</module>
+    <module>classroom-service</module>
   </modules>
 
   <build>

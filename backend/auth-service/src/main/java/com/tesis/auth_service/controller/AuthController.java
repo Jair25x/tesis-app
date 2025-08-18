@@ -124,38 +124,38 @@ public class AuthController {
       @ApiResponse(responseCode = "401", description = "Invalid credentials (incorrect username or password, or disabled account).", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
       @ApiResponse(responseCode = "400", description = "Malformed login request (e.g., empty fields).", content = @Content(schema = @Schema(implementation = Map.class)))
   })
-  @PostMapping("/login") // Maps POST requests to /api/auth/login.
+  @PostMapping("/login")
   public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
-    // 1. Authenticate the user:
     Authentication authentication = authenticationManager.authenticate(
         new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
 
-    // 2. Set authentication in the SecurityContext:
     SecurityContextHolder.getContext().setAuthentication(authentication);
 
-    // 3. Generate the JWT (Access Token):
     String jwt = jwtTokenProvider.generateJwtToken(authentication);
 
-    // 4. Get user details:
     UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
 
-    // 5. Extract user roles:
     List<String> roles = userDetails.getAuthorities().stream()
         .map(GrantedAuthority::getAuthority)
         .collect(Collectors.toList());
 
-    // 6. ✅ MODIFICATION: Call the new method to create or update the Refresh Token
-    RefreshToken refreshToken = refreshTokenService.createOrUpdateRefreshToken(userDetails.getId()); // ✅ CHANGE HERE
+    RefreshToken refreshToken = refreshTokenService.createOrUpdateRefreshToken(userDetails.getId());
 
-    // 7. Return the JWT response with the Access Token and Refresh Token:
-    return ResponseEntity.ok(
-        new JwtResponse(jwt, refreshToken.getToken(), "Bearer",
-            userDetails.getId(),
-            userDetails.getUsername(),
-            roles,
-            userDetails.getEmail(),
-            userDetails.getNombres(),
-            userDetails.getApellidos()));
+    // ⬇️ Respuesta con userUuid canónico
+    JwtResponse resp = JwtResponse.builder()
+        .token(jwt)
+        .refreshToken(refreshToken.getToken())
+        .type("Bearer")
+        .id(userDetails.getId()) // Long legacy
+        .userUuid(userDetails.getUuid().toString()) // UUID canónico nuevo
+        .username(userDetails.getUsername())
+        .roles(roles)
+        .email(userDetails.getEmail())
+        .nombres(userDetails.getNombres())
+        .apellidos(userDetails.getApellidos())
+        .build();
+
+    return ResponseEntity.ok(resp);
   }
 
   /**
@@ -206,17 +206,18 @@ public class AuthController {
 
     // 2. Create a new User instance:
     User user = User.builder()
+        .userUuid(java.util.UUID.randomUUID()) // ⬅️ opcional, el @PrePersist lo hace igual
         .username(registerRequest.getUsername())
-        .password(encoder.encode(registerRequest.getPassword())) // Password encryption here!
-        .email(registerRequest.getEmail()) // Email registration
+        .password(encoder.encode(registerRequest.getPassword()))
+        .email(registerRequest.getEmail())
         .nombres(registerRequest.getNombres())
         .apellidos(registerRequest.getApellidos())
         .profilePictureUrl(registerRequest.getProfilePictureUrl())
         .preferences(registerRequest.getPreferences())
         .fechaRegistro(LocalDateTime.now())
-        .enabled(true) // Account enabled
-        .accountNonLocked(true) // Account not locked
-        .credentialsNonExpired(true) // Credentials not expired
+        .enabled(true)
+        .accountNonLocked(true)
+        .credentialsNonExpired(true)
         .build();
 
     // 3. Resolve and assign roles to the user:

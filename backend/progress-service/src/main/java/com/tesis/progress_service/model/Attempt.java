@@ -2,9 +2,7 @@ package com.tesis.progress_service.model;
 
 import com.tesis.progress_service.model.base.AuditableEntity;
 import com.tesis.progress_service.model.enums.AttemptSource;
-
 import jakarta.persistence.*;
-
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -47,18 +45,19 @@ public class Attempt extends AuditableEntity {
   private UUID exerciseId;
 
   /** Copia de metadatos del ejercicio (para analítica rápida) */
-  @Column(name = "template_type", length = 50)
+  @Column(name = "template_type", length = 64)
   private String templateType;
 
-  @Column(name = "difficulty", length = 20)
+  @Column(name = "difficulty", length = 32)
   private String difficulty;
 
   @Enumerated(EnumType.STRING)
-  @Column(name = "source", length = 20, nullable = false)
+  @Column(name = "source", length = 32, nullable = false)
   @Builder.Default
   private AttemptSource source = AttemptSource.PRACTICE;
 
-  @Column(name = "session_id", length = 64)
+  /** Puede ser largo: p.ej. "practice:<currId>:<loId>" */
+  @Column(name = "session_id", length = 128) // ⬅️ Subido desde 64
   private String sessionId;
 
   /** Lo que envió el frontend */

@@ -190,6 +190,7 @@ services:
       - CONFIG_SERVER_URL=http://config-service:8888
       - SPRING_BOOT_ADMIN_CLIENT_URL=http://admin-monitoring-service:9090
       - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_SERVICE_BASE_URL=http://curriculum-service:8082
+      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_MANAGEMENT_BASE_URL=http://curriculum-service:8082
       - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_NAME=admin
       - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_PASSWORD=admin
       # Conexión a la BD content-db
@@ -248,6 +249,7 @@ services:
       - CONFIG_SERVER_URL=http://config-service:8888
       - SPRING_BOOT_ADMIN_CLIENT_URL=http://admin-monitoring-service:9090
       - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_SERVICE_BASE_URL=http://progress-service:8083
+      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_MANAGEMENT_BASE_URL=http://progress-service:8083
       - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_NAME=admin
       - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_PASSWORD=admin
       # DB (apunta al servicio progress-db)

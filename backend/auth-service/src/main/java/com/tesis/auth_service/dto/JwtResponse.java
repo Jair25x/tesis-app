@@ -1,19 +1,22 @@
 package com.tesis.auth_service.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.util.List;
 
 @Data
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class JwtResponse {
     private String token;
-    private String refreshToken; // <--- This field is CRUCIAL for the AuthController to compile
+    private String refreshToken;
+    @Builder.Default
     private String type = "Bearer";
-    private Long id;
+
+    private Long id; // legacy numérico (se mantiene)
+    private String userUuid; // ⬅️ NUEVO: UUID canónico (string)
+
     private String username;
     private List<String> roles;
     private String email;

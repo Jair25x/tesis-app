@@ -1,36 +1,34 @@
-// src/main/java/com/tesis/progress_service/util/SecurityUtils.java
 package com.tesis.progress_service.util;
 
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.UUID;
 
 public final class SecurityUtils {
-
   private SecurityUtils() {
   }
 
-  public static UUID getCurrentUserId() {
+  public static UUID getCurrentUserIdOrThrow() {
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    String name = (auth != null ? auth.getName() : null);
-    if (name == null)
-      return null;
+    if (auth == null || auth.getPrincipal() == null) {
+      throw new org.springframework.security.access.AccessDeniedException("No authenticated user");
+    }
+
+    String principal = String.valueOf(auth.getPrincipal()).trim();
     try {
-      return UUID.fromString(name);
-    } catch (IllegalArgumentException ignored) {
-      // Si tu principal no es UUID (p.ej. "estudiante"), cámbialo cuando armes el
-      // token
-      return null;
+      return UUID.fromString(principal);
+    } catch (IllegalArgumentException e) {
+      // En producción, el principal DEBE ser UUID. Si no, 403.
+      throw new org.springframework.security.access.AccessDeniedException("Invalid principal (expected UUID)");
     }
   }
 
-  public static UUID getCurrentUserIdOrThrow() {
-    UUID id = getCurrentUserId();
-    if (id == null) {
-      throw new AccessDeniedException("Usuario no autenticado o principal no es UUID");
+  public static String getPrincipalAsStringOrThrow() {
+    var auth = SecurityContextHolder.getContext().getAuthentication();
+    if (auth == null || auth.getPrincipal() == null) {
+      throw new org.springframework.security.access.AccessDeniedException("No authenticated user");
     }
-    return id;
+    return String.valueOf(auth.getPrincipal());
   }
 }

@@ -6,11 +6,11 @@ import com.tesis.progress_service.model.*;
 import com.tesis.progress_service.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Sort;
 
 import java.time.LocalDate;
 import java.util.*;
-
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -71,5 +71,25 @@ public class AchievementService {
       }
     }
     return unlocked;
+  }
+
+  // Catálogo global (solo metadata básica, earnedAt = null)
+  @Cacheable(cacheNames = "achievementCatalog", unless = "#result == null || #result.isEmpty()")
+  public List<AchievementDto> getCatalog() {
+    Sort sort = Sort.by(Sort.Order.asc("code"), Sort.Order.asc("name"));
+    return achievementRepository.findByActiveTrue(sort)
+        .stream()
+        .map(this::toDtoBasic)
+        .toList();
+  }
+
+  // Mapeo reducido a tu DTO actual
+  private AchievementDto toDtoBasic(Achievement a) {
+    return AchievementDto.builder()
+        .code(a.getCode())
+        .name(a.getName())
+        .description(a.getDescription())
+        .earnedAt(null) // En catálogo no hay fecha de obtención
+        .build();
   }
 }

@@ -22,8 +22,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
 import javax.crypto.SecretKey;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * Filtro de Gateway para la validación de JWT en peticiones entrantes.
@@ -35,18 +37,15 @@ public class JwtGatewayFilter implements GatewayFilter, Ordered {
 
   private static final Logger logger = LoggerFactory.getLogger(JwtGatewayFilter.class);
 
-  private final String jwtSecret;
   private final SecretKey cachedSigningKey;
 
   public JwtGatewayFilter(@Value("${jwt.secret-key}") String jwtSecret) {
-    this.jwtSecret = jwtSecret;
-    if (this.jwtSecret == null || this.jwtSecret.isEmpty()) {
+    if (jwtSecret == null || jwtSecret.isEmpty()) {
       logger.error("JWT_SECRET no está configurada. El filtro JWT no funcionará correctamente.");
       throw new IllegalArgumentException("JWT_SECRET no puede ser nula o vacía.");
     }
-
     try {
-      this.cachedSigningKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(this.jwtSecret));
+      this.cachedSigningKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtSecret));
       logger.info("JwtGatewayFilter inicializado correctamente.");
     } catch (Exception e) {
       logger.error("Error al decodificar la clave secreta JWT: {}", e.getMessage());
@@ -56,22 +55,41 @@ public class JwtGatewayFilter implements GatewayFilter, Ordered {
 
   @Override
   public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-    ServerHttpRequest request = exchange.getRequest();
-    ServerHttpResponse response = exchange.getResponse();
 
-    // Rutas abiertas
+    // 0) Saneamos headers “internos” que nunca deben venir del cliente
+    ServerHttpRequest sanitizedReq = exchange.getRequest().mutate()
+        .headers(h -> {
+          h.remove("X-Internal-Call");
+          h.remove("X-Auth-Username");
+          h.remove("X-Auth-Roles");
+          h.remove("x-user-id");
+        })
+        .build();
+    ServerWebExchange sanitizedEx = exchange.mutate().request(sanitizedReq).build();
+
+    ServerHttpRequest request = sanitizedEx.getRequest();
+    ServerHttpResponse response = sanitizedEx.getResponse();
+
+    // 1) Rutas abiertas (solo login/register). Si tu FE usa refresh, añade la ruta
+    // aquí.
     List<String> openApiEndpoints = List.of(
-        "/api/auth/login", "/api/auth/register");
+        "/api/auth/login",
+        "/api/auth/register",
+        "/api/auth/roles",
+        "/api/auth/refresh-token",
+        "/api/auth/logout"
+    // , "/api/auth/refresh-token"
+    );
     if (openApiEndpoints.contains(request.getURI().getPath())) {
-      return chain.filter(exchange);
+      return chain.filter(sanitizedEx);
     }
 
+    // 2) Validar Authorization
     String authHeader = request.getHeaders().getFirst("Authorization");
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
       response.setStatusCode(HttpStatus.UNAUTHORIZED);
       return response.setComplete();
     }
-    
 
     String token = authHeader.substring(7);
     try {
@@ -81,55 +99,64 @@ public class JwtGatewayFilter implements GatewayFilter, Ordered {
           .parseSignedClaims(token)
           .getPayload();
 
-      // 1) Tomar userId preferentemente desde claim "userId" como String (UUID).
-      String userIdStr = claims.get("userId", String.class);
-
-      // 2) Si no lo trae, intentar con subject si es un UUID.
+      // 3) userId robusto (acepta Integer/Long/UUID/String) + fallback a subject
+      Object userIdObj = claims.get("userId");
+      String userIdStr = (userIdObj != null) ? String.valueOf(userIdObj) : null;
       if (userIdStr == null || userIdStr.isBlank()) {
         String sub = claims.getSubject();
         if (sub != null && !sub.isBlank()) {
-          userIdStr = sub; // si tu subject es UUID, esto funcionará
+          userIdStr = sub;
         }
       }
-
       if (userIdStr == null || userIdStr.isBlank()) {
         response.setStatusCode(HttpStatus.UNAUTHORIZED);
         return response.setComplete();
       }
 
-      @SuppressWarnings("unchecked")
-      List<String> rawRoles = claims.get("roles", List.class);
-      if (rawRoles == null)
-        rawRoles = List.of();
+      // 4) roles robustos (acepta CSV o lista)
+      Object rolesObj = claims.get("roles");
+      List<String> roles;
+      if (rolesObj instanceof String s) {
+        roles = Arrays.stream(s.split(","))
+            .map(String::trim)
+            .filter(r -> !r.isEmpty())
+            .toList();
+      } else if (rolesObj instanceof Collection<?> c) {
+        roles = c.stream().map(String::valueOf).toList();
+      } else if (rolesObj == null) {
+        roles = List.of();
+      } else {
+        roles = List.of(String.valueOf(rolesObj));
+      }
 
-      // 3) Normalizar con ROLE_*
-      List<String> roles = rawRoles.stream()
+      // Normalizar con ROLE_*
+      roles = roles.stream()
           .map(r -> r.startsWith("ROLE_") ? r : "ROLE_" + r.toUpperCase())
           .toList();
 
-      // 4) Mutar request con cabeceras internas
+      // 5) Mutar request con cabeceras internas hacia downstream
       ServerHttpRequest mutated = request.mutate()
           .header("X-Internal-Call", "gateway")
-          .header("X-Auth-Username", userIdStr) // <- ¡IMPORTANTE! que sea el UUID
+          .header("X-Auth-Username", userIdStr) // UUID/identidad
           .header("X-Auth-Roles", String.join(",", roles))
-          .header("x-user-id", userIdStr) // opcional, por compatibilidad
+          .header("x-user-id", userIdStr)
           .build();
 
-      return chain.filter(exchange.mutate().request(mutated).build());
+      return chain.filter(sanitizedEx.mutate().request(mutated).build());
 
-    } catch (io.jsonwebtoken.security.SignatureException ex) {
+    } catch (SignatureException ex) {
       logger.warn("Firma JWT inválida: {}", ex.getMessage());
       response.setStatusCode(HttpStatus.UNAUTHORIZED);
       return response.setComplete();
-    } catch (io.jsonwebtoken.MalformedJwtException ex) {
+    } catch (MalformedJwtException ex) {
       logger.warn("JWT mal formado: {}", ex.getMessage());
       response.setStatusCode(HttpStatus.UNAUTHORIZED);
       return response.setComplete();
-    } catch (io.jsonwebtoken.ExpiredJwtException ex) {
+    } catch (ExpiredJwtException ex) {
       logger.warn("JWT expirado: {}", ex.getMessage());
       response.setStatusCode(HttpStatus.UNAUTHORIZED);
       return response.setComplete();
-    } catch (io.jsonwebtoken.UnsupportedJwtException ex) {
+    } catch (UnsupportedJwtException ex) {
       logger.warn("JWT no soportado: {}", ex.getMessage());
       response.setStatusCode(HttpStatus.UNAUTHORIZED);
       return response.setComplete();

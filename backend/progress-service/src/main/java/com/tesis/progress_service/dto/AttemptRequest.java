@@ -2,6 +2,7 @@ package com.tesis.progress_service.dto;
 
 import com.tesis.progress_service.model.enums.AttemptSource;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 import java.util.Map;
@@ -21,18 +22,23 @@ public class AttemptRequest {
   @NotNull
   private UUID exerciseId;
 
-  // Metadatos del ejercicio (útiles para analítica rápida y evitar otro lookup)
-  private String templateType; // opcional si el frontend lo envía
-  private String difficulty; // opcional
+  // Metadatos del ejercicio
+  @Size(max = 64, message = "templateType excede 64 caracteres")
+  private String templateType;
+
+  @Size(max = 32, message = "difficulty excede 32 caracteres")
+  private String difficulty;
 
   @Builder.Default
-  private AttemptSource source = AttemptSource.PRACTICE; // PRACTICE o ASSESSMENT
+  private AttemptSource source = AttemptSource.PRACTICE;
 
-  private String sessionId; // p.ej. sesión de práctica o evaluación
-  private UUID sourceRefId; // opcional: assessmentId u otro origen
+  @Size(max = 128, message = "sessionId excede 128 caracteres")
+  private String sessionId;
+
+  private UUID sourceRefId; // assessmentId u otro origen
 
   // Datos de la respuesta del alumno
-  private Map<String, Object> answer; // JSON payload
+  private Map<String, Object> answer;
   private Integer durationMs;
   private Integer hintsUsed;
 }

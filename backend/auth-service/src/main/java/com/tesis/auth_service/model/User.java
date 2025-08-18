@@ -9,30 +9,33 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
+
+import java.util.UUID;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 @Entity
-@Table(name = "users") // Nombre de tabla diferente a 'user' para evitar conflictos SQL
+@Table(name = "users")
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private Long id; // PK legacy (se mantiene)
+
+    // ⬇️ NUEVO: UUID canónico para identidad externa y JWT
+    @Column(name = "user_uuid", columnDefinition = "uuid", nullable = false, unique = true)
+    private UUID userUuid;
 
     @Column(unique = true, nullable = false)
     private String username;
 
     @Column(nullable = false)
-    private String password; // Contraseña encriptada
+    private String password;
 
     @Column(nullable = true)
-    private String email; // Correo electronico opcional
+    private String email;
 
     @Column(name = "fecha_registro", nullable = false)
     private LocalDateTime fechaRegistro;
@@ -50,11 +53,19 @@ public class User {
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> preferences = new HashMap<>();
 
-    private boolean enabled = true; // Por defecto habilitado
-    private boolean accountNonLocked = true; // Por defecto no bloqueado
-    private boolean credentialsNonExpired = true; // Por defecto credenciales no expiradas
+    private boolean enabled = true;
+    private boolean accountNonLocked = true;
+    private boolean credentialsNonExpired = true;
 
-    @ManyToMany(fetch = FetchType.EAGER) // Cargar roles junto con el usuario
+    @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"), inverseJoinColumns = @JoinColumn(name = "role_id"))
     private Set<Role> roles = new HashSet<>();
+
+    @PrePersist
+    public void prePersist() {
+        if (userUuid == null)
+            userUuid = UUID.randomUUID();
+        if (fechaRegistro == null)
+            fechaRegistro = LocalDateTime.now();
+    }
 }
