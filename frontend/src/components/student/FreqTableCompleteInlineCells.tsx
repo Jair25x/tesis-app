@@ -1,12 +1,11 @@
-// src/components/student/FreqTableCompleteInlineCells.tsx
 import { useMemo } from "react";
 import type { FreqCompleteParams } from "../../types/exercise/TemplateParams";
 import { ExerciseTable, type TableRow } from "./ExerciseTable";
 
 /**
- * Soporta tres convenciones para "missing.cell":
+ * Soporta tres convenciones para "missing":
  *  - "total"
- *  - "row_{i}_frecuencia"  (clave técnica)
+ *  - "row_{i}_frecuencia"   (clave técnica)
  *  - "<Etiqueta de la fila>" (p.ej., "Cantar")
  *
  * Además, si en params viene "targetTotal", lo mostramos como total esperado.
@@ -18,6 +17,20 @@ type FreqCompleteParamsWithTarget = FreqCompleteParams & {
   targetTotal?: number;
 };
 
+// Extrae una lista de claves (string) desde params.missing (puede venir como string u objeto)
+function getMissingKeys(missing: FreqCompleteParams["missing"]): string[] {
+  const out: string[] = [];
+  for (const m of missing as unknown[]) {
+    if (typeof m === "string" || typeof m === "number") {
+      out.push(String(m));
+    } else if (m && typeof m === "object") {
+      const cell = (m as { cell?: unknown }).cell;
+      if (typeof cell === "string" && cell.trim()) out.push(cell);
+    }
+  }
+  return out;
+}
+
 export default function FreqTableCompleteInlineCells({
   params,
   value,
@@ -28,10 +41,13 @@ export default function FreqTableCompleteInlineCells({
   onChange: (next: Record<string, number>) => void;
 }) {
   const columns = params.columns;
+
+  // Conjunto de claves "missing" (como strings legibles)
   const missingSet = useMemo(
-    () => new Set(params.missing.map((m) => m.cell)),
+    () => new Set(getMissingKeys(params.missing)),
     [params.missing]
   );
+
   const targetTotal = (params as FreqCompleteParamsWithTarget).targetTotal;
 
   // Normaliza filas a la forma que muestra la tabla
@@ -39,15 +55,15 @@ export default function FreqTableCompleteInlineCells({
     const [colA = "Actividad", colF = "Frecuencia"] = columns;
     return params.rows.map((r) => ({
       [colA]: String(r.actividad ?? ""),
-      [colF]: r.frecuencia ?? "",
+      [colF]: typeof r.frecuencia === "number" ? r.frecuencia : "",
     }));
   }, [columns, params.rows]);
 
   /**
-   * Para cada fila i, determina qué clave ORIGINAL (de missing) corresponde:
+   * Mapea índice de fila -> clave UI que se debe completar:
    *  - Si missing contiene "row_{i}_frecuencia" → usa esa
-   *  - Si missing contiene "<Etiqueta>"          → usa esa
-   *  - Si no es missing → null
+   *  - Si missing contiene "<Etiqueta>"         → usa esa
+   *  - Si no está missing → null (no editable)
    */
   const uiKeyByRowIndex: (string | null)[] = useMemo(() => {
     return params.rows.map((row, i) => {
@@ -71,17 +87,28 @@ export default function FreqTableCompleteInlineCells({
     }, 0);
   }, [params.rows, uiKeyByRowIndex, value]);
 
-  const handleRowFreqChange = (uiKey: string, raw: string) => {
-    const n = Number(raw);
-    const next = { ...value, [uiKey]: Number.isFinite(n) ? n : 0 };
-    onChange(next);
+  // Helpers onChange: si el input queda vacío o no numérico → eliminamos la clave
+  const setCell = (key: string, raw: string) => {
+    const trimmed = raw.trim();
+    const next = { ...value };
+    if (!trimmed) {
+      delete next[key];
+      onChange(next);
+      return;
+    }
+    const n = Number(trimmed.replace(",", "."));
+    if (Number.isFinite(n)) {
+      next[key] = n;
+      onChange(next);
+    } else {
+      delete next[key];
+      onChange(next);
+    }
   };
 
-  const handleTotalChange = (raw: string) => {
-    const n = Number(raw);
-    const next = { ...value, total: Number.isFinite(n) ? n : 0 };
-    onChange(next);
-  };
+  const handleRowFreqChange = (uiKey: string, raw: string) =>
+    setCell(uiKey, raw);
+  const handleTotalChange = (raw: string) => setCell("total", raw);
 
   // Construimos filas con inputs inline donde aplique
   const rowsWithInputs: TableRow[] = normRows.map((row, i) => {
@@ -93,8 +120,9 @@ export default function FreqTableCompleteInlineCells({
       [colF]:
         uiKey !== null ? (
           <input
+            // Usamos text+inputMode para teclado numérico móvil, y parseamos manual
+            type="text"
             inputMode="numeric"
-            pattern="[0-9]*"
             className="w-20 rounded-md border px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
             value={value[uiKey] ?? ""}
             onChange={(e) => handleRowFreqChange(uiKey, e.target.value)}
@@ -125,8 +153,8 @@ export default function FreqTableCompleteInlineCells({
 
             {missingSet.has("total") ? (
               <input
+                type="text"
                 inputMode="numeric"
-                pattern="[0-9]*"
                 className="w-24 rounded-md border px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                 value={value.total ?? ""}
                 onChange={(e) => handleTotalChange(e.target.value)}

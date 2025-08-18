@@ -1,9 +1,5 @@
-// src/components/student/FreqTableCompleteView.tsx
 import { useMemo } from "react";
-import type {
-  FreqCompleteParams,
-  FreqCompleteMissingCell,
-} from "../../types/exercise/TemplateParams";
+import type { FreqCompleteParams } from "../../types/exercise/TemplateParams";
 import { ExerciseTable, type TableRow } from "./ExerciseTable";
 
 type FilledMap = Record<string, number>;
@@ -13,6 +9,20 @@ type Props = {
   value: FilledMap;
   onChange: (next: FilledMap) => void;
 };
+
+// Extrae una lista de claves (string) desde params.missing (string u objeto)
+function getMissingCells(missing: FreqCompleteParams["missing"]): string[] {
+  const out: string[] = [];
+  for (const m of missing as unknown[]) {
+    if (typeof m === "string" || typeof m === "number") {
+      out.push(String(m));
+    } else if (m && typeof m === "object") {
+      const cell = (m as { cell?: unknown }).cell;
+      if (typeof cell === "string" && cell.trim()) out.push(cell);
+    }
+  }
+  return out;
+}
 
 export default function FreqTableCompleteView({
   params,
@@ -24,13 +34,25 @@ export default function FreqTableCompleteView({
   const normRows: TableRow[] = useMemo(() => {
     const [colA = "Actividad", colF = "Frecuencia"] = columns;
     return rows.map((r) => ({
-      [colA]: r.actividad,
-      [colF]: r.frecuencia ?? "",
+      [colA]: String(r.actividad ?? ""),
+      [colF]: typeof r.frecuencia === "number" ? r.frecuencia : "",
     }));
   }, [columns, rows]);
 
-  const handleChange = (cell: FreqCompleteMissingCell["cell"], v: number) => {
-    onChange({ ...value, [cell]: v });
+  const missingCells = useMemo(() => getMissingCells(missing), [missing]);
+
+  // onChange robusto: elimina la clave si vacío o no numérico
+  const handleChange = (cell: string, raw: string) => {
+    const trimmed = raw.trim();
+    const next = { ...value };
+    if (trimmed === "") {
+      delete next[cell];
+    } else {
+      const n = Number(trimmed.replace(",", "."));
+      if (Number.isFinite(n)) next[cell] = n;
+      else delete next[cell];
+    }
+    onChange(next);
   };
 
   return (
@@ -42,17 +64,20 @@ export default function FreqTableCompleteView({
           Completa los siguientes campos:
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {missing.map((m) => (
+          {missingCells.map((cell) => (
             <label
-              key={m.cell}
+              key={cell}
               className="text-sm text-gray-700 dark:text-gray-200"
             >
-              <span className="mb-1 block">{labelForCell(m.cell)}</span>
+              <span className="mb-1 block">{labelForCell(cell)}</span>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 className="w-40 rounded-md border px-2 py-1 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                value={value[m.cell] ?? ""}
-                onChange={(e) => handleChange(m.cell, Number(e.target.value))}
+                value={value[cell] ?? ""}
+                onChange={(e) => handleChange(cell, e.target.value)}
+                aria-label={labelForCell(cell)}
               />
             </label>
           ))}

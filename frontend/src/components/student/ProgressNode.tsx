@@ -46,15 +46,29 @@ export default function ProgressNode({ label, to, status }: ProgressNodeProps) {
 
   const { bg, text, icon } = statusStyles[status];
 
-  return (
-    <Link
-      to={status === "locked" ? "#" : to}
+  return status === "locked" ? (
+    <span
+      aria-disabled="true"
+      tabIndex={-1}
       className={cn(
-        "transition duration-300 p-4 rounded-xl shadow text-center text-sm font-semibold cursor-pointer",
+        "transition duration-300 p-4 rounded-xl shadow text-center text-sm font-semibold",
+        "pointer-events-none opacity-60",
         bg,
-        text,
-        status === "locked" && "pointer-events-none opacity-60"
+        text
       )}
+    >
+      <div className="text-3xl mb-1">{icon}</div>
+      <div className="line-clamp-2">{label}</div>
+    </span>
+  ) : (
+    <Link
+      to={to}
+      className={cn(
+        "transition duration-300 p-4 rounded-xl shadow text-center text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500",
+        bg,
+        text
+      )}
+      aria-label={`${label}. Ir`}
     >
       <div className="text-3xl mb-1">{icon}</div>
       <div className="line-clamp-2">{label}</div>

@@ -25,12 +25,18 @@ import WhiteboardFloatingPanel from "../../components/student/WhiteboardFloating
 import { useAttemptMutation } from "../../hooks/progress/useAttemptMutation";
 import { showAchievementToast } from "../../utils/showAchievementToast";
 
-/** ---------- Helpers: type guards sin 'any' ---------- **/
+/* ============================================================
+   Helpers de tipado/normalización (sin any)
+   ============================================================ */
+
+/** Asegura EquationParams si tiene choices en array */
 function toEquationParams(p: unknown): EquationParams | undefined {
   if (typeof p !== "object" || p === null) return undefined;
   const maybe = p as { choices?: unknown };
   return Array.isArray(maybe.choices) ? (p as EquationParams) : undefined;
 }
+
+/** Asegura FreqQAParams si trae columns/rows/questions en array */
 function toFreqQAParams(p: unknown): FreqQAParams | undefined {
   if (typeof p !== "object" || p === null) return undefined;
   const o = p as { columns?: unknown; rows?: unknown; questions?: unknown };
@@ -43,6 +49,8 @@ function toFreqQAParams(p: unknown): FreqQAParams | undefined {
   }
   return undefined;
 }
+
+/** Asegura FreqCompleteParams si trae columns/rows/missing en array */
 function toFreqCompleteParams(p: unknown): FreqCompleteParams | undefined {
   if (typeof p !== "object" || p === null) return undefined;
   const o = p as { columns?: unknown; rows?: unknown; missing?: unknown };
@@ -56,12 +64,40 @@ function toFreqCompleteParams(p: unknown): FreqCompleteParams | undefined {
   return undefined;
 }
 
-/** Flag para elegir vista de FREQUENCY_TABLE_COMPLETE */
+/**
+ * Algunos bancos de ejercicios devuelven 'missing' como objetos.
+ * Este helper extrae una clave legible (key/id/cell/label/name) o string/number directo.
+ */
+function missingKeyToString(m: unknown): string | null {
+  if (typeof m === "string" || typeof m === "number") return String(m);
+  if (m && typeof m === "object") {
+    const o = m as Record<string, unknown>;
+    for (const cand of ["key", "id", "cell", "label", "name"]) {
+      const v = o[cand];
+      if (typeof v === "string" && v.trim()) return v;
+    }
+  }
+  return null;
+}
+
+/** Normaliza claves: lower, sin espacios/":-_"  */
+const normalizeKey = (s: string) =>
+  s
+    .toLowerCase()
+    .trim()
+    .replace(/[:\s\-_]+/g, "");
+
+/** Vista para FREQUENCY_TABLE_COMPLETE (inline o tabla tradicional) */
 const USE_INLINE_CELLS = true;
 
+/* ============================================================
+   Componente principal
+   ============================================================ */
 export default function ExercisePlayerByHierarchy() {
   const navigate = useNavigate();
   const [wbOpen, setWbOpen] = useState(false);
+
+  // Rutas (jerarquía) + ejercicio
   const {
     curriculumId = "",
     competencyId = "",
@@ -76,30 +112,38 @@ export default function ExercisePlayerByHierarchy() {
     exerciseId: string;
   }>();
 
-  // Datos del ejercicio actual
+  /* --------------------------------------------
+     Estados generales
+     -------------------------------------------- */
   const [exercise, setExercise] = useState<ExerciseResponse | null>(null);
   const [loading, setLoading] = useState(true);
-
-  // Lista de ejercicios del mismo objetivo (para botón "Siguiente")
   const [loExercises, setLoExercises] = useState<ExerciseResponse[]>([]);
 
-  // Estado de respuesta del alumno
+  /* --------------------------------------------
+     Estados de respuesta del alumno
+     -------------------------------------------- */
   const [choiceValue, setChoiceValue] = useState<string>("");
   const [qaAnswers, setQaAnswers] = useState<Record<string, string | number>>(
     {}
   );
+  // IMPORTANTE: mantenemos el mapa numérico para COMPLETE
   const [filledCells, setFilledCells] = useState<Record<string, number>>({});
 
-  // Pistas / Pasos revelados
+  /* --------------------------------------------
+     Pistas / Pasos revelados
+     -------------------------------------------- */
   const [revealedHints, setRevealedHints] = useState(0);
   const [revealedSteps, setRevealedSteps] = useState(0);
 
+  /* --------------------------------------------
+     Mutación de intento y medición básica
+     -------------------------------------------- */
   const attemptMutation = useAttemptMutation();
-
-  // marca el momento en que el alumno “entra” al ejercicio
   const [startedAt, setStartedAt] = useState<number>(() => Date.now());
 
-  // Resultado del envío (+SOP y racha actualizada)
+  /* --------------------------------------------
+     Resultado del intento (para banner)
+     -------------------------------------------- */
   const [result, setResult] = useState<{
     mode: "correct" | "incorrect";
     feedback?: string;
@@ -116,10 +160,14 @@ export default function ExercisePlayerByHierarchy() {
     updatedStreak?: { current: number; longest: number; lastUpdated?: string };
   } | null>(null);
 
-  // Confirmación al salir
+  /* --------------------------------------------
+     Confirmación al salir sin enviar
+     -------------------------------------------- */
   const [showExitConfirm, setShowExitConfirm] = useState(false);
 
-  // Cargar ejercicio + lista del objetivo
+  /* ============================================================
+     Carga de ejercicio + lista del mismo OA
+     ============================================================ */
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -145,7 +193,7 @@ export default function ExercisePlayerByHierarchy() {
         setExercise(ex);
         setLoExercises(list);
 
-        // Reset de estados por si navegas entre ejercicios
+        // Reset de estados al cambiar de ejercicio
         setChoiceValue("");
         setQaAnswers({});
         setFilledCells({});
@@ -153,7 +201,7 @@ export default function ExercisePlayerByHierarchy() {
         setRevealedSteps(0);
         setResult(null);
 
-        // ⏱️ arranca el cronómetro del intento
+        // Reinicia cronómetro
         setStartedAt(Date.now());
       })
       .catch(() => showToast.error("No se pudo cargar el ejercicio."))
@@ -166,6 +214,9 @@ export default function ExercisePlayerByHierarchy() {
     };
   }, [curriculumId, competencyId, standardId, learningObjectiveId, exerciseId]);
 
+  /* ============================================================
+     Derivados de estado (índice y siguiente ejercicio)
+     ============================================================ */
   const currentIndex = useMemo(() => {
     const idx = loExercises.findIndex((e) => e.id === exerciseId);
     return idx >= 0 ? idx : null;
@@ -177,6 +228,9 @@ export default function ExercisePlayerByHierarchy() {
     return next ? next.id : null;
   }, [currentIndex, loExercises]);
 
+  /* ============================================================
+     Enunciado renderizado (plantilla -> texto)
+     ============================================================ */
   const renderedStatement = useMemo(() => {
     if (!exercise) return "";
     try {
@@ -186,8 +240,9 @@ export default function ExercisePlayerByHierarchy() {
     }
   }, [exercise]);
 
-  // Estado del botón Enviar (sin 'any', compatible v4/v5 de RQ)
-
+  /* ============================================================
+     Estado del botón Enviar (v4/v5 React Query)
+     ============================================================ */
   type MutationStateLike = { isPending?: boolean; isLoading?: boolean };
   const mu = attemptMutation as unknown as MutationStateLike;
   const isSubmitting = Boolean(mu.isPending ?? mu.isLoading ?? false);
@@ -196,54 +251,99 @@ export default function ExercisePlayerByHierarchy() {
     setResult(null);
     setStartedAt(Date.now());
   };
-  // Params tipados (sin 'any') — OK si exercise es null
+
+  /* ============================================================
+     Params tipados por plantilla (sin any)
+     ============================================================ */
   const eqParams = toEquationParams(exercise?.parameters);
   const qaParams = toFreqQAParams(exercise?.parameters);
   const fcParams = toFreqCompleteParams(exercise?.parameters);
 
-  const tpl = exercise?.templateType;
+  /* ============================================================
+     Derivados para validación: QA y COMPLETE
+     ============================================================ */
 
+  // IDs de las preguntas QA (si existen)
+  const qaQuestionIds = useMemo(
+    () => qaParams?.questions?.map((q) => q.id) ?? [],
+    [qaParams?.questions]
+  );
+
+  // Extrae claves en claro desde 'missing' (puede venir con objetos)
+  const rawMissingKeys = useMemo(() => {
+    if (!fcParams?.missing) return [];
+    const out: string[] = [];
+    for (const m of fcParams.missing as unknown[]) {
+      const k = missingKeyToString(m);
+      if (k) out.push(k);
+    }
+    return out;
+  }, [fcParams?.missing]);
+
+  // Normaliza claves que el usuario completa
+  const normalizedFilled = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(filledCells)) {
+      out[normalizeKey(k)] = v;
+    }
+    return out;
+  }, [filledCells]);
+
+  // Normaliza claves faltantes declaradas en params
+  const normalizedMissing = useMemo(
+    () => rawMissingKeys.map((k) => normalizeKey(k)),
+    [rawMissingKeys]
+  );
+
+  /* ============================================================
+     Validación: ¿se puede enviar?
+     ============================================================ */
   const isAnswerValid = useMemo<boolean>(() => {
+    const tpl = exercise?.templateType;
     if (!tpl) return false;
 
+    // Opción única
     if (tpl === "EQUATION_SINGLE_CHOICE") {
       return typeof choiceValue === "string" && choiceValue.trim().length > 0;
     }
 
+    // QA: todas las preguntas deben tener respuesta (si las conocemos)
     if (tpl === "FREQUENCY_TABLE_QA") {
-      if (qaParams?.questions?.length) {
-        return qaParams.questions.every((q) => {
-          const v = qaAnswers[q.id];
+      if (qaQuestionIds.length) {
+        return qaQuestionIds.every((id) => {
+          const v = qaAnswers[id];
           return v !== "" && v !== null && v !== undefined;
         });
       }
       return Object.keys(qaAnswers).length > 0;
     }
 
+    // COMPLETE: si hay "missing" declarado, TODAS esas celdas deben ser numéricas
     if (tpl === "FREQUENCY_TABLE_COMPLETE") {
-      if (fcParams?.missing?.length) {
-        return fcParams.missing.every((key) => {
-          const val = filledCells[String(key)];
-          return typeof val === "number" && Number.isFinite(val);
-        });
+      if (normalizedMissing.length) {
+        return normalizedMissing.every((k) =>
+          Number.isFinite(normalizedFilled[k])
+        );
       }
-      return Object.values(filledCells).some(
-        (v) => typeof v === "number" && Number.isFinite(v)
-      );
+      // Si no hay "missing" declarado, alcanza con que al menos 1 celda sea numérica
+      return Object.values(normalizedFilled).some((v) => Number.isFinite(v));
     }
 
     return false;
   }, [
-    tpl, // 👈 en vez de exercise y exercise.templateType
-    qaParams?.questions, // 👈 ok referenciar props internas
-    fcParams?.missing, // 👈 idem
+    exercise?.templateType,
+    qaQuestionIds,
+    normalizedMissing,
+    normalizedFilled,
     choiceValue,
     qaAnswers,
-    filledCells,
   ]);
 
+  /* ============================================================
+     Envío del intento
+     ============================================================ */
   const handleSubmit = async () => {
-    if (!exercise) return;
+    if (!exercise || isSubmitting) return; // evita doble click
 
     // 1) Construir el payload "answer" según plantilla
     let answer: Record<string, unknown> | null = null;
@@ -253,7 +353,16 @@ export default function ExercisePlayerByHierarchy() {
     } else if (exercise.templateType === "FREQUENCY_TABLE_QA") {
       answer = { template: "FREQUENCY_TABLE_QA", answers: qaAnswers };
     } else if (exercise.templateType === "FREQUENCY_TABLE_COMPLETE") {
-      answer = { template: "FREQUENCY_TABLE_COMPLETE", filled: filledCells };
+      // Robusto: convertimos cualquier string numerizable a número
+      const normalized: Record<string, number> = {};
+      for (const [k, v] of Object.entries(filledCells)) {
+        const n =
+          typeof v === "number"
+            ? v
+            : Number(String(v).replace(",", ".").trim());
+        if (Number.isFinite(n)) normalized[k] = n;
+      }
+      answer = { template: "FREQUENCY_TABLE_COMPLETE", filled: normalized };
     }
 
     if (!answer) {
@@ -295,8 +404,19 @@ export default function ExercisePlayerByHierarchy() {
           durationMs,
           sop: res.sop,
         });
+        if (exercise.templateType === "FREQUENCY_TABLE_COMPLETE") {
+          // eslint-disable-next-line no-console
+          console.debug("[FC debug]", {
+            missing_raw: fcParams?.missing,
+            rawMissingKeys,
+            normalizedMissing,
+            filledCells,
+            normalizedFilled,
+          });
+        }
       }
 
+      // 5) Render del banner + toasts
       if (res.correct) {
         setResult({
           mode: "correct",
@@ -307,7 +427,7 @@ export default function ExercisePlayerByHierarchy() {
         });
         showToast.success(fb ?? "¡Correcto! 🎉");
 
-        // 5) Logros desbloqueados (si vienen)
+        // Logros desbloqueados (si vienen)
         res.awardedAchievements?.forEach((a) => {
           showAchievementToast({
             title: a.name,
@@ -326,11 +446,14 @@ export default function ExercisePlayerByHierarchy() {
         showToast.info(fb ?? "Sigue intentando 😉");
       }
     } catch {
-      // 503 ya lo notifica el interceptor; aquí solo un fallback
+      // 503 ya lo notifica el interceptor; fallback
       showToast.error("No pudimos evaluar ahora. Intenta de nuevo.");
     }
   };
 
+  /* ============================================================
+     Acciones varias (pistas, pasos, salir)
+     ============================================================ */
   const handleShowHint = () => {
     if (!exercise?.hints?.length) return;
     setRevealedHints((n) => Math.min(n + 1, exercise.hints.length));
@@ -347,12 +470,20 @@ export default function ExercisePlayerByHierarchy() {
     navigate(`/student/roadmap/${curriculumId}`);
   };
 
+  /* ============================================================
+     Loading
+     ============================================================ */
   if (loading || !exercise) return <LoadingScreen />;
 
-  // Formateo SOP
+  /* ============================================================
+     Utilidad: formatear precisión SOP
+     ============================================================ */
   const formatAccuracy = (acc?: number | null) =>
     typeof acc === "number" && acc >= 0 ? `${Math.round(acc * 100)}%` : "—";
 
+  /* ============================================================
+     Render
+     ============================================================ */
   return (
     <div className="min-h-screen bg-transparent pb-16">
       {/* Header fijo */}
@@ -440,7 +571,7 @@ export default function ExercisePlayerByHierarchy() {
           </div>
         ) : null}
 
-        {/* Vista según plantilla */}
+        {/* Vistas por plantilla */}
         <div className="mx-auto max-w-[720px] space-y-6" aria-live="polite">
           {exercise.templateType === "EQUATION_SINGLE_CHOICE" && eqParams && (
             <div className="rounded-lg border bg-white p-4 dark:border-gray-800 dark:bg-gray-800">
@@ -605,6 +736,8 @@ export default function ExercisePlayerByHierarchy() {
         description="Perderás tu progreso no enviado en este ejercicio."
         variant="warning"
       />
+
+      {/* Pizarra flotante (persistente por ejercicio) */}
       <WhiteboardFloatingPanel
         isOpen={wbOpen}
         onClose={() => setWbOpen(false)}
@@ -616,6 +749,9 @@ export default function ExercisePlayerByHierarchy() {
   );
 }
 
+/* ============================================================
+   Serializador de feedback genérico
+   ============================================================ */
 function extractFeedbackText(fb: unknown): string | undefined {
   if (!fb || typeof fb !== "object") return undefined;
   const obj = fb as Record<string, unknown>;

@@ -28,6 +28,7 @@ export function ExerciseTable({
   return (
     <div className="w-full overflow-x-auto">
       <table
+        role="table"
         className={`w-full border-collapse rounded-lg border bg-white text-sm dark:border-gray-700 dark:bg-gray-800 ${
           compact ? "" : "text-base"
         }`}
@@ -37,6 +38,7 @@ export function ExerciseTable({
             {columns.map((c) => (
               <th
                 key={c}
+                scope="col"
                 className={`px-3 py-2 font-semibold text-gray-700 dark:text-gray-100 ${
                   align === "center"
                     ? "text-center"
