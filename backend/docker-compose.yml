@@ -274,12 +274,70 @@ services:
       interval: 15s
       timeout: 5s
       retries: 10
+  classroom-db:
+    image: postgres:17.5-alpine3.22
+    container_name: classroom-db
+    environment:
+      - POSTGRES_DB=classroomdb
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=misan
+    volumes:
+      - classroom-db-data:/var/lib/postgresql/data
+    ports:
+      - "5445:5432" # opcional (exponer al host)
+    restart: always
+    networks:
+      - tesis-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d classroomdb"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+  classroom-service:
+    build:
+      context: .
+      dockerfile: ./classroom-service/Dockerfile
+    container_name: classroom-service
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - CONFIG_SERVER_URL=http://config-service:8888
+      - SPRING_BOOT_ADMIN_CLIENT_URL=http://admin-monitoring-service:9090
+      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_SERVICE_BASE_URL=http://classroom-service:8084
+      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_MANAGEMENT_BASE_URL=http://classroom-service:8084
+      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_NAME=admin
+      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_PASSWORD=admin
+      # DB (apunta a classroom-db)
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://classroom-db:5432/classroomdb
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=misan
+    depends_on:
+      - eureka-server
+      - config-service
+      - admin-monitoring-service
+      - classroom-db
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.50"
+    networks:
+      - tesis-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
 # --- Definición de Volúmenes ---
 volumes:
   auth-profile-db-data:
   content-db-data:
   progress-db-data:
+  classroom-db-data:
 # --- Definicion de Redes ---
 networks:
   tesis-network:

@@ -82,6 +82,16 @@ public class GatewayConfig {
                                                 // X-Auth-Username y X-Auth-Roles
                                                 )
                                                 .uri("lb://PROGRESS-SERVICE"))
+
+                                .route("classroom-service", r -> r
+                                                .path("/api/classrooms/**")
+                                                .filters(f -> f
+                                                                .filter(jwtFilter)
+                                                                .addRequestHeader("X-Internal-Call", "gateway")
+                                                // JwtGatewayFilter debe inyectar: x-user-id (UUID), X-Auth-Username,
+                                                // X-Auth-Roles
+                                                )
+                                                .uri("lb://CLASSROOM-SERVICE"))
                                 .build();
         }
 }
