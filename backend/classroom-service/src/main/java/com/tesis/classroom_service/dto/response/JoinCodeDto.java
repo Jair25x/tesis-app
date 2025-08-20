@@ -1,9 +1,10 @@
+// src/main/java/com/tesis/classroom_service/dto/response/JoinCodeDto.java
 package com.tesis.classroom_service.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Getter
 @Setter
@@ -16,8 +17,8 @@ public class JoinCodeDto {
   @Schema(description = "Código en mayúsculas", example = "ABCD23")
   private String code;
 
-  @Schema(description = "Fecha/hora de expiración")
-  private LocalDateTime expiresAt;
+  @Schema(description = "Fecha/hora de expiración (UTC)")
+  private OffsetDateTime expiresAt;
 
   @Schema(description = "Usos máximos permitidos (null = ilimitado)")
   private Integer maxUses;

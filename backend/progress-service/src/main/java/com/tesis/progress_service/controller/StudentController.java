@@ -6,6 +6,7 @@ import com.tesis.progress_service.service.AchievementService;
 import com.tesis.progress_service.service.ProgressQueryService;
 import com.tesis.progress_service.util.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -67,5 +68,24 @@ public class StudentController {
   public ResponseEntity<List<AchievementDto>> achievements() {
     UUID studentId = SecurityUtils.getCurrentUserIdOrThrow();
     return ResponseEntity.ok(achievementService.listForStudent(studentId));
+  }
+
+  @Operation(summary = "Serie diaria de MIS intentos", description = """
+      Devuelve la serie diaria de intentos/correctos para el usuario autenticado.
+      Parámetros:
+      - curriculumId (UUID, opcional)
+      - range: today | 7d | 14d (por defecto 7d)
+      """)
+  @ApiResponse(responseCode = "200", description = "OK", content = @Content(array = @ArraySchema(schema = @Schema(implementation = DailyStatDto.class))))
+  @ApiResponse(responseCode = "401", description = "No autorizado")
+  @GetMapping("/series")
+  @PreAuthorize("hasAnyRole('STUDENT','TEACHER','ADMIN')")
+  public ResponseEntity<List<DailyStatDto>> mySeries(
+      @RequestParam(name = "curriculumId", required = false) UUID curriculumId,
+      @RequestParam(name = "range", required = false, defaultValue = "7d") String range) {
+
+    var me = SecurityUtils.getCurrentUserIdOrThrow();
+    var series = progressQueryService.getDailySeriesForStudent(me, curriculumId, range);
+    return ResponseEntity.ok(series);
   }
 }

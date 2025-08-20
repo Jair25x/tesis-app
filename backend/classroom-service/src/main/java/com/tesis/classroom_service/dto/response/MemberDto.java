@@ -18,4 +18,6 @@ public class MemberDto {
   private UUID userUuid;
   private MemberRole role;
   private LocalDateTime joinedAt;
+  private String fullName; // opcional, se puede poblar luego
+  private String avatarUrl; // opcional
 }

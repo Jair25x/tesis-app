@@ -3,6 +3,7 @@ package com.tesis.auth_service.config;
 import com.tesis.auth_service.security.jwt.AuthEntryPointJwt;
 import com.tesis.auth_service.security.jwt.AuthTokenFilter;
 import com.tesis.auth_service.security.jwt.JwtTokenProvider;
+import com.tesis.auth_service.security.jwt.S2SJwtFilter;
 import com.tesis.auth_service.service.UserDetailsServiceImpl;
 
 import org.springframework.context.annotation.Bean;
@@ -79,7 +80,6 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -87,18 +87,17 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(unauthorizedHandler))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // 1. Permite acceso a las rutas en la lista blanca sin autenticación
                         .requestMatchers(AUTH_WHITELIST).permitAll()
-                        // 2. Todas las demás solicitudes deben estar autenticadas
                         .anyRequest().authenticated());
 
-        // Agrega tu AuthenticationProvider
         http.authenticationProvider(authenticationProvider());
-        // Agrega el filtro JWT antes del filtro de autenticación de usuario/contraseña
-        // Este filtro solo se activará si la request no fue permitida por
-        // `AUTH_WHITELIST`
+
+        // 1) S2S primero
+        http.addFilterBefore(new S2SJwtFilter(jwtTokenProvider), UsernamePasswordAuthenticationFilter.class);
+        // 2) JWT de usuario después
         http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
+
 }

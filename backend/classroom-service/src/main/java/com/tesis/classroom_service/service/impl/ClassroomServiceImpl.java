@@ -1,3 +1,4 @@
+// src/main/java/com/tesis/classroom_service/service/impl/ClassroomServiceImpl.java
 package com.tesis.classroom_service.service.impl;
 
 import com.tesis.classroom_service.dto.request.CreateClassroomRequest;
@@ -8,6 +9,7 @@ import com.tesis.classroom_service.exception.ForbiddenException;
 import com.tesis.classroom_service.exception.NotFoundException;
 import com.tesis.classroom_service.model.Classroom;
 import com.tesis.classroom_service.model.ClassroomMember;
+import com.tesis.classroom_service.model.enums.MemberRole;
 import com.tesis.classroom_service.repository.ClassroomMemberRepository;
 import com.tesis.classroom_service.repository.ClassroomRepository;
 import com.tesis.classroom_service.service.ClassroomService;
@@ -15,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -43,6 +46,18 @@ public class ClassroomServiceImpl implements ClassroomService {
         .build();
 
     c = classroomRepository.save(c);
+
+    // ⬇️ Inserta fila del OWNER como miembro formal del aula
+    if (!memberRepository.existsByClassroomIdAndUserUuid(c.getId(), ownerUuid)) {
+      ClassroomMember owner = ClassroomMember.builder()
+          .classroomId(c.getId())
+          .userUuid(ownerUuid)
+          .role(MemberRole.OWNER)
+          .joinedAt(LocalDateTime.now())
+          .build();
+      memberRepository.save(owner);
+    }
+
     return toDetailDto(c);
   }
 
@@ -90,7 +105,6 @@ public class ClassroomServiceImpl implements ClassroomService {
     Classroom c = classroomRepository.findById(classroomId)
         .orElseThrow(() -> new NotFoundException("Aula no encontrada"));
 
-    // visible si es owner o miembro
     boolean isOwner = c.getOwnerUuid().equals(requesterUuid);
     boolean isMember = memberRepository.existsByClassroomIdAndUserUuid(classroomId, requesterUuid);
 
@@ -115,8 +129,7 @@ public class ClassroomServiceImpl implements ClassroomService {
     return memberRepository.findAllByUserUuid(studentUuid).stream()
         .map(ClassroomMember::getClassroomId)
         .distinct()
-        .map(id -> classroomRepository.findById(id)
-            .orElse(null))
+        .map(id -> classroomRepository.findById(id).orElse(null))
         .filter(c -> c != null && Boolean.TRUE.equals(c.getActive()))
         .sorted(Comparator.comparing(Classroom::getCreatedAt).reversed())
         .map(c -> toSummaryDto(c, memberRepository.countByClassroomId(c.getId())))
@@ -155,7 +168,7 @@ public class ClassroomServiceImpl implements ClassroomService {
         .description(c.getDescription())
         .grade(c.getGrade())
         .subject(c.getSubject())
-        .membersCount(membersCount)
+        .membersCount(membersCount) // incluye OWNER, co-teachers y students
         .active(Boolean.TRUE.equals(c.getActive()))
         .build();
   }

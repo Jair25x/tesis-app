@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 import org.springframework.data.repository.query.Param;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -30,14 +30,15 @@ public interface JoinCodeRepository extends JpaRepository<JoinCode, UUID> {
    *         AuditableEntity,
    *         lo manejamos a nivel de negocio si fuera necesario.
    */
-  @Modifying(clearAutomatically = true, flushAutomatically = true)
+  @Modifying
   @Query("""
-        update JoinCode jc
-           set jc.usedCount = jc.usedCount + 1
-         where jc.id = :id
-           and jc.revoked = false
-           and jc.expiresAt > :now
-           and (jc.maxUses is null or jc.usedCount < jc.maxUses)
+        update JoinCode j
+           set j.usedCount = j.usedCount + 1
+         where j.id = :id
+           and (j.maxUses is null or j.usedCount < j.maxUses)
+           and j.revoked = false
+           and j.expiresAt > :now
       """)
-  int tryConsume(@Param("id") UUID id, @Param("now") LocalDateTime now);
+  int tryConsume(@Param("id") UUID id, @Param("now") Instant now);
+  
 }

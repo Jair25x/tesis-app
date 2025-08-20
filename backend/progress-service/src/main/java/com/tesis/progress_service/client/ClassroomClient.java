@@ -6,4 +6,8 @@ import java.util.UUID;
 
 public interface ClassroomClient {
   List<UUID> listMemberIds(UUID classroomId);
+
+  default boolean isMember(UUID classroomId, UUID studentId) {
+    return listMemberIds(classroomId).contains(studentId);
+  }
 }
