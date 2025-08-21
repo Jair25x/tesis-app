@@ -11,6 +11,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.web.reactive.function.client.ClientRequest;
+import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
@@ -58,5 +60,30 @@ public class WebClientConfig {
     return WebClient.builder()
         .clientConnector(connector())
         .exchangeStrategies(strategies());
+  }
+
+  @Bean
+  @Qualifier("classroomWebClient")
+  public WebClient classroomWebClient(
+      WebClient.Builder builder, // usa el PRIMARY que ya configuraste (timeouts, etc.)
+      @Value("${clients.classroom.base-url}") String baseUrl) {
+    ExchangeFilterFunction authForwarder = (request, next) -> {
+      ClientRequest.Builder rb = ClientRequest.from(request);
+      // Copia el Authorization: Bearer ... del request HTTP entrante
+      var attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+      if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes sra) {
+        var http = sra.getRequest();
+        var auth = http.getHeader(org.springframework.http.HttpHeaders.AUTHORIZATION);
+        if (auth != null && !auth.isBlank()) {
+          rb.header(org.springframework.http.HttpHeaders.AUTHORIZATION, auth);
+        }
+      }
+      return next.exchange(rb.build());
+    };
+
+    return builder
+        .baseUrl(baseUrl) // ej: http://classroom-service:8084 (docker) / http://localhost:8084 (local)
+        .filter(authForwarder)
+        .build();
   }
 }

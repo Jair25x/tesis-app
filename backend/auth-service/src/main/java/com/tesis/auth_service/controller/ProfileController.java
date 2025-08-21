@@ -42,7 +42,7 @@ public class ProfileController {
   @ApiResponse(responseCode = "400", description = "Solicitud inválida", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   @ApiResponse(responseCode = "403", description = "Prohibido", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   @GetMapping("/profiles")
-  @PreAuthorize("hasAuthority('S2S') or hasRole('ADMIN')")
+  @PreAuthorize("hasAnyAuthority('S2S') or hasRole('INTERNAL') or hasRole('ADMIN')")
   public ResponseEntity<List<PublicProfileDto>> getProfiles(@RequestParam(name = "ids") List<String> idsParam) {
 
     List<UUID> ids = idsParam.stream()

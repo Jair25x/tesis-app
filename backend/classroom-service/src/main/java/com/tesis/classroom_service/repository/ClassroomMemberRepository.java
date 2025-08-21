@@ -31,4 +31,6 @@ public interface ClassroomMemberRepository extends JpaRepository<ClassroomMember
   Page<ClassroomMember> findAllByClassroomIdAndRole(UUID classroomId, MemberRole role, Pageable pageable);
 
   boolean existsByClassroomIdAndUserUuidAndRole(UUID classroomId, UUID userUuid, MemberRole role);
+
+  List<ClassroomMember> findAllByClassroomIdAndRole(UUID classroomId, MemberRole role);
 }
