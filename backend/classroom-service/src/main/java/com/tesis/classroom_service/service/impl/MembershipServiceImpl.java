@@ -114,6 +114,25 @@ public class MembershipServiceImpl implements MembershipService {
   }
 
   // ----------------------------------------
+  // SELF-SERVICE: salir del aula (idempotente)
+  // ----------------------------------------
+  @Override
+  @Transactional
+  public void leave(UUID classroomId, UUID requesterUuid) {
+    Classroom c = classroomRepository.findById(classroomId)
+        .orElseThrow(() -> new NotFoundException("Aula no encontrada"));
+
+    // El OWNER no puede salirse: debe transferir la propiedad antes.
+    if (c.getOwnerUuid().equals(requesterUuid)) {
+      throw new ForbiddenException("El owner no puede salir del aula; transfiere la propiedad primero");
+    }
+
+    // Idempotente: si no hay membresía, no lanza error (204 desde el controller).
+    memberRepository.findByClassroomIdAndUserUuid(classroomId, requesterUuid)
+        .ifPresent(memberRepository::delete);
+  }
+
+  // ----------------------------------------
   // PÚBLICO (para integrantes) con expand + search
   // ----------------------------------------
   @Override
@@ -138,7 +157,7 @@ public class MembershipServiceImpl implements MembershipService {
       Page<MemberDto> mapped = raw.map(m -> {
         if (staffOrAdmin)
           return toDtoRaw(m);
-        // estudiante: ocultar roles salvo OWNER
+        // Estudiante: ocultar roles salvo OWNER
         MemberRole role = m.getUserUuid().equals(c.getOwnerUuid()) ? MemberRole.OWNER : MemberRole.STUDENT;
         return MemberDto.builder()
             .userUuid(m.getUserUuid())
@@ -147,7 +166,7 @@ public class MembershipServiceImpl implements MembershipService {
             .build();
       });
 
-      // Enriquecer sólo la página si expand=true
+      // Enriquecer sólo la página si expand=true (mejora UX sin romper si auth falla)
       if (expandProfile && !mapped.isEmpty()) {
         List<UUID> ids = mapped.getContent().stream().map(MemberDto::getUserUuid).toList();
         var profiles = profileCacheService.getProfiles(ids);
@@ -163,7 +182,7 @@ public class MembershipServiceImpl implements MembershipService {
       return PageResponse.of(mapped);
     }
 
-    // Caso 2: CON search → filtra por displayName (en mem) y pagina
+    // Caso 2: CON search → filtra por displayName (en memoria) y pagina
     List<ClassroomMember> all = memberRepository.findAllByClassroomId(classroomId);
     List<UUID> ids = all.stream().map(ClassroomMember::getUserUuid).toList();
     var profiles = profileCacheService.getProfiles(ids);

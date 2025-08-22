@@ -34,7 +34,7 @@ public class MembershipController {
 
   // ----------------- PRIVADO (roles reales) -----------------
 
-  @Operation(summary = "Listar miembros del aula (privado)", description = "Visible para OWNER (o ADMIN). Soporta paginación, orden y filtro por rol.", parameters = {
+  @Operation(summary = "Listar miembros del aula (privado)", description = "Visible para OWNER/CO_TEACHER (o ADMIN). Soporta paginación, orden y filtro por rol.", parameters = {
       @Parameter(name = "page", in = ParameterIn.QUERY, description = "Página (0..N)", schema = @Schema(defaultValue = "0")),
       @Parameter(name = "size", in = ParameterIn.QUERY, description = "Tamaño de página", schema = @Schema(defaultValue = "20")),
       @Parameter(name = "sort", in = ParameterIn.QUERY, description = "Propiedad,dir (p.ej. joinedAt,desc)", schema = @Schema(defaultValue = "joinedAt,desc")),
@@ -75,6 +75,27 @@ public class MembershipController {
       @PathVariable UUID userUuid) {
     UUID ownerUuid = SecurityUtils.getCurrentUserIdOrThrow();
     membershipService.removeMember(classroomId, ownerUuid, userUuid);
+    return ResponseEntity.noContent().build();
+  }
+
+  // ----------------- SELF-SERVICE: salir del aula -----------------
+
+  @Operation(summary = "Salir del aula (self-service)", description = """
+        Elimina tu propia membresía en el aula.
+        Respuestas:
+        - 204: ok (idempotente; también si ya no eras miembro).
+        - 403: si eres OWNER del aula (debes transferir la propiedad antes).
+        - 404: si el aula no existe.
+      """)
+  @ApiResponse(responseCode = "204", description = "Salida exitosa")
+  @ApiResponse(responseCode = "401", description = "No autenticado")
+  @ApiResponse(responseCode = "403", description = "Prohibido (OWNER no puede salir)")
+  @ApiResponse(responseCode = "404", description = "Aula no encontrada")
+  @PreAuthorize("hasAnyRole('STUDENT','TEACHER','ADMIN')")
+  @DeleteMapping("/me")
+  public ResponseEntity<Void> leave(@PathVariable UUID classroomId) {
+    UUID me = SecurityUtils.getCurrentUserIdOrThrow();
+    membershipService.leave(classroomId, me);
     return ResponseEntity.noContent().build();
   }
 
