@@ -1,10 +1,15 @@
-import React, { useMemo, useRef } from "react";
+// src/pages/student/StudentDashboard.tsx
+import React, { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/useAuth";
 import { useOverview } from "../../hooks/progress/useOverview";
 import { useStreak } from "../../hooks/progress/useStreak";
 import { useAchievements as useAchievementsQ } from "../../hooks/progress/useAchievements";
 import { showAchievementToast } from "../../utils/showAchievementToast";
+
+// 👇 nuevos imports
+import { useMySeries } from "../../hooks/progress/useMySeries";
+import MyDailySeriesChart from "../../components/student/MyDailySeriesChart";
 
 type StatCardProps = {
   label: string;
@@ -60,6 +65,10 @@ export default function StudentDashboard() {
     isLoading: loadingAch,
     isError: errorAch,
   } = useAchievementsQ();
+
+  // Serie diaria (nuevo)
+  const [range, setRange] = useState<"today" | "7d" | "14d">("7d");
+  const { data: series, isLoading: seriesLoading } = useMySeries(range);
 
   // Toast por logro nuevo (una sola vez)
   const lastAchRef = useRef<string | null>(null);
@@ -137,6 +146,27 @@ export default function StudentDashboard() {
               <p className="text-sm">Sin datos por ahora.</p>
             )}
           </div>
+
+          {/* 👇 Nuevo: Serie diaria con selector de rango */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">
+              Tu actividad reciente
+            </h2>
+            <div className="flex gap-2 text-sm">
+              {(["today", "7d", "14d"] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRange(r)}
+                  className={`px-2 py-1 rounded border dark:border-gray-700 ${
+                    range === r ? "bg-gray-100 dark:bg-gray-700" : ""
+                  }`}
+                >
+                  {r === "today" ? "Hoy" : r}
+                </button>
+              ))}
+            </div>
+          </div>
+          <MyDailySeriesChart data={series} loading={seriesLoading} />
 
           {/* Sugerencias IA (placeholder tuyo) */}
           <div>

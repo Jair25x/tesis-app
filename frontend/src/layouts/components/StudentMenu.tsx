@@ -15,14 +15,17 @@ export default function StudentMenu({
 }: StudentMenuProps) {
   const location = useLocation();
 
+  const isSectionActive = location.pathname.startsWith("/student");
+
+  const itemClass =
+    "block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700";
+
   return (
     <div className="relative">
       <button
         className={cn(
           "w-full text-left px-4 py-2 rounded-md text-sm font-medium flex justify-between items-center transition hover:bg-gray-200 dark:hover:bg-gray-700",
-          location.pathname.startsWith("/student")
-            ? "bg-green-500 text-white"
-            : ""
+          isSectionActive ? "bg-green-500 text-white" : ""
         )}
         onClick={() => setStudentOpen((prev) => !prev)}
       >
@@ -34,31 +37,48 @@ export default function StudentMenu({
         <div className="ml-4 mt-1 space-y-1">
           <Link
             to="/student/dashboard"
-            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+            className={itemClass}
             onClick={() => setSidebarOpen(false)}
           >
             🏠 Dashboard
           </Link>
 
-          {/* 🔹 Solo launcher del mapa */}
+          {/* Launcher del mapa */}
           <Link
             to="/student/roadmap"
-            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+            className={itemClass}
             onClick={() => setSidebarOpen(false)}
           >
             🗺️ Mapa de estudio
           </Link>
 
+          {/* 🔹 NUEVOS: Aulas */}
+          <Link
+            to="/student/classrooms"
+            className={itemClass}
+            onClick={() => setSidebarOpen(false)}
+          >
+            🏫 Mis aulas
+          </Link>
+          <Link
+            to="/student/join"
+            className={itemClass}
+            onClick={() => setSidebarOpen(false)}
+          >
+            ➕ Unirme a un aula
+          </Link>
+
           <Link
             to="/student/achievements"
-            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+            className={itemClass}
             onClick={() => setSidebarOpen(false)}
           >
             🏆 Logros
           </Link>
+
           <Link
             to="/student/diagnostic"
-            className="block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+            className={itemClass}
             onClick={() => setSidebarOpen(false)}
           >
             📋 Test de Diagnóstico

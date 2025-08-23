@@ -1,7 +1,7 @@
+// src/pages/user/ChangePassword.tsx
 import { useState } from "react";
-import { changePassword } from "../../services/profileService";
+import { useMe } from "../../hooks/useMe";
 import type { ChangePasswordDto } from "../../types/user/ProfileTypes";
-import { useApi } from "../../hooks/useApi";
 
 export default function ChangePassword() {
   const [form, setForm] = useState<ChangePasswordDto>({
@@ -10,7 +10,7 @@ export default function ChangePassword() {
   });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const { execute: changePasswordApi /*, isLoading*/ } = useApi(changePassword);
+  const { changeMyPassword } = useMe();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -21,7 +21,7 @@ export default function ChangePassword() {
     setError("");
     setSuccess("");
     try {
-      await changePasswordApi(form);
+      await changeMyPassword(form);
       setSuccess("✅ Contraseña cambiada correctamente.");
       setForm({ currentPassword: "", newPassword: "" });
     } catch (err) {

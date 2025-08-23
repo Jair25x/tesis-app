@@ -1,12 +1,35 @@
+// src/context/AuthProvider.tsx
 import React, { useState, useEffect } from "react";
 import { AuthContext, type User } from "./AuthContext";
-import { logout as logoutRequest } from "../services/authService";
+import {
+  logout as logoutRequest,
+  me as meRequest,
+} from "../services/authService";
 import LoadingScreen from "../components/LoadingScreen";
+import { bindAuthTokenAccessors } from "../services/api";
+import { useQueryClient } from "@tanstack/react-query";
+
+function readToken(where: Storage, key: string) {
+  try {
+    return where.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeToken(where: Storage, key: string, val?: string) {
+  try {
+    if (val == null) where.removeItem(key);
+    else where.setItem(key, val);
+  } catch {
+    /* noop */
+  }
+}
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const qc = useQueryClient();
 
   const [impersonateStudentView, setImpersonateStudentView] = useState<boolean>(
     () => {
@@ -16,37 +39,89 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   );
 
+  // ¿Dónde están los tokens ahora mismo?
+  const pickStorage = () => {
+    const hasLocal = !!readToken(localStorage, "accessToken");
+    const hasSession = !!readToken(sessionStorage, "accessToken");
+    if (hasLocal) return localStorage;
+    if (hasSession) return sessionStorage;
+    // Por defecto, usa sessionStorage
+    return sessionStorage;
+  };
+
+  // Bindings para api.ts (refresh)
+  useEffect(() => {
+    bindAuthTokenAccessors({
+      getAccessToken: () =>
+        readToken(localStorage, "accessToken") ||
+        readToken(sessionStorage, "accessToken"),
+      getRefreshToken: () =>
+        readToken(localStorage, "refreshToken") ||
+        readToken(sessionStorage, "refreshToken"),
+      setTokens: ({ accessToken, refreshToken }) => {
+        const store = pickStorage();
+        writeToken(store, "accessToken", accessToken);
+        if (refreshToken != null)
+          writeToken(store, "refreshToken", refreshToken);
+      },
+      onHardLogout: () => {
+        // Si el refresh falla o no existe -> limpiar y forzar login
+        hardLogout();
+        if (!location.pathname.startsWith("/login")) {
+          location.replace("/login");
+        }
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Bootstrap: si hay tokens, trata de cargar /me (evita “sesiones zombis”)
   useEffect(() => {
     let canceled = false;
+    const boot = async () => {
+      const at =
+        readToken(localStorage, "accessToken") ||
+        readToken(sessionStorage, "accessToken");
+      const rt =
+        readToken(localStorage, "refreshToken") ||
+        readToken(sessionStorage, "refreshToken");
 
-    const bootstrap = async () => {
-      try {
-        const token =
-          localStorage.getItem("accessToken") ||
-          sessionStorage.getItem("accessToken");
-        const storedUser =
-          localStorage.getItem("user") || sessionStorage.getItem("user");
-
-        if (token && storedUser) {
-          if (!canceled) {
-            setUser(JSON.parse(storedUser));
-            setIsAuthenticated(true);
-          }
-        } else {
-          if (!canceled) {
-            setUser(null);
-            setIsAuthenticated(false);
-          }
+      if (!at || !rt) {
+        if (!canceled) {
+          setUser(null);
+          setIsAuthenticated(false);
+          setLoading(false);
         }
+        return;
+      }
+
+      try {
+        const profile = await meRequest();
+        if (canceled) return;
+        const u: User = {
+          id: profile.id,
+          username: profile.username,
+          email: profile.email,
+          nombres: profile.nombres,
+          apellidos: profile.apellidos,
+          roles: profile.roles,
+        };
+        setUser(u);
+        setIsAuthenticated(true);
+        // Siembra caché para useMe()
+        qc.setQueryData(["me"], profile);
+      } catch {
+        // /me falló -> sesión inválida
+        hardLogout();
       } finally {
         if (!canceled) setLoading(false);
       }
     };
-
-    void bootstrap();
+    void boot();
     return () => {
       canceled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -63,34 +138,45 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     remember: boolean
   ) => {
     const storage = remember ? localStorage : sessionStorage;
-    storage.setItem("accessToken", accessToken);
-    storage.setItem("refreshToken", refreshToken);
+    writeToken(storage, "accessToken", accessToken);
+    writeToken(storage, "refreshToken", refreshToken);
     storage.setItem("user", JSON.stringify(userData));
     setUser(userData);
     setIsAuthenticated(true);
+    // También siembra el perfil en caché (opcional, si lo tienes a mano)
+    // qc.setQueryData(["me"], { ...mapa a UserProfile si lo tuvieras });
   };
 
-  const logout = async () => {
-    const refreshToken =
-      localStorage.getItem("refreshToken") ||
-      sessionStorage.getItem("refreshToken");
-    if (refreshToken) {
+  const hardLogout = () => {
+    // Siempre limpia ambos storages
+    ["localStorage", "sessionStorage"].forEach((name) => {
+      const s = name === "localStorage" ? localStorage : sessionStorage;
+      writeToken(s, "accessToken", undefined);
+      writeToken(s, "refreshToken", undefined);
       try {
-        await logoutRequest(refreshToken);
-      } catch (error) {
-        console.error("Error al cerrar sesión:", error);
+        s.removeItem("user");
+        s.removeItem("impersonateStudentView");
+      } catch {
+        /* noop */
       }
-    }
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("user");
-    sessionStorage.removeItem("accessToken");
-    sessionStorage.removeItem("refreshToken");
-    sessionStorage.removeItem("user");
-    sessionStorage.removeItem("impersonateStudentView");
+    });
     setUser(null);
     setIsAuthenticated(false);
     setImpersonateStudentView(false);
+    // Limpia caché relacionada
+    qc.removeQueries({ queryKey: ["me"] });
+  };
+
+  const logout = async () => {
+    const rt =
+      readToken(localStorage, "refreshToken") ||
+      readToken(sessionStorage, "refreshToken");
+    try {
+      if (rt) await logoutRequest(rt);
+    } catch {
+      // Aunque falle el BE, limpiaremos el FE
+    }
+    hardLogout();
   };
 
   if (loading) return <LoadingScreen />;

@@ -12,6 +12,9 @@ import type {
   Achievement,
   AchievementDto,
   AchievementMeta,
+  DailyStat,
+  DailyStatDto,
+  SeriesRange,
 } from "../types/progress/ProgressTypes";
 
 // Overview
@@ -120,8 +123,32 @@ type AchievementCatalogDto = {
   points?: number;
 };
 
+// Serie diaria del estudiante autenticado
+export const getMySeries = async (
+  range: SeriesRange,
+  curriculumId?: string,
+  signal?: AbortSignal
+): Promise<DailyStat[]> => {
+  const params = new URLSearchParams();
+  params.set("range", range);
+  if (curriculumId) params.set("curriculumId", curriculumId);
+
+  const { data } = await api.get<DailyStatDto[]>(
+    `/progress/students/me/series?${params.toString()}`,
+    { signal }
+  );
+
+  // Normaliza por si el backend en el futuro cambia fecha → aquí mantenemos formato
+  return (Array.isArray(data) ? data : []).map((d) => ({
+    date: d.date,
+    attempts: d.attempts ?? 0,
+    correct: d.correct ?? 0,
+  }));
+};
+
 // 👇 Alias para que tus hooks actuales no rompan
 export {
+  getMySeries as getStudentDailySeries,
   getOverview as getMyOverview,
   getStreak as getMyStreak,
   getAchievements as getMyAchievements,

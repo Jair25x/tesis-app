@@ -1,32 +1,41 @@
-import { useAuth } from "../../context/useAuth";
+// src/pages/user/Dashboard.tsx
 import { Link } from "react-router-dom";
+import { useMe } from "../../hooks/useMe";
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { data: me, isLoading, error } = useMe();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-[#1e2a34]">
+        <p className="text-gray-600 dark:text-gray-300">Cargando…</p>
+      </div>
+    );
+  }
+  if (error || !me) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-[#1e2a34]">
+        <p className="text-red-500">No autorizado o error al cargar.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#1e2a34] text-black dark:text-white px-4 py-8 flex flex-col items-center">
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Header estilo perfil */}
         <div className="bg-white dark:bg-[#2d3b46] rounded-2xl shadow-lg p-8 flex flex-col items-center text-center">
-          {/* Avatar (puede reemplazarse por imagen real en el futuro) */}
           <div className="w-28 h-28 bg-gray-300 dark:bg-gray-600 rounded-full mb-4 shadow-inner" />
-
-          {/* Nombre del usuario */}
           <h1 className="text-3xl font-bold tracking-tight">
-            {user?.nombres} {user?.apellidos}
+            {me.nombres} {me.apellidos}
           </h1>
-
-          {/* Fecha de unión simulada */}
           <p className="text-sm text-gray-500 dark:text-gray-300 mt-1">
             Se unió en julio de 2025
           </p>
-
-          {/* Rol */}
           <p className="text-sm text-gray-500 dark:text-gray-300 mt-1">
             Rol:{" "}
             <span className="font-semibold text-gray-700 dark:text-white">
-              {user?.roles.join(", ")}
+              {me.roles.join(", ")}
             </span>
           </p>
         </div>
@@ -48,8 +57,6 @@ export default function Dashboard() {
     </div>
   );
 }
-
-// Componentes internos
 
 function DashboardCard({
   to,

@@ -2,39 +2,39 @@
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import { lazy, Suspense } from "react";
 
-/* Layouts */
+/* ───────────────────────────── Layouts ───────────────────────────── */
 import MainLayout from "../layouts/MainLayout";
 import SettingsLayout from "../layouts/SettingsLayout";
-import MinimalLayout from "../layouts/MinimalLayout"; // ✅ NUEVO
+import MinimalLayout from "../layouts/MinimalLayout";
 
-/* Páginas públicas */
+/* ───────────────────────────── Públicas ──────────────────────────── */
 import Login from "../pages/Login";
 import Register from "../pages/Register";
 import NotFound from "../pages/NotFound";
 
-/* Sección student */
+/* ───────────────────────────── Student core ──────────────────────── */
 import StudentDashboard from "../pages/student/StudentDashboard";
 import Practice from "../pages/student/Practice";
 import Roadmap from "../pages/student/Roadmap";
 import StudentProfile from "../pages/student/Profile";
 import Achievements from "../pages/student/Achievements";
 
-/* Perfil genérico y ajustes */
+/* ───────────────────────────── Perfil / Ajustes ──────────────────── */
 import ProfileDashboard from "../pages/user/ProfileDashboard";
 import Profile from "../pages/user/Profile";
 import EditProfile from "../pages/user/EditProfile";
 import ChangePassword from "../pages/user/ChangePassword";
 import ThemeSettings from "../pages/user/ThemeSettings";
 
-/* Protección y roles */
+/* ───────────────────────────── Guards ────────────────────────────── */
 import ProtectedRoute from "./ProtectedRoute";
 import PublicRoute from "./PublicRoute";
 import RoleRoute from "./RoleRoute";
 
-/* Skeleton */
+/* ───────────────────────────── Skeleton ──────────────────────────── */
 import LoadingScreen from "../components/LoadingScreen";
 
-/* Lazy-load admin */
+/* ───────────────────────────── Admin (lazy) ──────────────────────── */
 const AdminDashboard = lazy(() => import("../pages/admin/AdminDashboard"));
 const UserList = lazy(() => import("../pages/admin/users/UserList"));
 const EditUser = lazy(() => import("../pages/admin/users/EditUser"));
@@ -72,7 +72,7 @@ const StandardDetails = lazy(
   () => import("../pages/admin/standards/StandardDetails")
 );
 
-/* Objetivos de Aprendizaje */
+/* Objetivos de aprendizaje */
 const LearningObjectiveList = lazy(
   () => import("../pages/admin/learning-objectives/LearningObjectiveList")
 );
@@ -83,6 +83,7 @@ const LearningObjectiveDetails = lazy(
   () => import("../pages/admin/learning-objectives/LearningObjectiveDetails")
 );
 
+/* Ejercicios */
 const ExerciseList = lazy(() => import("../pages/admin/exercise/ExerciseList"));
 const ExerciseForm = lazy(() => import("../pages/admin/exercise/ExerciseForm"));
 const ExerciseDetails = lazy(
@@ -94,7 +95,7 @@ const HintList = lazy(() => import("../pages/admin/hints/HintList"));
 const HintForm = lazy(() => import("../pages/admin/hints/HintForm"));
 const HintDetails = lazy(() => import("../pages/admin/hints/HintDetails"));
 
-/* Pasos de solucion */
+/* Pasos de solución */
 const SolutionStepList = lazy(
   () => import("../pages/admin/solutionStep/SolutionStepList")
 );
@@ -105,28 +106,46 @@ const SolutionStepDetails = lazy(
   () => import("../pages/admin/solutionStep/SolutionStepDetails")
 );
 
-/* Test de Inicio */
-// const DiagnosticTest = lazy(() => import("../pages/student/DiagnosticTest"));
-
-/* Explorador Curricular */
+/* Explorador Curricular (no lazy) */
 import ExplorerDashboard from "../pages/admin/explorer/ExplorerDashboard";
 import { ExplorerProvider } from "../pages/admin/explorer/ExplorerProvider";
 
-/* Context Providers */
+/* ───────────────────────────── Providers ─────────────────────────── */
 import { StandardProvider } from "../context/StandardProvider";
 import { CompetencyProvider } from "../context/CompetencyProvider";
 import { LearningObjectiveProvider } from "../context/LearningObjectiveProvider";
 import { ExerciseProvider } from "../context/ExerciseProvider";
 import { HintProvider } from "../context/HintProvider";
 import { SolutionStepProvider } from "../context/SolutionStepProvider";
-
-/* Student extras */
-import ExercisePlayerByHierarchy from "../pages/student/ExercisePlayerByHierarchy";
-import RoadmapLauncher from "../pages/student/RoadmapLauncher";
 import { CurriculumProvider } from "../context/CurriculumProvider";
 
+/* ───────────────────────────── Student extras ─────────────────────── */
+import ExercisePlayerByHierarchy from "../pages/student/ExercisePlayerByHierarchy";
+import RoadmapLauncher from "../pages/student/RoadmapLauncher";
+const TeacherDashboard = lazy(
+  () => import("../pages/teacher/TeacherDashboard")
+);
+
+/* ───────────────────────────── Nuevas páginas (Teacher/Student) ──── */
+/* Teacher */
+const TeacherClassrooms = lazy(() => import("../pages/teacher/Classrooms"));
+
+const TeacherClassroomDetail = lazy(
+  () => import("../pages/teacher/ClassroomDetail")
+);
+const ClassroomStudentDetailPage = lazy(
+  () => import("../pages/teacher/ClassroomStudentDetailPage")
+);
+/* Student (aulas) */
+const StudentClassrooms = lazy(
+  () => import("../pages/student/StudentClassroomsPage")
+);
+const JoinClassroom = lazy(() => import("../pages/student/JoinClassroomPage"));
+
 export const router = createBrowserRouter([
-  // ✅ BLOQUE PRINCIPAL (con sidebar / MainLayout)
+  /* ╔══════════════════════╗
+     ║   BLOQUE PRINCIPAL   ║  (con sidebar / MainLayout)
+     ╚══════════════════════╝ */
   {
     path: "/",
     element: (
@@ -139,6 +158,8 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <Navigate to="student/dashboard" replace /> },
+
+      /* ───────────── Rama Student ───────────── */
       {
         path: "student",
         element: (
@@ -148,30 +169,46 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "dashboard", element: <StudentDashboard /> },
-          // ✅ Practice con sidebar
+
+          // Practice con sidebar
           {
             path: "practice/:curriculumId/:competencyId/:standardId/:learningObjectiveId",
             element: <Practice />,
           },
+
+          // Roadmap
           { path: "roadmap", element: <RoadmapLauncher /> },
           { path: "roadmap/:id", element: <Roadmap /> },
+
+          // Aulas (estudiante)
+          {
+            path: "classrooms",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <StudentClassrooms />
+              </Suspense>
+            ),
+          },
+          {
+            path: "join",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <JoinClassroom />
+              </Suspense>
+            ),
+          },
+
+          // Otros
           { path: "profile", element: <StudentProfile /> },
           { path: "achievements", element: <Achievements /> },
-          // {
-          //   path: "diagnostic",
-          //   element: (
-          //     <Suspense fallback={<LoadingScreen />}>
-          //       <DiagnosticTest />
-          //     </Suspense>
-          //   ),
-          // },
+          // { path: "diagnostic", element: <Suspense fallback={<LoadingScreen />}><DiagnosticTest/></Suspense> },
         ],
       },
 
-      // Perfil general
+      /* ───────────── Perfil general ───────────── */
       { path: "profile-dashboard", element: <ProfileDashboard /> },
 
-      // Configuración
+      /* ───────────── Ajustes ───────────── */
       {
         path: "settings",
         element: <SettingsLayout />,
@@ -183,7 +220,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // Administración
+      /* ───────────── Rama Admin ───────────── */
       {
         path: "admin",
         element: (
@@ -201,6 +238,7 @@ export const router = createBrowserRouter([
             ),
           },
 
+          /* Explorador */
           {
             path: "explorer",
             element: (
@@ -210,7 +248,7 @@ export const router = createBrowserRouter([
             ),
           },
 
-          // Usuarios
+          /* Usuarios */
           {
             path: "users",
             element: (
@@ -228,13 +266,13 @@ export const router = createBrowserRouter([
             ),
           },
 
-          // Currículos
+          /* Currículos */
           { path: "curricula", element: <CurriculumList /> },
           { path: "curricula/new", element: <CurriculumForm /> },
           { path: "curricula/:id/edit", element: <CurriculumForm /> },
           { path: "curricula/:id/details", element: <CurriculumDetails /> },
 
-          // Competencias
+          /* Competencias */
           {
             path: "curricula/:curriculumId/competencies",
             element: (
@@ -276,7 +314,7 @@ export const router = createBrowserRouter([
             ),
           },
 
-          // Estándares
+          /* Estándares */
           {
             path: "curricula/:curriculumId/competencies/:competencyId/standards",
             element: (
@@ -318,7 +356,7 @@ export const router = createBrowserRouter([
             ),
           },
 
-          // Objetivos de aprendizaje
+          /* Objetivos de aprendizaje */
           {
             path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives",
             element: (
@@ -360,7 +398,7 @@ export const router = createBrowserRouter([
             ),
           },
 
-          // Ejercicios
+          /* Ejercicios */
           {
             path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises",
             element: (
@@ -402,7 +440,7 @@ export const router = createBrowserRouter([
             ),
           },
 
-          // Pistas
+          /* Pistas */
           {
             path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/hints",
             element: (
@@ -444,7 +482,7 @@ export const router = createBrowserRouter([
             ),
           },
 
-          // Solution Steps
+          /* Pasos de solución */
           {
             path: "curricula/:curriculumId/competencies/:competencyId/standards/:standardId/learning-objectives/:learningObjectiveId/exercises/:exerciseId/solution-steps",
             element: (
@@ -488,11 +526,57 @@ export const router = createBrowserRouter([
         ],
       },
 
+      /* ───────────── Rama Teacher ───────────── */
+      {
+        path: "teacher",
+        element: (
+          <RoleRoute roles={["ROLE_TEACHER", "ROLE_ADMIN"]}>
+            <Outlet />
+          </RoleRoute>
+        ),
+        children: [
+          {
+            path: "dashboard",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <TeacherDashboard />
+              </Suspense>
+            ),
+          },
+          {
+            path: "classrooms",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <TeacherClassrooms />
+              </Suspense>
+            ),
+          },
+          {
+            path: "classrooms/:id",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <TeacherClassroomDetail />
+              </Suspense>
+            ),
+          },
+          {
+            path: "classrooms/:classroomId/students/:studentId",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <ClassroomStudentDetailPage />
+              </Suspense>
+            ),
+          },
+        ],
+      },
+
       { path: "*", element: <NotFound /> },
     ],
   },
 
-  // ✅ RUTA TOP-LEVEL DEL REPRODUCTOR (sin sidebar)
+  /* ╔══════════════════════╗
+     ║   PLAYER sin sidebar  ║
+     ╚══════════════════════╝ */
   {
     path: "/student/exercises/:curriculumId/:competencyId/:standardId/:learningObjectiveId/:exerciseId",
     element: (
@@ -506,7 +590,7 @@ export const router = createBrowserRouter([
     ),
   },
 
-  // Rutas públicas
+  /* ───────────── Públicas ───────────── */
   {
     path: "/login",
     element: (

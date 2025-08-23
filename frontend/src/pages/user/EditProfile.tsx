@@ -1,33 +1,30 @@
+// src/pages/user/EditProfile.tsx
 import { useEffect, useState } from "react";
-import { getProfile, updateProfile } from "../../services/profileService";
-import { useApi } from "../../hooks/useApi";
-import type { UpdateProfileDto, UserProfile } from "../../types/user/ProfileTypes";
 import { useNavigate } from "react-router-dom";
+import type { UpdateProfileDto } from "../../types/user/ProfileTypes";
+import { useMe } from "../../hooks/useMe";
+import { showToast } from "../../utils/showToast";
 
 export default function EditProfile() {
+  const { data: me, isLoading, error, saveProfile } = useMe();
   const [form, setForm] = useState<UpdateProfileDto>({
     nombres: "",
     apellidos: "",
     email: "",
   });
-  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
 
-  const { execute: fetchProfile, error: fetchError } = useApi(getProfile);
-  const { execute: saveProfile} = useApi(updateProfile);
-
+  // Pre-cargar el formulario cuando llegue el perfil
   useEffect(() => {
-    fetchProfile()
-      .then((data: UserProfile) =>
-        setForm({
-          nombres: data.nombres,
-          apellidos: data.apellidos,
-          email: data.email,
-        })
-      )
-      .catch(console.error);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (me) {
+      setForm({
+        nombres: me.nombres,
+        apellidos: me.apellidos,
+        email: me.email,
+      });
+    }
+  }, [me]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -35,18 +32,42 @@ export default function EditProfile() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitting(true);
     try {
       await saveProfile(form);
-      alert("✅ Perfil actualizado con éxito");
-      navigate("/profile");
+      showToast.success("✅ Perfil actualizado con éxito");
+      navigate("/settings/edit-profile");
     } catch (err) {
       console.error(err);
-      setError("⚠️ Error al actualizar perfil");
+      showToast.error("⚠️ Error al actualizar perfil");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  if (fetchError)
-    return <p className="text-center mt-10 text-red-500">{fetchError}</p>;
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center w-full h-[60vh]">
+        <p className="text-gray-500 dark:text-gray-300">Cargando…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <p className="text-center mt-10 text-red-500">
+        Error al cargar el perfil.
+      </p>
+    );
+  }
+
+  if (!me) {
+    return (
+      <p className="text-center mt-10 text-red-500">
+        No autorizado o sesión expirada.
+      </p>
+    );
+  }
 
   return (
     <div className="flex items-center justify-center px-4 py-10 min-h-[calc(100vh-100px)] bg-gray-50 dark:bg-[#1e2a34]">
@@ -54,12 +75,6 @@ export default function EditProfile() {
         <h1 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white text-center">
           ✏️ Editar Perfil
         </h1>
-
-        {error && (
-          <p className="text-red-500 bg-red-100 dark:bg-red-800/20 p-2 rounded mb-4 text-sm text-center">
-            {error}
-          </p>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -104,9 +119,10 @@ export default function EditProfile() {
 
           <button
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-semibold transition"
+            disabled={submitting}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2 rounded-md font-semibold transition"
           >
-            Guardar cambios
+            {submitting ? "Guardando..." : "Guardar cambios"}
           </button>
         </form>
       </div>

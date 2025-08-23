@@ -1,28 +1,32 @@
 // src/pages/user/Profile.tsx
-import React, { useEffect, useState } from "react";
-import { getProfile } from "../../services/profileService";
-import { useApi } from "../../hooks/useApi";
-import type { UserProfile } from "../../types/user/ProfileTypes";
-import { useAuth } from "../../context/useAuth";
+import { useMe } from "../../hooks/useMe";
 
 export default function Profile() {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const { isAuthenticated } = useAuth();
-  const { execute, error } = useApi(getProfile);
+  const { data: profile, isLoading, error } = useMe();
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      execute().then(setProfile).catch(console.error);
-    }
-  }, [isAuthenticated, execute]);
-
-  if (!isAuthenticated) {
-    return <p className="text-center mt-12 text-red-500">No autorizado.</p>;
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center w-full h-[60vh]">
+        <p className="text-gray-500 dark:text-gray-300">Cargando perfil…</p>
+      </div>
+    );
   }
+
   if (error) {
-    return <p className="text-center mt-12 text-red-500">{error}</p>;
+    return (
+      <p className="text-center mt-12 text-red-500">
+        Error al cargar el perfil.
+      </p>
+    );
   }
-  if (!profile) return null;
+
+  if (!profile) {
+    return (
+      <p className="text-center mt-12 text-red-500">
+        No autorizado o sesión expirada.
+      </p>
+    );
+  }
 
   const rolesMap: Record<string, string> = {
     ROLE_STUDENT: "ESTUDIANTE",
@@ -31,7 +35,7 @@ export default function Profile() {
   };
 
   return (
-    <div className="flex items-center justify-center w-full h-screen bg-gray-50 dark:bg-[#1e2a34]">
+    <div className="flex items-center justify-center w-full min-h-[70vh] bg-gray-50 dark:bg-[#1e2a34]">
       <div className="w-full max-w-xl bg-white dark:bg-[#2d3b46] p-8 mx-4 rounded-2xl shadow-xl">
         <div className="flex flex-col items-center gap-4 mb-6">
           <img

@@ -117,3 +117,18 @@ export type AchievementMeta = {
   points?: number;
 };
 
+// --- Serie diaria (nuevo) ---
+export type SeriesRange = "today" | "7d" | "14d";
+
+export interface DailyStatDto {
+  date: string;
+  attempts: number;
+  correct: number;
+  activeStudents?: number; // ⬅️ nuevo opcional
+}
+export interface DailyStat {
+  date: string;
+  attempts: number;
+  correct: number;
+  activeStudents?: number; // ⬅️
+}

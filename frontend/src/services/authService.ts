@@ -1,13 +1,20 @@
+// src/services/authService.ts
 import api from "./api";
+import type {
+  UserProfile,
+  UpdateProfileDto,
+  ChangePasswordDto,
+} from "../types/user/ProfileTypes";
+import type { JwtResponse } from "../types/user/JwtResponse";
 
-// Interfaces used by the authentication service
+// Peticiones simples
 export interface RegisterRequest {
   username: string;
   password: string;
   email: string;
   nombres: string;
   apellidos: string;
-  role?: string[]; // Opcional, por defecto es ROLE_STUDENT
+  role?: string[]; // opcional; BE setea ROLE_STUDENT por defecto si no viene
 }
 
 export interface LoginRequest {
@@ -15,31 +22,49 @@ export interface LoginRequest {
   password: string;
 }
 
-export interface JwtResponse {
-  token: string;
-  refreshToken: string;
-  type: string;
-  id: number;
-  username: string;
-  roles: string[];
-  email: string;
-  nombres: string;
-  apellidos: string;
-}
-
-// Register a new user
+// ---- Público ----
 export const register = async (data: RegisterRequest): Promise<string> => {
-  const response = await api.post("/auth/register", data);
-  return response.data;
+  const r = await api.post("/auth/register", data);
+  return r.data;
 };
 
-// Authenticate the user and return JWT data
 export const login = async (data: LoginRequest): Promise<JwtResponse> => {
-  const response = await api.post("/auth/login", data);
-  return response.data;
+  const r = await api.post<JwtResponse>("/auth/login", data);
+  return r.data;
+};
+
+export const getRoles = async (): Promise<string[]> => {
+  const r = await api.get<string[]>("/auth/roles");
+  return r.data;
+};
+
+export const refreshToken = async (
+  refreshToken: string
+): Promise<JwtResponse> => {
+  const r = await api.post<JwtResponse>("/auth/refresh-token", {
+    refreshToken,
+  });
+  return r.data;
 };
 
 export const logout = async (refreshToken: string): Promise<void> => {
   await api.post("/auth/logout", { refreshToken });
 };
 
+// ---- Autenticado ----
+export const me = async (): Promise<UserProfile> => {
+  const r = await api.get<UserProfile>("/auth/me");
+  return r.data;
+};
+
+export const updateMe = async (data: UpdateProfileDto): Promise<string> => {
+  const r = await api.put<string>("/auth/me", data);
+  return r.data;
+};
+
+export const changePassword = async (
+  data: ChangePasswordDto
+): Promise<string> => {
+  const r = await api.put<string>("/auth/change-password", data);
+  return r.data;
+};

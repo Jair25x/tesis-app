@@ -1,8 +1,10 @@
-import { useState } from "react";
+// src/pages/Register.tsx
+import { useState, useMemo } from "react";
 import { register } from "../services/authService";
 import { useNavigate } from "react-router-dom";
 import type { TypedAxiosError } from "../types/shared/AxiosError";
 
+import { useRoles } from "../hooks/useRoles";
 import AuthFormWrapper from "../components/auth/AuthFormWrapper";
 import AuthInput from "../components/auth/AuthInput";
 import AuthSelect from "../components/auth/AuthSelect";
@@ -12,6 +14,16 @@ import AuthError from "../components/auth/AuthError";
 
 export default function Register() {
   const navigate = useNavigate();
+  const { data: rolesFromApi, isLoading: loadingRoles, isError } = useRoles();
+
+  const roleOptions = useMemo(() => {
+    const base =
+      rolesFromApi && rolesFromApi.length
+        ? rolesFromApi
+        : ["ROLE_STUDENT", "ROLE_TEACHER"];
+    // NO expongas ROLE_ADMIN en registro público
+    return base.filter((r) => r === "ROLE_STUDENT" || r === "ROLE_TEACHER");
+  }, [rolesFromApi]);
 
   const [formData, setFormData] = useState({
     username: "",
@@ -19,7 +31,7 @@ export default function Register() {
     email: "",
     nombres: "",
     apellidos: "",
-    role: "ROLE_STUDENT",
+    role: roleOptions[0] ?? "ROLE_STUDENT",
   });
 
   const [error, setError] = useState("");
@@ -92,10 +104,11 @@ export default function Register() {
             name="role"
             value={formData.role}
             onChange={handleChange}
-            options={[
-              { value: "ROLE_STUDENT", label: "Soy estudiante" },
-              { value: "ROLE_TEACHER", label: "Soy docente" },
-            ]}
+            disabled={loadingRoles && !isError}
+            options={roleOptions.map((r) => ({
+              value: r,
+              label: r === "ROLE_TEACHER" ? "Soy docente" : "Soy estudiante",
+            }))}
           />
           <AuthButton type="submit">CREAR CUENTA</AuthButton>
         </form>

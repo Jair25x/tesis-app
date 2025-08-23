@@ -1,34 +1,32 @@
 // src/components/auth/AuthSelect.tsx
-import type { ChangeEventHandler } from "react";
+import type { ChangeEvent } from "react";
 
-interface Option {
-  value: string;
-  label: string;
-}
-
-interface AuthSelectProps {
+export interface AuthSelectProps {
   name: string;
   value: string;
-  onChange: ChangeEventHandler<HTMLSelectElement>;
-  options: Option[];
+  options: { value: string; label: string }[];
+  onChange: (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  disabled?: boolean; // 👈 NUEVO
 }
 
 export default function AuthSelect({
   name,
   value,
-  onChange,
   options,
+  onChange,
+  disabled = false, // 👈 por defecto
 }: AuthSelectProps) {
   return (
     <select
       name={name}
       value={value}
       onChange={onChange}
-      className="w-full px-4 py-2 rounded bg-gray-200 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400"
+      disabled={disabled}
+      className="w-full p-2 rounded bg-white text-black"
     >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
         </option>
       ))}
     </select>

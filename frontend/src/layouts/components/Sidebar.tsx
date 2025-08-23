@@ -1,6 +1,6 @@
 // src/layouts/components/Sidebar.tsx
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/useAuth";
 import { useStudentView } from "../../context/useStudentView";
 import { cn } from "../../utils/cn";
@@ -8,6 +8,7 @@ import { X } from "lucide-react";
 import StudentMenu from "./StudentMenu";
 import AdminMenu from "./AdminMenu";
 import SettingsMenu from "./SettingsMenu";
+import TeacherMenu from "./TeacherMenu"; // 👈 nuevo
 
 interface SidebarProps {
   sidebarOpen: boolean;
@@ -15,20 +16,22 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
+  const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuth();
   const { impersonateStudentView, toggleStudentView, isStudentView } =
     useStudentView();
   const location = useLocation();
   const roles = user?.roles || [];
+  const isTeacher =
+    roles.includes("ROLE_TEACHER") || roles.includes("ROLE_ADMIN");
 
+  const [teacherOpen, setTeacherOpen] = useState(true);
   const [studentOpen, setStudentOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
-    if (isStudentView) {
-      setStudentOpen(true);
-    }
+    if (isStudentView) setStudentOpen(true);
   }, [isStudentView]);
 
   return (
@@ -54,6 +57,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
               <button
                 className="md:hidden text-gray-700 dark:text-gray-300"
                 onClick={() => setSidebarOpen(false)}
+                aria-label="Cerrar menú"
               >
                 <X size={24} />
               </button>
@@ -79,8 +83,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                 🏠 Mi Perfil
               </Link>
 
-              {(roles.includes("ROLE_TEACHER") ||
-                roles.includes("ROLE_ADMIN")) && (
+              {isTeacher && (
                 <button
                   className={cn(
                     "w-full text-left px-4 py-2 rounded-md text-sm font-medium flex justify-between items-center transition hover:bg-gray-200 dark:hover:bg-gray-700",
@@ -101,6 +104,16 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                 </button>
               )}
 
+              {/* Menú de Docente siempre visible para TEACHER/ADMIN */}
+              {isTeacher && (
+                <TeacherMenu
+                  teacherOpen={teacherOpen}
+                  setTeacherOpen={setTeacherOpen}
+                  setSidebarOpen={setSidebarOpen}
+                />
+              )}
+
+              {/* Menú de Estudiante solo cuando está en “vista estudiante” */}
               {isStudentView && (
                 <StudentMenu
                   studentOpen={studentOpen}
@@ -127,7 +140,11 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
 
           {isAuthenticated && (
             <button
-              onClick={logout}
+              onClick={async () => {
+                await logout();
+                navigate("/login", { replace: true });
+                setSidebarOpen(false);
+              }}
               className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm"
             >
               🔓 Cerrar sesión

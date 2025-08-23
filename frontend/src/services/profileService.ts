@@ -1,5 +1,5 @@
 // src/services/profileService.ts
-import api from "./api";
+import { me as getMe, updateMe, changePassword as ChangePass} from "./authService";
 import type {
   UserProfile,
   UpdateProfileDto,
@@ -7,16 +7,13 @@ import type {
 } from "../types/user/ProfileTypes";
 
 export async function getProfile(): Promise<UserProfile> {
-  const response = await api.get("/auth/me");
-  return response.data;
+  return getMe();
 }
 
 export async function updateProfile(data: UpdateProfileDto): Promise<string> {
-  const response = await api.put("/auth/me", data);
-  return response.data;
+  return updateMe(data);
 }
 
 export async function changePassword(data: ChangePasswordDto): Promise<string> {
-  const response = await api.put("/auth/change-password", data);
-  return response.data;
+  return ChangePass(data);
 }
