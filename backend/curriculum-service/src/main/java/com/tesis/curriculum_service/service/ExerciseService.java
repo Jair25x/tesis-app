@@ -154,4 +154,19 @@ public interface ExerciseService {
         ExerciseAdminResponse getByIdAdmin(
                         UUID curriculumId, UUID competencyId, UUID standardId, UUID learningObjectiveId, UUID id)
                         throws ResourceNotFoundException;
+
+        // ✅ nuevo (no rompe a nadie)
+        ExerciseResponse getByIdView(UUID curriculumId, UUID competencyId, UUID standardId,
+                        UUID learningObjectiveId, UUID exerciseId, boolean examMode)
+                        throws ResourceNotFoundException;
+
+        // ✅ compat: el antiguo delega al nuevo con examMode=false
+        default ExerciseResponse getById(UUID curriculumId, UUID competencyId, UUID standardId,
+                        UUID learningObjectiveId, UUID exerciseId, boolean examMode)
+                        throws ResourceNotFoundException {
+                return getByIdView(curriculumId, competencyId, standardId, learningObjectiveId, exerciseId, examMode);
+        }
+
+
+
 }

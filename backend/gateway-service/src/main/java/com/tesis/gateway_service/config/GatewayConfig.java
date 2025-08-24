@@ -92,6 +92,13 @@ public class GatewayConfig {
                                                 // X-Auth-Roles
                                                 )
                                                 .uri("lb://CLASSROOM-SERVICE"))
+
+                                .route("assessment-service", r -> r
+                                                .path("/api/assessments/**")
+                                                .filters(f -> f
+                                                                .filter(jwtFilter)
+                                                                .addRequestHeader("X-Internal-Call", "gateway"))
+                                                .uri("lb://ASSESSMENT-SERVICE"))
                                 .build();
         }
 }

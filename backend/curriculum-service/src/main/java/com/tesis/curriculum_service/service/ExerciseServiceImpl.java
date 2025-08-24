@@ -78,13 +78,10 @@ public class ExerciseServiceImpl implements ExerciseService {
   @Transactional(readOnly = true)
   public ExerciseResponse getById(UUID curriculumId, UUID competencyId, UUID standardId,
       UUID learningObjectiveId, UUID exerciseId) {
-
     Exercise ex = exerciseRepo.findByIdAndLearningObjectiveId(exerciseId, learningObjectiveId)
         .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
-
     validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
-
-    return toStudentDto(ex);
+    return toStudentDto(ex, false);
   }
 
   @Override
@@ -191,6 +188,18 @@ public class ExerciseServiceImpl implements ExerciseService {
         .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", id));
 
     return toAdminDto(e);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public ExerciseResponse getByIdView(UUID curriculumId, UUID competencyId, UUID standardId,
+      UUID learningObjectiveId, UUID exerciseId, boolean examMode) {
+    Exercise ex = exerciseRepo.findByIdAndLearningObjectiveId(exerciseId, learningObjectiveId)
+        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
+
+    validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
+
+    return toStudentDto(ex, examMode); // 👈 nuevo overload
   }
 
   /* ──────────────────────── CHECK ANSWER ───────────────────────── */
@@ -450,11 +459,42 @@ public class ExerciseServiceImpl implements ExerciseService {
 
   /* ────────────────────── DTO Mappers ───────────────────── */
 
+  /* ───── DTO mappers ───── */
+
   private ExerciseResponse toStudentDto(Exercise e) {
+    return toStudentDto(e, false);
+  }
+
+  private ExerciseResponse toStudentDto(Exercise e, boolean examMode) {
     var lo = e.getLearningObjective();
     var std = lo.getStandard();
     var comp = std.getCompetency();
     var cur = comp.getCurriculum();
+
+    var steps = examMode
+        ? List.<SolutionStepResponse>of()
+        : e.getSolutionSteps().stream()
+            .sorted(Comparator.comparingInt(SolutionStep::getStepNumber))
+            .map(ss -> SolutionStepResponse.builder()
+                .id(ss.getId())
+                .stepNumber(ss.getStepNumber())
+                .explanation(ss.getExplanation())
+                .createdAt(ss.getCreatedAt())
+                .updatedAt(ss.getUpdatedAt())
+                .build())
+            .toList();
+
+    var hints = examMode
+        ? List.<HintResponse>of()
+        : e.getHints().stream()
+            .map(h -> HintResponse.builder()
+                .id(h.getId())
+                .hintText(h.getHintText())
+                .cost(h.getCost())
+                .createdAt(h.getCreatedAt())
+                .updatedAt(h.getUpdatedAt())
+                .build())
+            .toList();
 
     return ExerciseResponse.builder()
         .id(e.getId())
@@ -473,28 +513,13 @@ public class ExerciseServiceImpl implements ExerciseService {
         .competencyName(comp.getName())
         .curriculumId(cur.getId())
 
-        .solutionSteps(e.getSolutionSteps().stream()
-            .sorted(Comparator.comparingInt(SolutionStep::getStepNumber))
-            .map(ss -> SolutionStepResponse.builder()
-                .id(ss.getId())
-                .stepNumber(ss.getStepNumber())
-                .explanation(ss.getExplanation())
-                .createdAt(ss.getCreatedAt())
-                .updatedAt(ss.getUpdatedAt())
-                .build())
-            .collect(Collectors.toList()))
-        .hints(e.getHints().stream()
-            .map(h -> HintResponse.builder()
-                .id(h.getId())
-                .hintText(h.getHintText())
-                .cost(h.getCost())
-                .createdAt(h.getCreatedAt())
-                .updatedAt(h.getUpdatedAt())
-                .build())
-            .collect(Collectors.toList()))
+        .solutionSteps(steps)
+        .hints(hints)
+
         .createdAt(e.getCreatedAt())
         .updatedAt(e.getUpdatedAt())
         .active(e.getActive())
+        .examMode(Boolean.valueOf(examMode)) // 👈 nuevo flag en DTO
         .build();
   }
 

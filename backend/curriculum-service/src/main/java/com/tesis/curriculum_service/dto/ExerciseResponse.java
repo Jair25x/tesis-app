@@ -42,4 +42,7 @@ public class ExerciseResponse {
   private LocalDateTime updatedAt;
   private Boolean active;
   private Boolean isDiagnostic;
+
+  /** Nuevo: indica si el backend ocultó hints/steps por modo examen. */
+  private Boolean examMode;
 }

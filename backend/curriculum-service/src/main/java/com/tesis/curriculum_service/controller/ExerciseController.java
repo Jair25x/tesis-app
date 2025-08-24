@@ -68,7 +68,7 @@ public class ExerciseController {
     return ResponseEntity.ok(list);
   }
 
-  @Operation(summary = "Obtener un ejercicio específico (vista student)")
+  @Operation(summary = "Obtener un ejercicio específico (vista student), soporta modo examen")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Ejercicio encontrado", content = @Content(schema = @Schema(implementation = ExerciseResponse.class))),
       @ApiResponse(responseCode = "404", description = "Ejercicio no encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
@@ -80,10 +80,17 @@ public class ExerciseController {
       @PathVariable UUID competencyId,
       @PathVariable UUID standardId,
       @PathVariable UUID learningObjectiveId,
-      @PathVariable UUID id) throws ResourceNotFoundException {
+      @PathVariable UUID id,
+      @RequestParam(name = "mode", required = false, defaultValue = "normal") String mode,
+      @RequestHeader(name = "X-Exam-Mode", required = false) String examHeader)
+      throws ResourceNotFoundException {
 
-    ExerciseResponse response = exerciseService.getById(
-        curriculumId, competencyId, standardId, learningObjectiveId, id);
+    boolean examMode = "exam".equalsIgnoreCase(mode) ||
+        (examHeader != null && !examHeader.isBlank());
+
+    ExerciseResponse response = exerciseService.getByIdView(
+        curriculumId, competencyId, standardId, learningObjectiveId, id, examMode);
+
     return ResponseEntity.ok(response);
   }
 
