@@ -1,6 +1,7 @@
 package com.tesis.assessment_service.controller;
 
 import com.tesis.assessment_service.dto.request.AssignmentRequest;
+import com.tesis.assessment_service.dto.request.CloneAssignmentRequest;
 import com.tesis.assessment_service.dto.response.*;
 import com.tesis.assessment_service.exception.BadRequestException;
 import com.tesis.assessment_service.service.AssignmentService;
@@ -52,12 +53,6 @@ public class AssignmentController {
   }
 
   @Operation(summary = "Publicar asignación", description = "Transición DRAFT → PUBLISHED")
-  @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "OK"),
-      @ApiResponse(responseCode = "400", description = "Solo DRAFT puede publicarse"),
-      @ApiResponse(responseCode = "403", description = "Prohibido"),
-      @ApiResponse(responseCode = "404", description = "No encontrada")
-  })
   @PostMapping("/{id}/publish")
   @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
   public ResponseEntity<AssignmentResponse> publish(@PathVariable UUID id, Authentication auth) {
@@ -66,11 +61,6 @@ public class AssignmentController {
   }
 
   @Operation(summary = "Cerrar asignación", description = "Transición PUBLISHED → CLOSED")
-  @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "OK"),
-      @ApiResponse(responseCode = "403", description = "Prohibido"),
-      @ApiResponse(responseCode = "404", description = "No encontrada")
-  })
   @PostMapping("/{id}/close")
   @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
   public ResponseEntity<AssignmentResponse> close(@PathVariable UUID id, Authentication auth) {
@@ -78,12 +68,24 @@ public class AssignmentController {
     return ResponseEntity.ok(assignmentService.close(id, userId));
   }
 
-  @Operation(summary = "Overview de la asignación", description = "Métricas: totalStudents, started, submitted, avgScore, breakdown por objetivo, manual pendientes")
+  @Operation(summary = "Clonar asignación", description = "Crea una nueva asignación DRAFT basada en otra")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = OverviewResponse.class))),
+      @ApiResponse(responseCode = "201", description = "Creado", content = @Content(schema = @Schema(implementation = AssignmentResponse.class))),
+      @ApiResponse(responseCode = "400", description = "Petición inválida"),
       @ApiResponse(responseCode = "403", description = "Prohibido"),
       @ApiResponse(responseCode = "404", description = "No encontrada")
   })
+  @PostMapping(path = "/{id}/clone", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
+  public ResponseEntity<AssignmentResponse> clone(@PathVariable UUID id,
+      @RequestBody(required = false) CloneAssignmentRequest req,
+      Authentication auth) {
+    UUID userId = currentUserId(auth);
+    AssignmentResponse resp = assignmentService.cloneAssignment(id, userId, req);
+    return ResponseEntity.created(URI.create("/api/assessments/assignments/" + resp.id())).body(resp);
+  }
+
+  @Operation(summary = "Overview de la asignación")
   @GetMapping("/{id}/overview")
   @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
   public ResponseEntity<OverviewResponse> overview(@PathVariable UUID id, Authentication auth) {
@@ -92,11 +94,6 @@ public class AssignmentController {
   }
 
   @Operation(summary = "Listado de submissions de una asignación (paginado)")
-  @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = PageResponse.class))),
-      @ApiResponse(responseCode = "403", description = "Prohibido"),
-      @ApiResponse(responseCode = "404", description = "No encontrada")
-  })
   @GetMapping("/{id}/submissions")
   @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
   public ResponseEntity<PageResponse<SubmissionSummaryDto>> listSubmissions(

@@ -1,8 +1,10 @@
 package com.tesis.assessment_service.service;
 
 import com.tesis.assessment_service.dto.request.AssignmentRequest;
+import com.tesis.assessment_service.dto.request.CloneAssignmentRequest;
+import com.tesis.assessment_service.dto.request.AssignmentSearchCriteria;
 import com.tesis.assessment_service.dto.response.*;
-
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import java.util.Optional;
@@ -22,6 +24,12 @@ public interface AssignmentService {
       Optional<String> status,
       Pageable pageable);
 
-  /** Asignaciones para el alumno (ventana vigente / state=PUBLISHED). */
-  PageResponse<AssignmentResponse> listMyAssignments(UUID studentId, Pageable pageable);
+  /** Estudiante: asignaciones vigentes + flags. */
+  PageResponse<StudentAssignmentSummaryResponse> listMyAssignments(UUID studentId, Pageable pageable);
+
+  /** Clonar una asignación existente con overrides opcionales. */
+  AssignmentResponse cloneAssignment(UUID sourceAssignmentId, UUID requesterId, CloneAssignmentRequest req);
+
+  /** NUEVO: búsqueda paginada/filtrada para docente/admin. */
+  Page<AssignmentSummaryResponse> search(AssignmentSearchCriteria criteria, Pageable pageable);
 }

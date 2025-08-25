@@ -105,4 +105,28 @@ public class GlobalExceptionHandler {
     log.error("Error no controlado", ex);
     return build(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno", req, null);
   }
+
+  @org.springframework.web.bind.annotation.ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+  public org.springframework.http.ResponseEntity<com.tesis.assessment_service.exception.ErrorResponse> handleMethodNotSupported(
+      org.springframework.web.HttpRequestMethodNotSupportedException ex,
+      jakarta.servlet.http.HttpServletRequest request) {
+    String path = request != null ? request.getRequestURI() : null;
+    String traceId = org.slf4j.MDC.get("traceId"); // si usas MDC; de lo contrario deja null
+    java.util.Map<String, Object> details = new java.util.HashMap<>();
+    if (ex.getSupportedHttpMethods() != null) {
+      details.put("supported", ex.getSupportedHttpMethods().toString());
+    }
+
+    com.tesis.assessment_service.exception.ErrorResponse err = new com.tesis.assessment_service.exception.ErrorResponse(
+        405,
+        "Method Not Allowed",
+        ex.getMessage(),
+        path,
+        traceId,
+        details.isEmpty() ? null : details);
+
+    return org.springframework.http.ResponseEntity
+        .status(org.springframework.http.HttpStatus.METHOD_NOT_ALLOWED)
+        .body(err);
+  }
 }

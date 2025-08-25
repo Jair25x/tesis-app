@@ -35,6 +35,7 @@ public class ExerciseServiceImpl implements ExerciseService {
   private final ExerciseTemplateService templateService;
   private final MustacheFactory mustacheFactory;
   private final ObjectMapper objectMapper;
+
   /* ─────────────────────────────── CRUD ─────────────────────────────── */
 
   @Override
@@ -199,7 +200,7 @@ public class ExerciseServiceImpl implements ExerciseService {
 
     validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
 
-    return toStudentDto(ex, examMode); // 👈 nuevo overload
+    return toStudentDto(ex, examMode);
   }
 
   /* ──────────────────────── CHECK ANSWER ───────────────────────── */
@@ -209,13 +210,11 @@ public class ExerciseServiceImpl implements ExerciseService {
       UUID curriculumId, UUID competencyId, UUID standardId, UUID learningObjectiveId,
       UUID exerciseId, CheckAnswerRequest request) {
 
-    // 1) Cargar ejercicio y validar jerarquía
     Exercise exercise = exerciseRepo.findByIdAndLearningObjectiveId(exerciseId, learningObjectiveId)
         .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
 
     validateHierarchy(curriculumId, competencyId, standardId, learningObjectiveId);
 
-    // 2) Ruteo por tipo de plantilla (MVP con 3 tipos)
     var type = exercise.getTemplateType();
     if (type == null) {
       return CheckAnswerResponse.builder()
@@ -245,16 +244,13 @@ public class ExerciseServiceImpl implements ExerciseService {
         return validateFrequencyTableComplete(exercise, answerNode);
 
       default:
-        // Fallback legacy
         return validateLegacyByCorrectAnswer(exercise, answerNode);
     }
   }
 
   /* === Validadores MVP === */
 
-  private CheckAnswerResponse validateEquationSingleChoice(
-      Exercise ex,
-      com.fasterxml.jackson.databind.JsonNode answerNode) {
+  private CheckAnswerResponse validateEquationSingleChoice(Exercise ex, JsonNode answerNode) {
     var params = asJson(ex.getParameters());
     String expected = params.path("answer").asText(null);
     if (expected == null || expected.isBlank()) {
@@ -270,9 +266,7 @@ public class ExerciseServiceImpl implements ExerciseService {
         .build();
   }
 
-  private CheckAnswerResponse validateFrequencyTableQa(
-      Exercise ex,
-      com.fasterxml.jackson.databind.JsonNode answerNode) {
+  private CheckAnswerResponse validateFrequencyTableQa(Exercise ex, JsonNode answerNode) {
     var params = asJson(ex.getParameters());
     var questions = params.path("questions");
     var answersNode = answerNode.path("answers");
@@ -315,9 +309,7 @@ public class ExerciseServiceImpl implements ExerciseService {
         .build();
   }
 
-  private CheckAnswerResponse validateFrequencyTableComplete(
-      Exercise ex,
-      com.fasterxml.jackson.databind.JsonNode answerNode) {
+  private CheckAnswerResponse validateFrequencyTableComplete(Exercise ex, JsonNode answerNode) {
     var params = asJson(ex.getParameters());
     var missing = params.path("missing");
     var filled = answerNode.path("filled");
@@ -354,9 +346,7 @@ public class ExerciseServiceImpl implements ExerciseService {
         .build();
   }
 
-  private CheckAnswerResponse validateLegacyByCorrectAnswer(
-      Exercise ex,
-      com.fasterxml.jackson.databind.JsonNode answerNode) {
+  private CheckAnswerResponse validateLegacyByCorrectAnswer(Exercise ex, JsonNode answerNode) {
     String expected = ex.getCorrectAnswer();
     String given = answerNode.path("value").asText("");
     boolean ok = expected != null && expected.trim().equalsIgnoreCase(given.trim());
@@ -392,7 +382,7 @@ public class ExerciseServiceImpl implements ExerciseService {
     return lo;
   }
 
-  /* ────────────────────── Helpers Mustache / Validación ───────────────── */
+  /* ────────────────────── Mustache & helpers ───────────────────── */
 
   private void validateParameters(TemplateType tplType, Map<String, Object> params) {
     if (tplType == null)
@@ -402,7 +392,7 @@ public class ExerciseServiceImpl implements ExerciseService {
         .orElseThrow(() -> new BadRequestException("Plantilla no encontrada: " + tplType));
 
     if (schema.getFields() == null || schema.getFields().isEmpty())
-      return; // <- evita NPE
+      return;
 
     for (FieldDescriptor fd : schema.getFields()) {
       Object raw = params.get(fd.getName());
@@ -429,8 +419,7 @@ public class ExerciseServiceImpl implements ExerciseService {
             throw new BadRequestException(paramTypeErr(fd, raw));
         }
         case IMAGE -> {
-          // Nada que validar del backend por ahora (el front valida URL/formato si
-          // aplica)
+          // Validación UI-side por ahora
         }
       }
     }
@@ -438,14 +427,13 @@ public class ExerciseServiceImpl implements ExerciseService {
 
   private String renderStatement(String raw, TemplateType tplType, Map<String, Object> params) {
     if (tplType == null)
-      return raw;
+      return raw != null ? raw : "";
 
     TemplateSchema schema = templateService.schemaFor(tplType)
         .orElseThrow(() -> new IllegalArgumentException("Plantilla no encontrada: " + tplType));
 
-    // Solo renderiza Mustache si la plantilla define 'pattern'
     if (schema.getPattern() == null || schema.getPattern().isBlank()) {
-      return raw != null ? raw : ""; // deja el enunciado “tal cual”
+      return raw != null ? raw : "";
     }
 
     Mustache m = mustacheFactory.compile(new StringReader(schema.getPattern()), tplType.name());
@@ -457,9 +445,13 @@ public class ExerciseServiceImpl implements ExerciseService {
     }
   }
 
-  /* ────────────────────── DTO Mappers ───────────────────── */
+  private String renderForView(Exercise e) {
+    // Hoy el statement ya está renderizado al crear/actualizar.
+    // Si mañana soportas Markdown/LaTeX, aquí puedes transformarlo a HTML.
+    return e.getStatement();
+  }
 
-  /* ───── DTO mappers ───── */
+  /* ────────────────────── DTO Mappers ───────────────────── */
 
   private ExerciseResponse toStudentDto(Exercise e) {
     return toStudentDto(e, false);
@@ -499,6 +491,7 @@ public class ExerciseServiceImpl implements ExerciseService {
     return ExerciseResponse.builder()
         .id(e.getId())
         .statement(e.getStatement())
+        .statementRendered(renderForView(e)) // 👈 HTML listo para pintar
         .difficulty(e.getDifficulty())
         .type(e.getType())
         .templateType(e.getTemplateType())
@@ -519,12 +512,11 @@ public class ExerciseServiceImpl implements ExerciseService {
         .createdAt(e.getCreatedAt())
         .updatedAt(e.getUpdatedAt())
         .active(e.getActive())
-        .examMode(Boolean.valueOf(examMode)) // 👈 nuevo flag en DTO
+        .examMode(Boolean.valueOf(examMode))
         .build();
   }
 
   private ExerciseAdminResponse toAdminDto(Exercise e) {
-    // Reutiliza el student DTO y añade correctAnswer
     ExerciseResponse base = toStudentDto(e);
     return ExerciseAdminResponse.builder()
         .id(base.getId())
@@ -550,7 +542,7 @@ public class ExerciseServiceImpl implements ExerciseService {
         .active(base.getActive())
         .isDiagnostic(base.getIsDiagnostic())
 
-        .correctAnswer(e.getCorrectAnswer()) // <- solo en admin
+        .correctAnswer(e.getCorrectAnswer())
         .build();
   }
 

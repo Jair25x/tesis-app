@@ -57,7 +57,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     // 2) membresía si es aula
     ensureStudentMembership(a, studentId);
 
-    // 3) idempotencia
+    // 3) idempotencia: si hay IN_PROGRESS, lo devolvemos con items y config
     Optional<AssessmentSubmission> existingLatest = submissionRepo
         .findTopByAssignment_IdAndStudentIdOrderByCreatedAtDesc(assignmentId, studentId);
 
@@ -80,7 +80,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         .studentId(studentId)
         .status(SubmissionStatus.IN_PROGRESS)
         .startedAt(OffsetDateTime.now(ZoneOffset.UTC))
-        .attemptNo(1)
+        .attemptNo(1) // TODO: si soportas múltiples intentos, incrementa aquí
         .build();
     submissionRepo.save(s);
 
@@ -235,11 +235,11 @@ public class SubmissionServiceImpl implements SubmissionService {
 
   private void ensureSubmitAllowed(AssessmentAssignment a, AssessmentSubmission s) {
     ensureStartAllowed(a);
-    // time-limit
+    // time-limit: permitimos enviar tarde; marcamos `late` en respuesta
     if (a.getTimeLimitSec() != null && s.getStartedAt() != null) {
       OffsetDateTime until = s.getStartedAt().plusSeconds(a.getTimeLimitSec());
       if (OffsetDateTime.now(ZoneOffset.UTC).isAfter(until)) {
-        // Permitimos enviar, marcamos late en respuesta (no penalizamos por ahora)
+        // permitido; solo marca late en la respuesta
       }
     }
   }
@@ -257,11 +257,51 @@ public class SubmissionServiceImpl implements SubmissionService {
   }
 
   private StartResponse toStartResponse(AssessmentSubmission s, List<AssessmentSubmissionItem> items) {
+    // Construir items DTO
     var list = items.stream()
-        .map(i -> new StartResponse.Item(i.getId(), i.getExerciseId(), i.getObjectiveId(),
-            i.getPosition(), i.getPoints(), i.getGradingMode()))
+        .sorted(Comparator.comparing(AssessmentSubmissionItem::getPosition))
+        .map(i -> new StartResponse.Item(
+            i.getId(),
+            i.getExerciseId(),
+            i.getObjectiveId(),
+            i.getPosition(),
+            i.getPoints(),
+            i.getGradingMode()))
         .toList();
-    return new StartResponse(s.getId(), list, s.getAssignment().getTimeLimitSec(), s.getStartedAt());
+
+    // Resolver config de la plantilla (seguro ante LAZY y nulls)
+    JsonNode configNode = loadTemplateConfig(s.getAssignment());
+
+    return new StartResponse(
+        s.getId(),
+        s.getAssignment().getId(),
+        s.getStudentId(),
+        s.getAttemptNo(),
+        s.getStartedAt(),
+        configNode,
+        list);
+  }
+
+  /** Intenta cargar y parsear el config JSON de la plantilla asociada. */
+  private JsonNode loadTemplateConfig(AssessmentAssignment a) {
+    try {
+      // 1) intentar por repo (evita problemas de LAZY y garantiza datos de DB)
+      UUID tplId = (a.getTemplate() != null ? a.getTemplate().getId() : null);
+      String json = null;
+      if (tplId != null) {
+        var tpl = templateRepo.findById(tplId).orElse(null);
+        if (tpl != null) {
+          json = tpl.getConfigJson();
+        }
+      }
+      // 2) fallback al objeto en memoria
+      if (json == null && a.getTemplate() != null) {
+        json = a.getTemplate().getConfigJson();
+      }
+      return (json != null) ? mapper.readTree(json) : null;
+    } catch (Exception ignore) {
+      return null;
+    }
   }
 
   private SubmissionDetailResponse toDetailResponse(AssessmentSubmission s, List<AssessmentSubmissionItem> items) {

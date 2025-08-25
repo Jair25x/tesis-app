@@ -22,6 +22,10 @@ import lombok.experimental.SuperBuilder;
 public class ExerciseResponse {
   private UUID id;
   private String statement;
+
+  /** HTML listo para pintar; para FE usar preferentemente este campo. */
+  private String statementRendered;
+
   private Difficulty difficulty;
   private String type;
   private TemplateType templateType;
@@ -43,6 +47,6 @@ public class ExerciseResponse {
   private Boolean active;
   private Boolean isDiagnostic;
 
-  /** Nuevo: indica si el backend ocultó hints/steps por modo examen. */
+  /** Indica si el backend ocultó hints/steps por modo examen. */
   private Boolean examMode;
 }

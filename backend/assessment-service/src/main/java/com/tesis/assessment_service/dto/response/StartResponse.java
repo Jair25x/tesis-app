@@ -1,23 +1,27 @@
 package com.tesis.assessment_service.dto.response;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.tesis.assessment_service.model.enums.GradingMode;
 
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
-/** Respuesta al iniciar una evaluación. */
+/** Respuesta al iniciar una evaluación. Incluye config de la plantilla. */
 public record StartResponse(
     UUID submissionId,
-    List<Item> items,
-    Integer timeLimitSec,
-    OffsetDateTime startedAt) {
+    UUID assignmentId,
+    UUID studentId,
+    int attemptNo,
+    OffsetDateTime startedAt,
+    JsonNode config, // <<< NUEVO: copia del config de la plantilla
+    List<Item> items) {
   public record Item(
       UUID submissionItemId,
       UUID exerciseId,
       UUID objectiveId,
-      int position,
-      int points,
+      Integer position,
+      Integer points,
       GradingMode gradingMode) {
   }
 }
