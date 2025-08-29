@@ -1,9 +1,12 @@
 package com.tesis.assessment_service.model;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.tesis.assessment_service.model.base.AuditableEntity;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.type.SqlTypes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,9 +38,13 @@ public class AssessmentTemplate extends AuditableEntity {
   @Column(name = "curriculum_id", nullable = false)
   private UUID curriculumId;
 
-  /** Configuración de la plantilla (flags como shuffle, allowHints, etc.). */
+  /**
+   * Configuración de la plantilla (flags como shuffle, allowHints, etc.) en
+   * JSONB.
+   */
+  @JdbcTypeCode(SqlTypes.JSON) // Hibernate 6 → JSON/JSONB según DDL
   @Column(name = "config_json", columnDefinition = "jsonb")
-  private String configJson;
+  private JsonNode configJson;
 
   @OneToMany(mappedBy = "template", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
   @OrderBy("position ASC")

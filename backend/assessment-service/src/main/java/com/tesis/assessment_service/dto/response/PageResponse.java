@@ -31,6 +31,12 @@ public class PageResponse<T> {
         page.getContent());
   }
 
+  /** Nuevo: construir desde lista + metadatos. */
+  public static <T> PageResponse<T> of(List<T> content, int page, int size, long totalElements) {
+    int totalPages = size <= 0 ? 0 : (int) Math.ceil((double) totalElements / (double) size);
+    return new PageResponse<>(page, size, totalElements, totalPages, content);
+  }
+
   // getters/setters
   public int getPage() {
     return page;

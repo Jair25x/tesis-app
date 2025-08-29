@@ -167,6 +167,10 @@ public interface ExerciseService {
                 return getByIdView(curriculumId, competencyId, standardId, learningObjectiveId, exerciseId, examMode);
         }
 
-
+        /**
+         * Acceso directo por ID (sin jerarquía), para consumo en runtime (exam, FE,
+         * otros MS).
+         */
+        ExerciseResponse getByIdFlat(UUID exerciseId, boolean examMode) throws ResourceNotFoundException;
 
 }

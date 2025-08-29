@@ -16,11 +16,16 @@ import com.tesis.assessment_service.service.client.ClassroomClient;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.Path;
+import jakarta.persistence.criteria.Predicate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -103,32 +108,67 @@ public class AssignmentServiceImpl implements AssignmentService {
     return PageResponse.of(mapped);
   }
 
-  /** Estudiante: asignaciones publicadas vigentes + flags. */
+  /**
+   * Estudiante: asignaciones publicadas visibles (ventana: nulos = abierto) +
+   * flags (prefiltrado en SQL).
+   */
   @Override
   public PageResponse<StudentAssignmentSummaryResponse> listMyAssignments(UUID studentId, Pageable pageable) {
     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
-    // PUBLISHED y ventana activa (o sin ventana)
-    Page<AssessmentAssignment> page = assignmentRepo.findByStateAndWindowStartBeforeAndWindowEndAfter(
-        AssignmentState.PUBLISHED, now, now, pageable);
+    // 1) Aulas del principal (batch a classroom-service)
+    List<UUID> myClassrooms = classroomClient.listMyClassrooms(studentId);
 
+    // 2) Spec: PUBLISHED + ventana vigente + (PUBLIC OR (CLASSROOM && classroomId
+    // IN myClassrooms))
+    Specification<AssessmentAssignment> spec = (root, q, cb) -> {
+      // Estado
+      Predicate pPublished = cb.equal(root.get("state"), AssignmentState.PUBLISHED);
+
+      // Ventana
+      Path<OffsetDateTime> start = root.get("windowStart");
+      Path<OffsetDateTime> end = root.get("windowEnd");
+      Expression<OffsetDateTime> nowExpr = cb.literal(now);
+
+      Predicate pAfterStart = cb.or(cb.isNull(start), cb.lessThanOrEqualTo(start, nowExpr));
+      Predicate pBeforeEnd = cb.or(cb.isNull(end), cb.greaterThanOrEqualTo(end, nowExpr));
+      Predicate pWindow = cb.and(pAfterStart, pBeforeEnd);
+
+      // Alcance
+      Path<AssignmentScope> scopePath = root.get("scope");
+      Predicate isPublic = cb.equal(scopePath, AssignmentScope.PUBLIC);
+
+      Predicate scopeFilter;
+      if (myClassrooms == null || myClassrooms.isEmpty()) {
+        scopeFilter = isPublic;
+      } else {
+        Predicate isClassroom = cb.equal(scopePath, AssignmentScope.CLASSROOM);
+        Predicate inMy = root.get("classroomId").in(myClassrooms);
+        scopeFilter = cb.or(isPublic, cb.and(isClassroom, inMy));
+      }
+
+      return cb.and(pPublished, pWindow, scopeFilter);
+    };
+
+    Page<AssessmentAssignment> page = assignmentRepo.findAll(spec, pageable);
+
+    // 3) Flags por submission del estudiante (sobre la página)
     var mapped = page.map(a -> {
-      // attempts usados por este estudiante
       long attemptsUsed = submissionRepo.countByAssignment_IdAndStudentId(a.getId(), studentId);
 
-      // started: existe IN_PROGRESS
       boolean started = submissionRepo.existsByAssignment_IdAndStudentIdAndStatus(
           a.getId(), studentId, SubmissionStatus.IN_PROGRESS);
 
-      // submitted: existe SUBMITTED o GRADED
       boolean submitted = submissionRepo.existsByAssignment_IdAndStudentIdAndStatusIn(
           a.getId(), studentId, EnumSet.of(SubmissionStatus.SUBMITTED, SubmissionStatus.GRADED));
 
-      boolean withinWindow = isWithinWindow(a, now);
+      boolean withinWindow = (a.getWindowStart() == null || !now.isBefore(a.getWindowStart()))
+          && (a.getWindowEnd() == null || !now.isAfter(a.getWindowEnd()));
+
       boolean canStart = a.getState() == AssignmentState.PUBLISHED
           && withinWindow
           && attemptsUsed < (a.getAttemptsAllowed() == null ? 1 : a.getAttemptsAllowed())
-          && !started; // no permitir nuevo intento si hay uno en curso
+          && !started;
 
       return new StudentAssignmentSummaryResponse(
           a.getId(),
@@ -153,7 +193,6 @@ public class AssignmentServiceImpl implements AssignmentService {
   @Override
   public AssignmentResponse cloneAssignment(UUID sourceAssignmentId, UUID requesterId, CloneAssignmentRequest req) {
     AssessmentAssignment src = load(sourceAssignmentId);
-    // Validación: el requester debe poder operar en el scope destino
     AssignmentScope scope = req != null && req.scope() != null ? req.scope() : src.getScope();
     UUID classroomId = req != null ? req.classroomId() : src.getClassroomId();
 
@@ -170,7 +209,7 @@ public class AssignmentServiceImpl implements AssignmentService {
         .scope(scope)
         .type(src.getType())
         .classroomId(scope == AssignmentScope.CLASSROOM ? classroomId : null)
-        .state(AssignmentState.DRAFT) // siempre nace DRAFT
+        .state(AssignmentState.DRAFT)
         .windowStart(req != null && req.windowStart() != null ? req.windowStart() : src.getWindowStart())
         .windowEnd(req != null && req.windowEnd() != null ? req.windowEnd() : src.getWindowEnd())
         .timeLimitSec(req != null && req.timeLimitSec() != null ? req.timeLimitSec() : src.getTimeLimitSec())
@@ -185,7 +224,6 @@ public class AssignmentServiceImpl implements AssignmentService {
 
   @Override
   public Page<AssignmentSummaryResponse> search(AssignmentSearchCriteria c, Pageable pageable) {
-    // --- Auth -> finales para uso en lambda/Specification
     var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
 
     UUID tmp = null;
@@ -201,14 +239,12 @@ public class AssignmentServiceImpl implements AssignmentService {
         .anyMatch(a -> "ROLE_ADMIN".equalsIgnoreCase(a.getAuthority()));
     final boolean mineOnlyEffective = (c.mineOnly == null) ? !isAdmin : c.mineOnly;
 
-    // Specification dinámica
-    org.springframework.data.jpa.domain.Specification<AssessmentAssignment> spec = (root, query, cb) -> {
-      var preds = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+    Specification<AssessmentAssignment> spec = (root, query, cb) -> {
+      var preds = new java.util.ArrayList<Predicate>();
 
       if (mineOnlyEffective || !isAdmin) {
-        if (requesterId != null) {
+        if (requesterId != null)
           preds.add(cb.equal(root.get("createdByUserId"), requesterId));
-        }
       }
       if (c.state != null)
         preds.add(cb.equal(root.get("state"), c.state));
@@ -225,7 +261,7 @@ public class AssignmentServiceImpl implements AssignmentService {
       if (c.windowTo != null)
         preds.add(cb.lessThanOrEqualTo(root.get("windowEnd"), c.windowTo));
 
-      return cb.and(preds.toArray(new jakarta.persistence.criteria.Predicate[0]));
+      return cb.and(preds.toArray(new Predicate[0]));
     };
 
     var page = assignmentRepo.findAll(spec, pageable);
@@ -243,13 +279,12 @@ public class AssignmentServiceImpl implements AssignmentService {
         a.getAttemptsAllowed(),
         a.getClassroomId(),
         a.getCreatedByUserId(),
-        toOffset(a.getCreatedAt()), // LocalDateTime -> OffsetDateTime UTC
-        toOffset(a.getUpdatedAt()) // LocalDateTime -> OffsetDateTime UTC
-    ));
+        toOffset(a.getCreatedAt()),
+        toOffset(a.getUpdatedAt())));
   }
 
   // ---- helpers
-  /** Convierte LocalDateTime a OffsetDateTime (UTC) de forma segura. */
+
   private java.time.OffsetDateTime toOffset(java.time.LocalDateTime dt) {
     return dt == null ? null : dt.atOffset(java.time.ZoneOffset.UTC);
   }
@@ -265,12 +300,6 @@ public class AssignmentServiceImpl implements AssignmentService {
       if (!staff)
         throw new ForbiddenException("No eres staff del aula");
     }
-  }
-
-  private boolean isWithinWindow(AssessmentAssignment a, OffsetDateTime now) {
-    boolean afterStart = a.getWindowStart() == null || !now.isBefore(a.getWindowStart());
-    boolean beforeEnd = a.getWindowEnd() == null || !now.isAfter(a.getWindowEnd());
-    return afterStart && beforeEnd;
   }
 
   private SubmissionSummaryDto toSummary(AssessmentSubmission s) {

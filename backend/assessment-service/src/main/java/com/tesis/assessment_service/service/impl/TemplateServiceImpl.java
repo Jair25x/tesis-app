@@ -1,23 +1,23 @@
 package com.tesis.assessment_service.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tesis.assessment_service.dto.request.TemplateItemRequest;
 import com.tesis.assessment_service.dto.request.TemplateRequest;
 import com.tesis.assessment_service.dto.response.TemplateItemResponse;
 import com.tesis.assessment_service.dto.response.TemplateResponse;
+import com.tesis.assessment_service.exception.BadRequestException;
 import com.tesis.assessment_service.exception.ForbiddenException;
 import com.tesis.assessment_service.exception.NotFoundException;
 import com.tesis.assessment_service.model.AssessmentTemplate;
 import com.tesis.assessment_service.model.AssessmentTemplateItem;
 import com.tesis.assessment_service.model.enums.GradingMode;
-import com.tesis.assessment_service.repository.AssessmentTemplateItemRepository;
 import com.tesis.assessment_service.repository.AssessmentTemplateRepository;
 import com.tesis.assessment_service.service.TemplateService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -28,32 +28,33 @@ import java.util.UUID;
 public class TemplateServiceImpl implements TemplateService {
 
   private final AssessmentTemplateRepository templateRepo;
-  private final AssessmentTemplateItemRepository itemRepo;
-  private final ObjectMapper mapper;
 
   @Override
   public TemplateResponse createTemplate(UUID ownerId, TemplateRequest request) {
+    if (ownerId == null)
+      throw new BadRequestException("ownerId requerido");
+    if (request == null)
+      throw new BadRequestException("request requerido");
+    if (request.items() == null || request.items().isEmpty()) {
+      throw new BadRequestException("La plantilla debe incluir al menos un ítem");
+    }
+
+    // Crear plantilla
     AssessmentTemplate t = AssessmentTemplate.builder()
         .ownerUuid(ownerId)
         .title(request.title())
         .curriculumId(request.curriculumId())
-        .configJson(jsonToString(request.config()))
+        .configJson(request.config()) // JsonNode → JSONB
         .build();
-    templateRepo.save(t);
 
-    List<AssessmentTemplateItem> items = request.items().stream()
-        .sorted(Comparator.comparingInt(TemplateItemRequest::position))
-        .map(it -> AssessmentTemplateItem.builder()
-            .template(t)
-            .objectiveId(it.objectiveId())
-            .exerciseId(it.exerciseId())
-            .points(Math.max(it.points(), 1))
-            .position(Math.max(it.position(), 1))
-            .gradingMode(it.gradingMode() == null ? GradingMode.AUTO : it.gradingMode())
-            .build())
-        .toList();
-    itemRepo.saveAll(items);
-    t.setItems(items);
+    // Construir ítems con defaults y posiciones 1..N
+    List<AssessmentTemplateItem> newItems = buildItemsWithDefaults(t, request.items());
+
+    // Agregar a la colección administrada (NO setItems)
+    t.getItems().addAll(newItems);
+
+    // Guardar por cascada
+    templateRepo.save(t);
 
     return toResponse(t, true);
   }
@@ -67,30 +68,32 @@ public class TemplateServiceImpl implements TemplateService {
 
   @Override
   public TemplateResponse updateTemplate(UUID templateId, UUID requesterId, TemplateRequest request) {
+    if (request == null)
+      throw new BadRequestException("request requerido");
+
     AssessmentTemplate t = templateRepo.findWithItemsById(templateId)
         .orElseThrow(() -> new NotFoundException("Plantilla no encontrada"));
+
     if (!t.getOwnerUuid().equals(requesterId)) {
       throw new ForbiddenException("No eres dueño de esta plantilla");
     }
+
+    // Campos simples
     t.setTitle(request.title());
     t.setCurriculumId(request.curriculumId());
-    t.setConfigJson(jsonToString(request.config()));
+    t.setConfigJson(request.config()); // JsonNode → JSONB
 
-    // Reemplazo total de items (simple y seguro)
-    itemRepo.deleteAll(t.getItems());
-    List<AssessmentTemplateItem> items = request.items().stream()
-        .sorted(Comparator.comparingInt(TemplateItemRequest::position))
-        .map(it -> AssessmentTemplateItem.builder()
-            .template(t)
-            .objectiveId(it.objectiveId())
-            .exerciseId(it.exerciseId())
-            .points(Math.max(it.points(), 1))
-            .position(Math.max(it.position(), 1))
-            .gradingMode(it.gradingMode() == null ? GradingMode.AUTO : it.gradingMode())
-            .build())
-        .toList();
-    itemRepo.saveAll(items);
-    t.setItems(items);
+    // Reemplazo TOTAL de ítems de forma segura para orphanRemoval:
+    // 1) limpiar colección administrada
+    t.getItems().clear(); // ← esto genera los deletes por orphanRemoval
+
+    // 2) reconstruir y agregar al MISMO List administrado
+    List<AssessmentTemplateItem> rebuilt = buildItemsWithDefaults(t, request.items());
+    t.getItems().addAll(rebuilt);
+
+    // 3) no hace falta save explícito a items (cascada)
+    // templateRepo.save(t); // opcional; como está managed, se flush-ea al commit
+
     return toResponse(t, true);
   }
 
@@ -106,34 +109,70 @@ public class TemplateServiceImpl implements TemplateService {
 
   // ---- helpers
 
+  /**
+   * Construye items garantizando:
+   * - points >= 1 (default 1 si null/invalid)
+   * - position re-secuenciada 1..N en el orden recibido (ignoramos posiciones
+   * ausentes)
+   * - gradingMode default = AUTO si null
+   * - setea la relación bidireccional (item.setTemplate(template))
+   */
+  private List<AssessmentTemplateItem> buildItemsWithDefaults(
+      AssessmentTemplate template,
+      List<TemplateItemRequest> reqItems) {
+
+    if (reqItems == null || reqItems.isEmpty()) {
+      throw new BadRequestException("La plantilla debe incluir al menos un ítem");
+    }
+
+    List<AssessmentTemplateItem> tmp = new ArrayList<>(reqItems.size());
+
+    for (TemplateItemRequest it : reqItems) {
+      int points = (it.points() != null && it.points() >= 1) ? it.points() : 1;
+      GradingMode mode = (it.gradingMode() != null) ? it.gradingMode() : GradingMode.AUTO;
+
+      AssessmentTemplateItem entity = AssessmentTemplateItem.builder()
+          .template(template) // ← dueño
+          .objectiveId(it.objectiveId())
+          .exerciseId(it.exerciseId())
+          .points(points)
+          .gradingMode(mode)
+          .build();
+
+      tmp.add(entity);
+    }
+
+    // Re-secuenciar posiciones 1..N en el orden recibido
+    for (int i = 0; i < tmp.size(); i++) {
+      tmp.get(i).setPosition(i + 1);
+    }
+
+    return tmp;
+  }
+
   private TemplateResponse toResponse(AssessmentTemplate t, boolean withItems) {
     List<TemplateItemResponse> items = (withItems && t.getItems() != null)
         ? t.getItems().stream()
             .sorted(Comparator.comparingInt(AssessmentTemplateItem::getPosition))
             .map(i -> new TemplateItemResponse(
-                i.getId(), i.getObjectiveId(), i.getExerciseId(),
-                i.getPoints(), i.getPosition(), i.getGradingMode()))
+                i.getId(),
+                i.getObjectiveId(),
+                i.getExerciseId(),
+                i.getPoints(),
+                i.getPosition(),
+                i.getGradingMode()))
             .toList()
         : List.of();
-    JsonNode cfg = stringToJson(t.getConfigJson());
+
+    JsonNode cfg = t.getConfigJson(); // JsonNode directo
     return new TemplateResponse(
-        t.getId(), t.getOwnerUuid(), t.getTitle(), t.getCurriculumId(),
-        cfg, items, t.getCreatedAt(), t.getUpdatedAt());
-  }
-
-  private String jsonToString(JsonNode node) {
-    try {
-      return node == null ? null : mapper.writeValueAsString(node);
-    } catch (Exception e) {
-      throw new IllegalArgumentException("config inválido", e);
-    }
-  }
-
-  private JsonNode stringToJson(String s) {
-    try {
-      return s == null ? null : mapper.readTree(s);
-    } catch (Exception e) {
-      return null;
-    }
+        t.getId(),
+        t.getOwnerUuid(),
+        t.getTitle(),
+        t.getCurriculumId(),
+        cfg,
+        items,
+        t.getCreatedAt(),
+        t.getUpdatedAt());
   }
 }

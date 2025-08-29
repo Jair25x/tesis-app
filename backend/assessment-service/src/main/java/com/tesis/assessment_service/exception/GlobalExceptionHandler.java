@@ -19,7 +19,8 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
 
   private String traceId() {
-    // Si usas MDC/observabilidad, podrías extraer un traceId
+    // Si usas MDC/observabilidad, podrías extraer un traceId (por ejemplo,
+    // MDC.get("traceId"))
     return null;
   }
 
@@ -53,12 +54,32 @@ public class GlobalExceptionHandler {
     return build(HttpStatus.CONFLICT, ex.getMessage(), req, null);
   }
 
+  /**
+   * Mapea fallas de servicios externos a 502/503 para diferenciar permisos vs
+   * indisponibilidad.
+   * - statusCode == 0 => sin respuesta/timeout/red => 503
+   * - statusCode >= 500 => error upstream => 502
+   * - otros => 502 (inconsistencias de orquestación)
+   */
   @ExceptionHandler(ExternalServiceException.class)
   public ResponseEntity<ErrorResponse> handleExternal(ExternalServiceException ex, HttpServletRequest req) {
-    String msg = "Fallo en servicio externo [" + ex.getServiceName() + "], status=" + ex.getStatusCode()
-        + (ex.getMessage() != null ? " – " + ex.getMessage() : "");
-    log.warn(msg);
-    return build(HttpStatus.SERVICE_UNAVAILABLE, msg, req, null);
+    int upstream = ex.getStatusCode();
+    HttpStatus status = (upstream == 0) ? HttpStatus.SERVICE_UNAVAILABLE
+        : (upstream >= 500 ? HttpStatus.BAD_GATEWAY : HttpStatus.BAD_GATEWAY);
+
+    Map<String, Object> details = new HashMap<>();
+    details.put("service", ex.getServiceName());
+    details.put("upstreamStatus", upstream);
+
+    String msg = ex.getMessage() != null
+        ? ex.getMessage()
+        : "Fallo en servicio externo [" + ex.getServiceName() + "]";
+
+    // WARN para reducir ruido: no es bug del servicio, pero afecta el resultado
+    log.warn("ExternalServiceException: status={} upstream={} service={} msg={}",
+        status.value(), upstream, ex.getServiceName(), msg);
+
+    return build(status, msg, req, details);
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -106,18 +127,19 @@ public class GlobalExceptionHandler {
     return build(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno", req, null);
   }
 
-  @org.springframework.web.bind.annotation.ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
-  public org.springframework.http.ResponseEntity<com.tesis.assessment_service.exception.ErrorResponse> handleMethodNotSupported(
+  @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+  public ResponseEntity<ErrorResponse> handleMethodNotSupported(
       org.springframework.web.HttpRequestMethodNotSupportedException ex,
       jakarta.servlet.http.HttpServletRequest request) {
+
     String path = request != null ? request.getRequestURI() : null;
     String traceId = org.slf4j.MDC.get("traceId"); // si usas MDC; de lo contrario deja null
-    java.util.Map<String, Object> details = new java.util.HashMap<>();
+    Map<String, Object> details = new HashMap<>();
     if (ex.getSupportedHttpMethods() != null) {
       details.put("supported", ex.getSupportedHttpMethods().toString());
     }
 
-    com.tesis.assessment_service.exception.ErrorResponse err = new com.tesis.assessment_service.exception.ErrorResponse(
+    ErrorResponse err = new ErrorResponse(
         405,
         "Method Not Allowed",
         ex.getMessage(),
@@ -125,8 +147,6 @@ public class GlobalExceptionHandler {
         traceId,
         details.isEmpty() ? null : details);
 
-    return org.springframework.http.ResponseEntity
-        .status(org.springframework.http.HttpStatus.METHOD_NOT_ALLOWED)
-        .body(err);
+    return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(err);
   }
 }

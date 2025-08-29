@@ -11,4 +11,7 @@ public interface ClassroomClient {
 
   /** Devuelve los IDs de estudiantes del classroom (para overview y filtros). */
   List<UUID> getStudentIds(UUID classroomId);
+
+  /** NUEVO: aulas (IDs) del principal para prefiltrar paginado. */
+  List<UUID> listMyClassrooms(UUID userId);
 }

@@ -11,9 +11,9 @@ import java.util.UUID;
 
 /** Crear/actualizar plantilla de evaluación. */
 public record TemplateRequest(
-    @NotBlank String title,
-    @NotNull UUID curriculumId,
-    @NotEmpty @Valid List<TemplateItemRequest> items,
-    JsonNode config // {shuffle, showFeedback, allowHints, ...}
+        @NotBlank String title,
+        @NotNull UUID curriculumId,
+        @NotEmpty @Valid List<TemplateItemRequest> items,
+        JsonNode config // {shuffle, showFeedback, allowHints, ...}
 ) {
 }

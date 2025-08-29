@@ -4,6 +4,8 @@ import com.tesis.classroom_service.model.Classroom;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -22,4 +24,7 @@ public interface ClassroomRepository extends JpaRepository<Classroom, UUID> {
   Optional<Classroom> findByIdAndActiveTrue(UUID id);
 
   Page<Classroom> findByOwnerUuidAndActiveTrue(UUID ownerUuid, Pageable pageable);
+
+  @Query("select c.id from Classroom c where c.ownerUuid = :owner")
+  List<UUID> findIdsByOwnerUuid(@Param("owner") UUID owner);
 }

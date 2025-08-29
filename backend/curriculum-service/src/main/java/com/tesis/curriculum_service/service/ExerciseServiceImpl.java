@@ -203,6 +203,16 @@ public class ExerciseServiceImpl implements ExerciseService {
     return toStudentDto(ex, examMode);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public ExerciseResponse getByIdFlat(UUID exerciseId, boolean examMode) throws ResourceNotFoundException {
+    var ex = exerciseRepo.findById(exerciseId)
+        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
+    // En el atajo ya no validamos la jerarquía porque la ruta es plana (es
+    // intencional).
+    return toStudentDto(ex, examMode);
+  }
+
   /* ──────────────────────── CHECK ANSWER ───────────────────────── */
   @Override
   @Transactional(readOnly = true)

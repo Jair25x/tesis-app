@@ -6,12 +6,18 @@ import com.tesis.assessment_service.dto.request.GradeItemRequest;
 import com.tesis.assessment_service.dto.response.SubmissionDetailResponse;
 import com.tesis.assessment_service.exception.ForbiddenException;
 import com.tesis.assessment_service.exception.NotFoundException;
-import com.tesis.assessment_service.model.*;
+import com.tesis.assessment_service.model.AssessmentAssignment;
+import com.tesis.assessment_service.model.AssessmentSubmission;
+import com.tesis.assessment_service.model.AssessmentSubmissionItem;
+import com.tesis.assessment_service.model.AssessmentProgressOutbox;
+import com.tesis.assessment_service.model.enums.AssignmentScope;
 import com.tesis.assessment_service.model.enums.GradingMode;
 import com.tesis.assessment_service.model.enums.OutboxStatus;
 import com.tesis.assessment_service.model.enums.SubmissionStatus;
-import com.tesis.assessment_service.repository.*;
-import com.tesis.assessment_service.service.AdvisorEventService; // <-- NUEVO
+import com.tesis.assessment_service.repository.AssessmentProgressOutboxRepository;
+import com.tesis.assessment_service.repository.AssessmentSubmissionItemRepository;
+import com.tesis.assessment_service.repository.AssessmentSubmissionRepository;
+import com.tesis.assessment_service.service.AdvisorEventService;
 import com.tesis.assessment_service.service.GradingService;
 import com.tesis.assessment_service.service.client.ClassroomClient;
 import com.tesis.assessment_service.service.client.ProgressClient;
@@ -35,7 +41,7 @@ public class GradingServiceImpl implements GradingService {
   private final AssessmentProgressOutboxRepository outboxRepo;
   private final ClassroomClient classroomClient;
   private final ProgressClient progressClient;
-  private final AdvisorEventService advisorEventService; // <-- NUEVO
+  private final AdvisorEventService advisorEventService; // Publicación a AI Advisor (outbox)
   private final ObjectMapper mapper;
 
   @Override
@@ -44,10 +50,12 @@ public class GradingServiceImpl implements GradingService {
         .orElseThrow(() -> new NotFoundException("Submission no encontrado"));
     AssessmentAssignment a = s.getAssignment();
 
-    if (a.getScope() == com.tesis.assessment_service.model.enums.AssignmentScope.CLASSROOM) {
+    // Autorización: docente/co-teacher del aula si la asignación es de aula
+    if (a.getScope() == AssignmentScope.CLASSROOM) {
       boolean staff = classroomClient.isMember(a.getClassroomId(), teacherId);
-      if (!staff)
+      if (!staff) {
         throw new ForbiddenException("No eres staff del aula");
+      }
     }
 
     AssessmentSubmissionItem it = itemRepo.findById(itemId)
@@ -56,18 +64,32 @@ public class GradingServiceImpl implements GradingService {
       throw new NotFoundException("Item no pertenece al submission");
     }
 
-    it.setCorrect(Boolean.TRUE.equals(req.correct()));
-    it.setScore(req.score());
-    it.setFeedbackJson(toString(req.feedback() == null ? null : req.feedback().value()));
-    it.setCheckedAt(OffsetDateTime.now(ZoneOffset.UTC));
+    // Solo sentido si el ítem es MANUAL (si quisieras, podrías validar y rechazar
+    // si es AUTO)
+    if (it.getGradingMode() == GradingMode.MANUAL) {
+      it.setCorrect(Boolean.TRUE.equals(req.correct()));
+      it.setScore(req.score());
+      // 👇 Guardar feedback como JsonNode directo (JSONB)
+      it.setFeedbackJson(req.feedback() == null ? null : req.feedback().value());
+      it.setCheckedAt(OffsetDateTime.now(ZoneOffset.UTC));
+    } else {
+      // Para AUTO, permitimos que el docente ajuste corrección/score/feedback
+      // manualmente
+      it.setCorrect(req.correct());
+      it.setScore(req.score());
+      it.setFeedbackJson(req.feedback() == null ? null : req.feedback().value());
+      it.setCheckedAt(OffsetDateTime.now(ZoneOffset.UTC));
+    }
 
-    // Construye payload para progress (lo reusamos para outbox si falla)
+    // ---- Intento de notificar progreso (best-effort) ----
+    // Construimos un metadato consistente para trazabilidad
     ObjectNode meta = mapper.createObjectNode();
     meta.put("assignmentId", a.getId().toString());
     meta.put("submissionId", s.getId().toString());
     meta.put("submissionItemId", it.getId().toString());
     meta.put("gradingMode", it.getGradingMode().name());
 
+    // Payload canónico para progress-service (y para outbox si falla)
     ObjectNode payload = mapper.createObjectNode();
     payload.put("studentId", s.getStudentId().toString());
     payload.put("source", "ASSESSMENT");
@@ -81,8 +103,6 @@ public class GradingServiceImpl implements GradingService {
     payload.put("objectiveId", it.getObjectiveId().toString());
     payload.set("metadata", meta);
 
-    // Intento de POST inmediato; si falla, encolar en outbox con el payload
-    // completo
     try {
       var reqP = new ProgressClient.AttemptRequest(
           s.getStudentId(), "ASSESSMENT",
@@ -93,31 +113,35 @@ public class GradingServiceImpl implements GradingService {
           meta);
       progressClient.postAttempt(reqP);
     } catch (Exception ex) {
+      // Fallback Outbox: guardamos el JSON textual (DB lo almacena en JSONB)
       AssessmentProgressOutbox out = AssessmentProgressOutbox.builder()
           .submissionItemId(it.getId())
-          .payloadJson(payload.toString()) // <-- GUARDA EL JSON COMPLETO
+          .payloadJson(payload.toString())
           .status(OutboxStatus.PENDING)
           .lastError(ex.getMessage())
           .build();
       outboxRepo.save(out);
     }
 
-    // Recalcular totales y estado
+    // ---- Recalcular totales y estado del submission ----
     List<AssessmentSubmissionItem> items = itemRepo.findBySubmission_IdOrderByPositionAsc(s.getId());
     boolean allScored = items.stream().allMatch(x -> x.getScore() != null);
+
     if (allScored) {
       BigDecimal total = items.stream()
           .map(x -> x.getScore() == null ? BigDecimal.ZERO : x.getScore())
           .reduce(BigDecimal.ZERO, BigDecimal::add);
       int maxPoints = items.stream().mapToInt(x -> x.getPoints() == null ? 1 : x.getPoints()).sum();
+
       s.setScore(total);
       s.setMaxScore(BigDecimal.valueOf(maxPoints));
       s.setStatus(SubmissionStatus.GRADED);
       s.setGradedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
-      // 🔔 Encola evento para AI Advisor (outbox gemelo)
+      // Encola evento para AI Advisor (outbox gemelo)
       advisorEventService.enqueueGradedEvent(s);
     } else {
+      // Si todavía hay ítems sin calificación, como mínimo debe estar SUBMITTED
       if (s.getStatus() == SubmissionStatus.IN_PROGRESS) {
         s.setStatus(SubmissionStatus.SUBMITTED);
       }
@@ -128,10 +152,20 @@ public class GradingServiceImpl implements GradingService {
 
   private SubmissionDetailResponse toDetail(AssessmentSubmission s, List<AssessmentSubmissionItem> items) {
     var list = items.stream().map(i -> new SubmissionDetailResponse.Item(
-        i.getId(), i.getExerciseId(), i.getObjectiveId(), i.getPosition(),
-        i.getPoints(), i.getGradingMode(),
-        null, i.getCorrect(), i.getScore(), null, i.getCheckedAt(),
-        i.getExerciseTitle(), i.getExerciseType(), i.getStatementRendered())).toList();
+        i.getId(),
+        i.getExerciseId(),
+        i.getObjectiveId(),
+        i.getPosition(),
+        i.getPoints(),
+        i.getGradingMode(),
+        i.getAnswerJson(), // 👈 devolvemos la respuesta (JsonNode)
+        i.getCorrect(),
+        i.getScore(),
+        i.getFeedbackJson(), // 👈 devolvemos el feedback (JsonNode)
+        i.getCheckedAt(),
+        i.getExerciseTitle(),
+        i.getExerciseType(),
+        i.getStatementRendered())).toList();
 
     return new SubmissionDetailResponse(
         s.getId(),
@@ -146,13 +180,5 @@ public class GradingServiceImpl implements GradingService {
         s.getDurationSec(),
         s.getAttemptNo(),
         list);
-  }
-
-  private String toString(com.fasterxml.jackson.databind.JsonNode node) {
-    try {
-      return node == null ? null : mapper.writeValueAsString(node);
-    } catch (Exception e) {
-      return null;
-    }
   }
 }

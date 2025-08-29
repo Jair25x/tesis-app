@@ -21,7 +21,6 @@ import com.tesis.assessment_service.service.client.ProgressClient;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -57,7 +56,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     // 2) membresía si es aula
     ensureStudentMembership(a, studentId);
 
-    // 3) idempotencia: si hay IN_PROGRESS, lo devolvemos con items y config
+    // 3) idempotencia
     Optional<AssessmentSubmission> existingLatest = submissionRepo
         .findTopByAssignment_IdAndStudentIdOrderByCreatedAtDesc(assignmentId, studentId);
 
@@ -133,11 +132,10 @@ public class SubmissionServiceImpl implements SubmissionService {
 
       SubmitRequest.AnswerItem ans = answersById.get(it.getId());
       JsonNode answerJson = (ans != null && ans.answer() != null) ? ans.answer().value() : null;
-      it.setAnswerJson(toString(answerJson));
+      it.setAnswerJson(answerJson); // 👈 JsonNode directo (JSONB)
 
       if (it.getGradingMode() == GradingMode.MANUAL) {
         hasManual = true;
-        // Aún sin score; quedará pendiente
         results.add(new SubmitResponse.ItemResult(it.getId(), null, null, null));
         continue;
       }
@@ -146,12 +144,12 @@ public class SubmissionServiceImpl implements SubmissionService {
       CurriculumClient.CheckResult cr = curriculumClient.checkExercise(it.getExerciseId(), answerJson);
       it.setCheckedAt(OffsetDateTime.now(ZoneOffset.UTC));
       it.setCorrect(cr.correct());
-      BigDecimal itemScore = BigDecimal.valueOf(it.getPoints()); // default si correcto
+      BigDecimal itemScore = BigDecimal.valueOf(it.getPoints());
       if (!cr.correct()) {
         itemScore = BigDecimal.ZERO;
       }
       it.setScore(itemScore);
-      it.setFeedbackJson(toString(cr.feedback()));
+      it.setFeedbackJson(cr.feedback()); // 👈 JsonNode directo (JSONB)
 
       totalScore = totalScore.add(itemScore);
 
@@ -193,14 +191,12 @@ public class SubmissionServiceImpl implements SubmissionService {
     AssessmentAssignment a = s.getAssignment();
 
     if (asTeacher) {
-      // staff del aula (si aplica)
       if (a.getScope() == AssignmentScope.CLASSROOM) {
         boolean staff = classroomClient.isMember(a.getClassroomId(), requesterId);
         if (!staff)
           throw new ForbiddenException("No eres staff del aula");
       }
     } else {
-      // estudiante dueño
       if (!s.getStudentId().equals(requesterId)) {
         throw new ForbiddenException("No puedes ver el submission de otro alumno");
       }
@@ -235,7 +231,6 @@ public class SubmissionServiceImpl implements SubmissionService {
 
   private void ensureSubmitAllowed(AssessmentAssignment a, AssessmentSubmission s) {
     ensureStartAllowed(a);
-    // time-limit: permitimos enviar tarde; marcamos `late` en respuesta
     if (a.getTimeLimitSec() != null && s.getStartedAt() != null) {
       OffsetDateTime until = s.getStartedAt().plusSeconds(a.getTimeLimitSec());
       if (OffsetDateTime.now(ZoneOffset.UTC).isAfter(until)) {
@@ -257,7 +252,6 @@ public class SubmissionServiceImpl implements SubmissionService {
   }
 
   private StartResponse toStartResponse(AssessmentSubmission s, List<AssessmentSubmissionItem> items) {
-    // Construir items DTO
     var list = items.stream()
         .sorted(Comparator.comparing(AssessmentSubmissionItem::getPosition))
         .map(i -> new StartResponse.Item(
@@ -269,7 +263,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             i.getGradingMode()))
         .toList();
 
-    // Resolver config de la plantilla (seguro ante LAZY y nulls)
+    // Config de la plantilla (JsonNode directo desde JSONB)
     JsonNode configNode = loadTemplateConfig(s.getAssignment());
 
     return new StartResponse(
@@ -282,23 +276,17 @@ public class SubmissionServiceImpl implements SubmissionService {
         list);
   }
 
-  /** Intenta cargar y parsear el config JSON de la plantilla asociada. */
+  /** Obtiene el config JSONB (JsonNode) de la plantilla asociada. */
   private JsonNode loadTemplateConfig(AssessmentAssignment a) {
     try {
-      // 1) intentar por repo (evita problemas de LAZY y garantiza datos de DB)
       UUID tplId = (a.getTemplate() != null ? a.getTemplate().getId() : null);
-      String json = null;
       if (tplId != null) {
         var tpl = templateRepo.findById(tplId).orElse(null);
         if (tpl != null) {
-          json = tpl.getConfigJson();
+          return tpl.getConfigJson(); // JsonNode directo (JSONB)
         }
       }
-      // 2) fallback al objeto en memoria
-      if (json == null && a.getTemplate() != null) {
-        json = a.getTemplate().getConfigJson();
-      }
-      return (json != null) ? mapper.readTree(json) : null;
+      return (a.getTemplate() != null) ? a.getTemplate().getConfigJson() : null;
     } catch (Exception ignore) {
       return null;
     }
@@ -312,10 +300,10 @@ public class SubmissionServiceImpl implements SubmissionService {
         i.getPosition(),
         i.getPoints(),
         i.getGradingMode(),
-        toJson(i.getAnswerJson()),
+        i.getAnswerJson(), // JsonNode directo
         i.getCorrect(),
         i.getScore(),
-        toJson(i.getFeedbackJson()),
+        i.getFeedbackJson(), // JsonNode directo
         i.getCheckedAt(),
         i.getExerciseTitle(),
         i.getExerciseType(),
@@ -334,22 +322,6 @@ public class SubmissionServiceImpl implements SubmissionService {
         s.getDurationSec(),
         s.getAttemptNo(),
         detailItems);
-  }
-
-  private String toString(JsonNode node) {
-    try {
-      return node == null ? null : mapper.writeValueAsString(node);
-    } catch (Exception e) {
-      return null;
-    }
-  }
-
-  private JsonNode toJson(String s) {
-    try {
-      return StringUtils.hasText(s) ? mapper.readTree(s) : null;
-    } catch (Exception e) {
-      return null;
-    }
   }
 
   private void postAttemptBestEffort(AssessmentSubmission s, AssessmentSubmissionItem it, UUID objectiveId) {
@@ -375,7 +347,7 @@ public class SubmissionServiceImpl implements SubmissionService {
       // Outbox como fallback
       AssessmentProgressOutbox out = AssessmentProgressOutbox.builder()
           .submissionItemId(it.getId())
-          .payloadJson(safePayloadForOutbox(s, it, objectiveId))
+          .payloadJson(safePayloadForOutbox(s, it, objectiveId)) // String OK (se almacena como JSONB en DB)
           .status(OutboxStatus.PENDING)
           .lastError(ex.getMessage())
           .build();

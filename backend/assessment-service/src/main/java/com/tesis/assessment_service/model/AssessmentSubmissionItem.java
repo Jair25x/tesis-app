@@ -1,10 +1,13 @@
 package com.tesis.assessment_service.model;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.tesis.assessment_service.model.base.AuditableEntity;
 import com.tesis.assessment_service.model.enums.GradingMode;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -48,9 +51,10 @@ public class AssessmentSubmissionItem extends AuditableEntity {
   @Column(name = "grading_mode", nullable = false, length = 12)
   private GradingMode gradingMode;
 
-  /** Respuesta del alumno (payload flexible). */
+  /** Respuesta del alumno (JSONB). */
+  @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "answer_json", columnDefinition = "jsonb")
-  private String answerJson;
+  private JsonNode answerJson;
 
   /** Resultado (AUTO) o luego de calificar (MANUAL). */
   @Column(name = "correct")
@@ -59,8 +63,10 @@ public class AssessmentSubmissionItem extends AuditableEntity {
   @Column(name = "score", precision = 8, scale = 2)
   private BigDecimal score;
 
+  /** Feedback de la corrección (JSONB). */
+  @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "feedback_json", columnDefinition = "jsonb")
-  private String feedbackJson;
+  private JsonNode feedbackJson;
 
   @Column(name = "checked_at")
   private OffsetDateTime checkedAt;
@@ -72,6 +78,7 @@ public class AssessmentSubmissionItem extends AuditableEntity {
   @Column(name = "exercise_type", length = 40)
   private String exerciseType;
 
+  @Lob
   @Column(name = "statement_rendered", columnDefinition = "text")
   private String statementRendered;
 }
