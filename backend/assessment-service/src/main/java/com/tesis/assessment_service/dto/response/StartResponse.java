@@ -1,3 +1,4 @@
+// src/main/java/com/tesis/assessment_service/dto/response/StartResponse.java
 package com.tesis.assessment_service.dto.response;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -14,7 +15,8 @@ public record StartResponse(
     UUID studentId,
     int attemptNo,
     OffsetDateTime startedAt,
-    JsonNode config, // <<< NUEVO: copia del config de la plantilla
+    Integer durationSec,
+    JsonNode config,
     List<Item> items) {
   public record Item(
       UUID submissionItemId,

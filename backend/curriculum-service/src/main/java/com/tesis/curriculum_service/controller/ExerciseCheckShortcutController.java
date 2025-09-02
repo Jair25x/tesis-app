@@ -37,12 +37,13 @@ public class ExerciseCheckShortcutController {
       @PathVariable UUID exerciseId,
       @RequestParam(name = "mode", required = false, defaultValue = "normal") String mode,
       @RequestHeader(name = "X-Exam-Mode", required = false) String examHeader) throws ResourceNotFoundException {
+
     boolean examMode = "exam".equalsIgnoreCase(mode) || (examHeader != null && !examHeader.isBlank());
     ExerciseResponse resp = exerciseService.getByIdFlat(exerciseId, examMode);
     return ResponseEntity.ok(resp);
   }
 
-  @Operation(summary = "Verificar respuesta por exerciseId (ruta corta)")
+  @Operation(summary = "Verificar respuesta por exerciseId (ruta corta) [público]")
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER','STUDENT')")
   @PostMapping("/{exerciseId}/check")
   public ResponseEntity<CheckAnswerResponse> checkByExerciseId(
@@ -57,8 +58,8 @@ public class ExerciseCheckShortcutController {
     var comp = std.getCompetency();
     var cur = comp.getCurriculum();
 
-    Object answerRaw = body.getOrDefault("answer", Map.of());
-    JsonNode answerNode = objectMapper.valueToTree(answerRaw);
+    // Esperamos { "answer": ... } ; si no viene, se usa {} (evita NPE)
+    JsonNode answerNode = objectMapper.valueToTree(body.getOrDefault("answer", Map.of()));
 
     CheckAnswerRequest req = CheckAnswerRequest.builder()
         .answer(answerNode)

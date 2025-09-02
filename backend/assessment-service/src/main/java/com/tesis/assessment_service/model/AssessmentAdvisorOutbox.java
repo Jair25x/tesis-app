@@ -1,13 +1,19 @@
 package com.tesis.assessment_service.model;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.tesis.assessment_service.model.base.AuditableEntity;
 import com.tesis.assessment_service.model.enums.OutboxStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.type.SqlTypes;
 
 import java.util.UUID;
 
+/**
+ * Outbox para el AI Advisor. Igual patrón: JSONB real.
+ */
 @Getter
 @Setter
 @NoArgsConstructor
@@ -32,9 +38,16 @@ public class AssessmentAdvisorOutbox extends AuditableEntity {
   @Column(name = "status", nullable = false, length = 16)
   private OutboxStatus status;
 
+  @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "payload_json", columnDefinition = "jsonb", nullable = false)
-  private String payloadJson;
+  private JsonNode payloadJson;
 
   @Column(name = "last_error")
   private String lastError;
+
+  @PrePersist
+  void defaultStatus() {
+    if (status == null)
+      status = OutboxStatus.PENDING;
+  }
 }

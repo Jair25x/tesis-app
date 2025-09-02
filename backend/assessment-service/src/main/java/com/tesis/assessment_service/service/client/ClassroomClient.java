@@ -1,6 +1,7 @@
 package com.tesis.assessment_service.service.client;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** Contrato hacia classroom-service. */
@@ -14,4 +15,7 @@ public interface ClassroomClient {
 
   /** NUEVO: aulas (IDs) del principal para prefiltrar paginado. */
   List<UUID> listMyClassrooms(UUID userId);
+
+  // NUEVO: batch id -> name
+  Map<UUID, String> lookupNames(List<UUID> classroomIds);
 }

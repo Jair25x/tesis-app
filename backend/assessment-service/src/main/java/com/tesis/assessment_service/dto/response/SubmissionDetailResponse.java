@@ -21,6 +21,7 @@ public record SubmissionDetailResponse(
     OffsetDateTime submittedAt,
     OffsetDateTime gradedAt,
     Integer durationSec,
+    Integer elapsedSec,
     Integer attemptNo,
     List<Item> items) {
   public record Item(

@@ -4,9 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.tesis.assessment_service.dto.request.SubmitRequest;
-import com.tesis.assessment_service.dto.response.StartResponse;
-import com.tesis.assessment_service.dto.response.SubmissionDetailResponse;
-import com.tesis.assessment_service.dto.response.SubmitResponse;
+import com.tesis.assessment_service.dto.response.*;
 import com.tesis.assessment_service.exception.BadRequestException;
 import com.tesis.assessment_service.exception.ConflictException;
 import com.tesis.assessment_service.exception.ForbiddenException;
@@ -20,6 +18,8 @@ import com.tesis.assessment_service.service.client.CurriculumClient;
 import com.tesis.assessment_service.service.client.ProgressClient;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -56,35 +56,50 @@ public class SubmissionServiceImpl implements SubmissionService {
     // 2) membresía si es aula
     ensureStudentMembership(a, studentId);
 
-    // 3) idempotencia
-    Optional<AssessmentSubmission> existingLatest = submissionRepo
-        .findTopByAssignment_IdAndStudentIdOrderByCreatedAtDesc(assignmentId, studentId);
-
-    if (existingLatest.isPresent()) {
-      AssessmentSubmission s = existingLatest.get();
-      if (s.getStatus() == SubmissionStatus.IN_PROGRESS) {
-        return toStartResponse(s);
-      }
-      if (s.getStatus() == SubmissionStatus.SUBMITTED || s.getStatus() == SubmissionStatus.GRADED) {
-        throw new ConflictException("Ya enviaste esta evaluación");
-      }
+    // 3) Idempotencia: si hay un IN_PROGRESS del alumno en esta asignación,
+    // devuélvelo
+    Optional<AssessmentSubmission> inProgress = submissionRepo
+        .findTopByAssignment_IdAndStudentIdAndStatusOrderByCreatedAtDesc(assignmentId, studentId,
+            SubmissionStatus.IN_PROGRESS);
+    if (inProgress.isPresent()) {
+      return toStartResponse(inProgress.get());
     }
 
-    // 4) crear submission + items desde snapshot de plantilla
-    AssessmentTemplate tpl = templateRepo.findWithItemsById(a.getTemplate().getId())
-        .orElseThrow(() -> new IllegalStateException("Plantilla inconsistente"));
+    // 4) Límite de intentos
+    long used = submissionRepo.countByAssignment_IdAndStudentId(assignmentId, studentId);
+    int allowed = (a.getAttemptsAllowed() == null || a.getAttemptsAllowed() < 1) ? 1 : a.getAttemptsAllowed();
+    if (used >= allowed) {
+      throw new ConflictException("Se alcanzó el número máximo de intentos permitidos");
+    }
 
+    // 5) attemptNo = máximo previo + 1
+    int nextAttemptNo = submissionRepo
+        .findTopByAssignment_IdAndStudentIdOrderByAttemptNoDesc(assignmentId, studentId)
+        .map(s -> (s.getAttemptNo() == null ? 0 : s.getAttemptNo()) + 1)
+        .orElse(1);
+
+    // 6) Crear submission + items desde la plantilla (snapshot ordenada por
+    // position)
+    AssessmentTemplate tpl = templateRepo.findById(a.getTemplate().getId())
+        .orElseThrow(() -> new IllegalStateException("Plantilla inconsistente"));
+    Integer timeLimit = a.getTimeLimitSec();
     AssessmentSubmission s = AssessmentSubmission.builder()
         .assignment(a)
         .studentId(studentId)
         .status(SubmissionStatus.IN_PROGRESS)
         .startedAt(OffsetDateTime.now(ZoneOffset.UTC))
-        .attemptNo(1) // TODO: si soportas múltiples intentos, incrementa aquí
+        .attemptNo(nextAttemptNo)
+        .durationSec(timeLimit) // <<--- GUARDA el LÍMITE
         .build();
     submissionRepo.save(s);
 
-    List<AssessmentSubmissionItem> items = tpl.getItems().stream()
-        .sorted(Comparator.comparingInt(AssessmentTemplateItem::getPosition))
+    List<AssessmentTemplateItem> templateItems = tpl.getItems() == null
+        ? List.of()
+        : tpl.getItems().stream()
+            .sorted(Comparator.comparingInt(AssessmentTemplateItem::getPosition))
+            .toList();
+
+    List<AssessmentSubmissionItem> items = templateItems.stream()
         .map(ti -> AssessmentSubmissionItem.builder()
             .submission(s)
             .exerciseId(ti.getExerciseId())
@@ -132,7 +147,7 @@ public class SubmissionServiceImpl implements SubmissionService {
 
       SubmitRequest.AnswerItem ans = answersById.get(it.getId());
       JsonNode answerJson = (ans != null && ans.answer() != null) ? ans.answer().value() : null;
-      it.setAnswerJson(answerJson); // 👈 JsonNode directo (JSONB)
+      it.setAnswerJson(answerJson); // JSONB
 
       if (it.getGradingMode() == GradingMode.MANUAL) {
         hasManual = true;
@@ -149,7 +164,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         itemScore = BigDecimal.ZERO;
       }
       it.setScore(itemScore);
-      it.setFeedbackJson(cr.feedback()); // 👈 JsonNode directo (JSONB)
+      it.setFeedbackJson(cr.feedback()); // JSONB
 
       totalScore = totalScore.add(itemScore);
 
@@ -165,8 +180,9 @@ public class SubmissionServiceImpl implements SubmissionService {
 
     // Estado final submission
     s.setSubmittedAt(OffsetDateTime.now(ZoneOffset.UTC));
-    if (s.getStartedAt() != null) {
-      s.setDurationSec((int) java.time.Duration.between(s.getStartedAt(), s.getSubmittedAt()).getSeconds());
+    if (s.getStartedAt() != null && s.getSubmittedAt() != null) {
+      int elapsed = (int) java.time.Duration.between(s.getStartedAt(), s.getSubmittedAt()).getSeconds();
+      s.setElapsedSec(Math.max(0, elapsed));
     }
     s.setMaxScore(BigDecimal.valueOf(totalPoints));
 
@@ -206,6 +222,54 @@ public class SubmissionServiceImpl implements SubmissionService {
     return toDetailResponse(s, items);
   }
 
+  @Override
+  public PageResponse<MySubmissionSummaryDto> listMySubmissions(UUID studentId,
+      Optional<SubmissionStatus> status,
+      Pageable pageable) {
+    Page<AssessmentSubmission> page = status
+        .map(st -> submissionRepo.findByStudentIdAndStatus(studentId, st, pageable))
+        .orElseGet(() -> submissionRepo.findByStudentId(studentId, pageable));
+
+    // 1) Colectar classroomIds de la página
+    List<UUID> classroomIds = page.getContent().stream()
+        .map(AssessmentSubmission::getAssignment)
+        .filter(Objects::nonNull)
+        .filter(a -> a.getScope() == AssignmentScope.CLASSROOM)
+        .map(AssessmentAssignment::getClassroomId)
+        .filter(Objects::nonNull)
+        .distinct()
+        .toList();
+
+    // 2) Lookup batch id->name
+    Map<UUID, String> names = classroomClient.lookupNames(classroomIds);
+
+    // 3) Mapear DTO incluyendo classroomName
+    Page<MySubmissionSummaryDto> mapped = page.map(s -> {
+      var assignment = s.getAssignment();
+      var tpl = assignment != null ? assignment.getTemplate() : null;
+      String classroomName = null;
+      if (assignment != null && assignment.getScope() == AssignmentScope.CLASSROOM) {
+        classroomName = names.getOrDefault(assignment.getClassroomId(), null);
+      }
+      return MySubmissionSummaryDto.builder()
+          .submissionId(s.getId())
+          .assignmentId(assignment != null ? assignment.getId() : null)
+          .templateTitle(tpl != null ? tpl.getTitle() : null)
+          .attemptNo(s.getAttemptNo())
+          .status(s.getStatus())
+          .score(s.getScore())
+          .maxScore(s.getMaxScore())
+          .startedAt(s.getStartedAt())
+          .submittedAt(s.getSubmittedAt())
+          .gradedAt(s.getGradedAt())
+          .scope(assignment != null ? assignment.getScope() : null)
+          .classroomName(classroomName)
+          .build();
+    });
+
+    return PageResponse.of(mapped);
+  }
+
   // ---- helpers
 
   private void ensureStartAllowed(AssessmentAssignment a) {
@@ -230,19 +294,33 @@ public class SubmissionServiceImpl implements SubmissionService {
   }
 
   private void ensureSubmitAllowed(AssessmentAssignment a, AssessmentSubmission s) {
-    ensureStartAllowed(a);
-    if (a.getTimeLimitSec() != null && s.getStartedAt() != null) {
-      OffsetDateTime until = s.getStartedAt().plusSeconds(a.getTimeLimitSec());
+    // Estado y ventana
+    if (a.getState() != AssignmentState.PUBLISHED) {
+      throw new BadRequestException("La asignación no está publicada");
+    }
+    OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+    if (a.getWindowStart() != null && now.isBefore(a.getWindowStart())) {
+      throw new ForbiddenException("Aún no inicia la ventana de evaluación");
+    }
+    if (a.getWindowEnd() != null && now.isAfter(a.getWindowEnd())) {
+      throw new ForbiddenException("La ventana de evaluación ya terminó");
+    }
+
+    // ⬇️ Límite efectivo (persistido en submission si existe)
+    Integer limit = (s.getDurationSec() != null) ? s.getDurationSec() : a.getTimeLimitSec();
+    if (limit != null && s.getStartedAt() != null) {
+      OffsetDateTime until = s.getStartedAt().plusSeconds(limit);
       if (OffsetDateTime.now(ZoneOffset.UTC).isAfter(until)) {
-        // permitido; solo marca late en la respuesta
+        // permitido; solo marcarás late más adelante
       }
     }
   }
 
   private boolean isLate(AssessmentAssignment a, AssessmentSubmission s) {
-    if (a.getTimeLimitSec() == null || s.getStartedAt() == null)
+    Integer limit = (s.getDurationSec() != null) ? s.getDurationSec() : a.getTimeLimitSec();
+    if (limit == null || s.getStartedAt() == null)
       return false;
-    OffsetDateTime until = s.getStartedAt().plusSeconds(a.getTimeLimitSec());
+    OffsetDateTime until = s.getStartedAt().plusSeconds(limit);
     return s.getSubmittedAt() != null && s.getSubmittedAt().isAfter(until);
   }
 
@@ -263,8 +341,12 @@ public class SubmissionServiceImpl implements SubmissionService {
             i.getGradingMode()))
         .toList();
 
-    // Config de la plantilla (JsonNode directo desde JSONB)
     JsonNode configNode = loadTemplateConfig(s.getAssignment());
+
+    // Límite efectivo (persistido si existe; si no, desde la asignación)
+    Integer effectiveLimit = (s.getDurationSec() != null)
+        ? s.getDurationSec()
+        : (s.getAssignment() != null ? s.getAssignment().getTimeLimitSec() : null);
 
     return new StartResponse(
         s.getId(),
@@ -272,6 +354,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         s.getStudentId(),
         s.getAttemptNo(),
         s.getStartedAt(),
+        effectiveLimit,
         configNode,
         list);
   }
@@ -300,14 +383,18 @@ public class SubmissionServiceImpl implements SubmissionService {
         i.getPosition(),
         i.getPoints(),
         i.getGradingMode(),
-        i.getAnswerJson(), // JsonNode directo
+        i.getAnswerJson(),
         i.getCorrect(),
         i.getScore(),
-        i.getFeedbackJson(), // JsonNode directo
+        i.getFeedbackJson(),
         i.getCheckedAt(),
         i.getExerciseTitle(),
         i.getExerciseType(),
         i.getStatementRendered())).toList();
+
+    Integer effectiveLimit = (s.getDurationSec() != null)
+        ? s.getDurationSec()
+        : (s.getAssignment() != null ? s.getAssignment().getTimeLimitSec() : null);
 
     return new SubmissionDetailResponse(
         s.getId(),
@@ -319,11 +406,16 @@ public class SubmissionServiceImpl implements SubmissionService {
         s.getStartedAt(),
         s.getSubmittedAt(),
         s.getGradedAt(),
-        s.getDurationSec(),
+        effectiveLimit,
+        s.getElapsedSec(),
         s.getAttemptNo(),
         detailItems);
   }
 
+  /**
+   * Envía el intento a progress-service. Si falla, persiste outbox con JSONB
+   * real.
+   */
   private void postAttemptBestEffort(AssessmentSubmission s, AssessmentSubmissionItem it, UUID objectiveId) {
     try {
       ObjectNode meta = mapper.createObjectNode();
@@ -340,14 +432,14 @@ public class SubmissionServiceImpl implements SubmissionService {
           it.getCorrect(),
           it.getScore(),
           it.getPoints(),
-          objectiveId != null ? objectiveId : it.getObjectiveId(),
+          (objectiveId != null ? objectiveId : it.getObjectiveId()),
           meta);
       progressClient.postAttempt(req);
+
     } catch (Exception ex) {
-      // Outbox como fallback
       AssessmentProgressOutbox out = AssessmentProgressOutbox.builder()
           .submissionItemId(it.getId())
-          .payloadJson(safePayloadForOutbox(s, it, objectiveId)) // String OK (se almacena como JSONB en DB)
+          .payloadJson(safePayloadForOutbox(s, it, objectiveId))
           .status(OutboxStatus.PENDING)
           .lastError(ex.getMessage())
           .build();
@@ -355,7 +447,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     }
   }
 
-  private String safePayloadForOutbox(AssessmentSubmission s, AssessmentSubmissionItem it, UUID objectiveId) {
+  private JsonNode safePayloadForOutbox(AssessmentSubmission s, AssessmentSubmissionItem it, UUID objectiveId) {
     try {
       ObjectNode meta = mapper.createObjectNode();
       meta.put("assignmentId", s.getAssignment().getId().toString());
@@ -373,11 +465,16 @@ public class SubmissionServiceImpl implements SubmissionService {
       if (it.getScore() != null)
         root.put("score", it.getScore());
       root.put("points", it.getPoints());
-      root.put("objectiveId", (objectiveId != null ? objectiveId : it.getObjectiveId()).toString());
+
+      UUID obj = (objectiveId != null ? objectiveId : it.getObjectiveId());
+      if (obj != null)
+        root.put("objectiveId", obj.toString());
+
       root.set("metadata", meta);
-      return mapper.writeValueAsString(root);
+      return root;
+
     } catch (Exception e) {
-      return "{}";
+      return mapper.createObjectNode();
     }
   }
 }

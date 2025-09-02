@@ -31,6 +31,10 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Calificación manual/ajuste de ítems.
+ * Cuando falla el post a progress-service, se persiste outbox (JSONB real).
+ */
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -41,7 +45,7 @@ public class GradingServiceImpl implements GradingService {
   private final AssessmentProgressOutboxRepository outboxRepo;
   private final ClassroomClient classroomClient;
   private final ProgressClient progressClient;
-  private final AdvisorEventService advisorEventService; // Publicación a AI Advisor (outbox)
+  private final AdvisorEventService advisorEventService;
   private final ObjectMapper mapper;
 
   @Override
@@ -50,12 +54,11 @@ public class GradingServiceImpl implements GradingService {
         .orElseThrow(() -> new NotFoundException("Submission no encontrado"));
     AssessmentAssignment a = s.getAssignment();
 
-    // Autorización: docente/co-teacher del aula si la asignación es de aula
+    // Autorización
     if (a.getScope() == AssignmentScope.CLASSROOM) {
       boolean staff = classroomClient.isMember(a.getClassroomId(), teacherId);
-      if (!staff) {
+      if (!staff)
         throw new ForbiddenException("No eres staff del aula");
-      }
     }
 
     AssessmentSubmissionItem it = itemRepo.findById(itemId)
@@ -64,32 +67,19 @@ public class GradingServiceImpl implements GradingService {
       throw new NotFoundException("Item no pertenece al submission");
     }
 
-    // Solo sentido si el ítem es MANUAL (si quisieras, podrías validar y rechazar
-    // si es AUTO)
-    if (it.getGradingMode() == GradingMode.MANUAL) {
-      it.setCorrect(Boolean.TRUE.equals(req.correct()));
-      it.setScore(req.score());
-      // 👇 Guardar feedback como JsonNode directo (JSONB)
-      it.setFeedbackJson(req.feedback() == null ? null : req.feedback().value());
-      it.setCheckedAt(OffsetDateTime.now(ZoneOffset.UTC));
-    } else {
-      // Para AUTO, permitimos que el docente ajuste corrección/score/feedback
-      // manualmente
-      it.setCorrect(req.correct());
-      it.setScore(req.score());
-      it.setFeedbackJson(req.feedback() == null ? null : req.feedback().value());
-      it.setCheckedAt(OffsetDateTime.now(ZoneOffset.UTC));
-    }
+    // Calificación
+    it.setCorrect(req.correct());
+    it.setScore(req.score());
+    it.setFeedbackJson(req.feedback() == null ? null : req.feedback().value()); // JSONB
+    it.setCheckedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
-    // ---- Intento de notificar progreso (best-effort) ----
-    // Construimos un metadato consistente para trazabilidad
+    // Intento de notificar progreso (best-effort) + outbox fallback
     ObjectNode meta = mapper.createObjectNode();
     meta.put("assignmentId", a.getId().toString());
     meta.put("submissionId", s.getId().toString());
     meta.put("submissionItemId", it.getId().toString());
-    meta.put("gradingMode", it.getGradingMode().name());
+    meta.put("gradingMode", it.getGradingMode() == null ? GradingMode.AUTO.name() : it.getGradingMode().name());
 
-    // Payload canónico para progress-service (y para outbox si falla)
     ObjectNode payload = mapper.createObjectNode();
     payload.put("studentId", s.getStudentId().toString());
     payload.put("source", "ASSESSMENT");
@@ -113,17 +103,16 @@ public class GradingServiceImpl implements GradingService {
           meta);
       progressClient.postAttempt(reqP);
     } catch (Exception ex) {
-      // Fallback Outbox: guardamos el JSON textual (DB lo almacena en JSONB)
       AssessmentProgressOutbox out = AssessmentProgressOutbox.builder()
           .submissionItemId(it.getId())
-          .payloadJson(payload.toString())
+          .payloadJson(payload) // JsonNode directo (JSONB)
           .status(OutboxStatus.PENDING)
           .lastError(ex.getMessage())
           .build();
       outboxRepo.save(out);
     }
 
-    // ---- Recalcular totales y estado del submission ----
+    // Recalcular totales y estado del submission
     List<AssessmentSubmissionItem> items = itemRepo.findBySubmission_IdOrderByPositionAsc(s.getId());
     boolean allScored = items.stream().allMatch(x -> x.getScore() != null);
 
@@ -138,10 +127,9 @@ public class GradingServiceImpl implements GradingService {
       s.setStatus(SubmissionStatus.GRADED);
       s.setGradedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
-      // Encola evento para AI Advisor (outbox gemelo)
+      // Encola evento para AI Advisor
       advisorEventService.enqueueGradedEvent(s);
     } else {
-      // Si todavía hay ítems sin calificación, como mínimo debe estar SUBMITTED
       if (s.getStatus() == SubmissionStatus.IN_PROGRESS) {
         s.setStatus(SubmissionStatus.SUBMITTED);
       }
@@ -158,10 +146,10 @@ public class GradingServiceImpl implements GradingService {
         i.getPosition(),
         i.getPoints(),
         i.getGradingMode(),
-        i.getAnswerJson(), // 👈 devolvemos la respuesta (JsonNode)
+        i.getAnswerJson(), // JSONB
         i.getCorrect(),
         i.getScore(),
-        i.getFeedbackJson(), // 👈 devolvemos el feedback (JsonNode)
+        i.getFeedbackJson(), // JSONB
         i.getCheckedAt(),
         i.getExerciseTitle(),
         i.getExerciseType(),
@@ -178,6 +166,7 @@ public class GradingServiceImpl implements GradingService {
         s.getSubmittedAt(),
         s.getGradedAt(),
         s.getDurationSec(),
+        s.getElapsedSec(),
         s.getAttemptNo(),
         list);
   }

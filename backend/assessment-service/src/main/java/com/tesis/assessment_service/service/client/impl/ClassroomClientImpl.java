@@ -1,23 +1,21 @@
 package com.tesis.assessment_service.service.client.impl;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
 import com.tesis.assessment_service.exception.ExternalServiceException;
 import com.tesis.assessment_service.service.client.ClassroomClient;
+import com.tesis.assessment_service.service.client.impl.dto.ClassroomBasicDto;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
-import reactor.core.publisher.Mono;
-
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.http.HttpStatusCode;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -26,120 +24,168 @@ public class ClassroomClientImpl implements ClassroomClient {
   private static final String SERVICE_NAME = "classroom-service";
 
   private final WebClient webClient;
-  private final ObjectMapper mapper;
+  private final Cache<UUID, String> nameCache;
 
   public ClassroomClientImpl(@Qualifier("classroomWebClient") WebClient webClient,
-      ObjectMapper mapper) {
+      @Qualifier("classroomNameCache") Cache<UUID, String> nameCache) {
     this.webClient = webClient;
-    this.mapper = mapper;
+    this.nameCache = nameCache;
   }
 
   @Override
   @CircuitBreaker(name = "classroomClient", fallbackMethod = "isMemberFallback")
   @Retry(name = "classroomClient")
   public boolean isMember(UUID classroomId, UUID userId) {
-    HttpStatusCode status = webClient.get()
+    Integer status = webClient.get()
         .uri(uriBuilder -> uriBuilder
             .path("/internal/classrooms/{cid}/members/{uid}/exists")
             .build(classroomId, userId))
         .accept(MediaType.APPLICATION_JSON)
-        .exchangeToMono(resp -> Mono.just(resp.statusCode()))
-        .block();
+        .exchangeToMono(resp -> reactor.core.publisher.Mono.just(resp.statusCode().value()))
+        .block(Duration.ofSeconds(3));
 
-    if (status == null) {
-      log.warn("classroomClient.isMember: respuesta sin status (null) cid={}, uid={}", classroomId, userId);
+    if (status == null)
       return false;
-    }
-
-    int code = status.value();
-    if (code >= 200 && code < 300) {
+    if (status >= 200 && status < 300)
       return true;
-    } else if (code == 404) {
+    if (status == 404 || status == 403)
       return false;
-    } else if (code == 403) {
-      log.warn("classroomClient.isMember: 403 Forbidden verificando membresía. cid={}, uid={}", classroomId, userId);
-      return false;
-    } else {
-      log.warn("classroomClient.isMember: status inesperado {}. cid={}, uid={}", code, classroomId, userId);
-      return false;
-    }
+    return false;
   }
 
   @Override
   @CircuitBreaker(name = "classroomClient", fallbackMethod = "getStudentIdsFallback")
   @Retry(name = "classroomClient")
   public List<UUID> getStudentIds(UUID classroomId) {
-    List<String> ids = webClient.get()
+    List<UUID> ids = webClient.get()
         .uri(uriBuilder -> uriBuilder
             .path("/internal/classrooms/{cid}/students/ids")
             .build(classroomId))
         .accept(MediaType.APPLICATION_JSON)
         .retrieve()
-        .bodyToFlux(String.class)
-        .collectList()
-        .block();
-
-    if (ids == null)
-      return List.of();
-
-    List<UUID> out = new ArrayList<>(ids.size());
-    for (String s : ids) {
-      try {
-        out.add(UUID.fromString(s));
-      } catch (Exception ignore) {
-      }
-    }
-    return out;
+        .bodyToMono(new ParameterizedTypeReference<List<UUID>>() {
+        })
+        .block(Duration.ofSeconds(3));
+    return (ids == null) ? List.of() : ids;
   }
 
-  // NUEVO: lista de aulas del principal (IDs)
   @Override
   @CircuitBreaker(name = "classroomClient", fallbackMethod = "listMyClassroomsFallback")
   @Retry(name = "classroomClient")
   public List<UUID> listMyClassrooms(UUID userId) {
-    // S2S: el WebClient ya inyecta X-Internal-Call, x-user-id y X-Auth-Roles
-    List<String> ids = webClient.get()
-        .uri(uriBuilder -> uriBuilder.path("/internal/classrooms/mine").build())
+    List<UUID> ids = webClient.get()
+        .uri("/internal/classrooms/mine")
         .accept(MediaType.APPLICATION_JSON)
+        .header("X-Act-As-User", userId.toString())
         .retrieve()
-        .bodyToFlux(String.class)
-        .collectList()
-        .block(Duration.ofSeconds(2));
-
-    if (ids == null)
-      return List.of();
-
-    List<UUID> out = new ArrayList<>(ids.size());
-    for (String s : ids) {
-      try {
-        out.add(UUID.fromString(s));
-      } catch (Exception ignore) {
-      }
-    }
-    return out;
+        .bodyToMono(new ParameterizedTypeReference<List<UUID>>() {
+        })
+        .block(Duration.ofSeconds(3));
+    return (ids == null) ? List.of() : ids;
   }
 
-  // =========================
-  // FALLBACKS
-  // =========================
+  // =======================
+  // lookup nombres (GET->POST fallback) + cache
+  // =======================
+  @Override
+  @CircuitBreaker(name = "classroomClient", fallbackMethod = "lookupNamesFallback")
+  @Retry(name = "classroomClient")
+  public Map<UUID, String> lookupNames(List<UUID> classroomIds) {
+    if (classroomIds == null || classroomIds.isEmpty())
+      return Map.of();
 
+    List<UUID> dedup = classroomIds.stream().filter(Objects::nonNull).distinct().toList();
+
+    // 1) cache
+    Map<UUID, String> cached = nameCache.getAllPresent(dedup);
+
+    // 2) por traer
+    List<UUID> toFetch = dedup.stream().filter(id -> !cached.containsKey(id)).toList();
+    Map<UUID, String> fetched = Map.of();
+
+    if (!toFetch.isEmpty()) {
+      // a) intentar GET con ids
+      try {
+        List<ClassroomBasicDto> list = webClient.get()
+            .uri(uriBuilder -> uriBuilder
+                .path("/internal/classrooms/lookup")
+                .queryParam("ids", toFetch) // ids=...&ids=...
+                .build())
+            .accept(MediaType.APPLICATION_JSON)
+            .retrieve()
+            .bodyToMono(new ParameterizedTypeReference<List<ClassroomBasicDto>>() {
+            })
+            .block(Duration.ofSeconds(4));
+
+        if (list != null && !list.isEmpty()) {
+          fetched = list.stream().collect(Collectors.toMap(ClassroomBasicDto::id, ClassroomBasicDto::name));
+        }
+      } catch (Exception ex) {
+        // b) fallback POST si GET falla (404/405/400/timeout)
+        List<ClassroomBasicDto> list = webClient.post()
+            .uri("/internal/classrooms/lookup")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .bodyValue(toFetch)
+            .retrieve()
+            .bodyToMono(new ParameterizedTypeReference<List<ClassroomBasicDto>>() {
+            })
+            .block(Duration.ofSeconds(4));
+
+        if (list != null && !list.isEmpty()) {
+          fetched = list.stream().collect(Collectors.toMap(ClassroomBasicDto::id, ClassroomBasicDto::name));
+        }
+      }
+
+      // cachear
+      fetched.forEach(nameCache::put);
+    }
+
+    // 3) merge respetando orden
+    Map<UUID, String> result = new LinkedHashMap<>();
+    for (UUID id : dedup) {
+      String n = cached.get(id);
+      if (n == null)
+        n = fetched.get(id);
+      if (n != null)
+        result.put(id, n);
+    }
+
+    // 4) log diagnóstico si hay id sin nombre
+    for (UUID id : dedup) {
+      if (!result.containsKey(id)) {
+        log.warn("Classroom name missing for id={} (lookup returned empty).", id);
+      }
+    }
+
+    return result;
+  }
+
+  // ---- fallbacks ----
   public boolean isMemberFallback(UUID classroomId, UUID userId, Throwable ex) {
-    log.warn("classroomClient.isMember fallback (classroomId={}, userId={}) causa={}",
-        classroomId, userId, ex.toString());
-    throw new ExternalServiceException(
-        SERVICE_NAME, 0, "No se pudo verificar membresía de aula en " + SERVICE_NAME, ex);
+    throw new ExternalServiceException(SERVICE_NAME, 0, "No se pudo verificar membresía de aula", ex);
   }
 
   public List<UUID> getStudentIdsFallback(UUID classroomId, Throwable ex) {
-    log.warn("classroomClient.getStudentIds fallback (classroomId={}) causa={}", classroomId, ex.toString());
-    throw new ExternalServiceException(
-        SERVICE_NAME, 0, "No se pudo obtener estudiantes del aula desde " + SERVICE_NAME, ex);
+    throw new ExternalServiceException(SERVICE_NAME, 0, "No se pudo obtener estudiantes del aula", ex);
   }
 
   public List<UUID> listMyClassroomsFallback(UUID userId, Throwable ex) {
-    log.warn("classroomClient.listMyClassrooms fallback (userId={}) causa={}", userId, ex.toString());
-    // Para “mis asignaciones” preferimos resiliencia suave: si classroom cae,
-    // todavía mostramos PUBLIC.
-    return List.of();
+    return List.of(); // resiliencia suave
+  }
+
+  public Map<UUID, String> lookupNamesFallback(List<UUID> classroomIds, Throwable ex) {
+    if (classroomIds == null || classroomIds.isEmpty())
+      return Map.of();
+    Map<UUID, String> cached = nameCache.getAllPresent(classroomIds);
+    if (cached == null || cached.isEmpty())
+      return Map.of();
+    Map<UUID, String> ordered = new LinkedHashMap<>();
+    classroomIds.stream().filter(Objects::nonNull).distinct().forEach(id -> {
+      String n = cached.get(id);
+      if (n != null)
+        ordered.put(id, n);
+    });
+    return ordered;
   }
 }

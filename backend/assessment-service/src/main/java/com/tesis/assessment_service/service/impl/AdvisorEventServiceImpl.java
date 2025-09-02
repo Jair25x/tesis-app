@@ -18,6 +18,10 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.stream.Collectors;
 
+/**
+ * Publica un evento "AssessmentGraded" hacia el advisor mediante outbox.
+ * payload_json ahora es JSONB (JsonNode), no String.
+ */
 @Service
 @RequiredArgsConstructor
 public class AdvisorEventServiceImpl implements AdvisorEventService {
@@ -31,7 +35,6 @@ public class AdvisorEventServiceImpl implements AdvisorEventService {
     if (s.getStatus() != SubmissionStatus.GRADED)
       return;
 
-    // Cargar ítems desde el repositorio
     var items = itemRepo.findBySubmission_IdOrderByPositionAsc(s.getId());
 
     // Agregación por objetivo
@@ -72,8 +75,9 @@ public class AdvisorEventServiceImpl implements AdvisorEventService {
     payload.put("assignmentId", s.getAssignment().getId().toString());
     payload.put("assignmentType", s.getAssignment().getType().name());
     payload.put("studentId", s.getStudentId().toString());
-    if (s.getAssignment().getClassroomId() != null)
+    if (s.getAssignment().getClassroomId() != null) {
       payload.put("classroomId", s.getAssignment().getClassroomId().toString());
+    }
     payload.put("curriculumId", s.getAssignment().getTemplate().getCurriculumId().toString());
     if (s.getScore() != null)
       payload.put("score", s.getScore());
@@ -93,7 +97,7 @@ public class AdvisorEventServiceImpl implements AdvisorEventService {
     var out = AssessmentAdvisorOutbox.builder()
         .submissionId(s.getId())
         .status(OutboxStatus.PENDING)
-        .payloadJson(event.toString())
+        .payloadJson(event) // JsonNode directo (JSONB)
         .build();
 
     advisorRepo.save(out);

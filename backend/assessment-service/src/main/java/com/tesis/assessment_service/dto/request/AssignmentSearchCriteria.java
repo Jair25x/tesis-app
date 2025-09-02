@@ -16,4 +16,13 @@ public class AssignmentSearchCriteria {
   public OffsetDateTime windowFrom; // filtra assignments con window_start >= windowFrom
   public OffsetDateTime windowTo; // filtra assignments con window_end <= windowTo
   public Boolean mineOnly; // default true p/teacher; admin puede poner false
+
+  /** Nuevo: si TRUE, filtra por el requester explícitamente. */
+  public Boolean createdByMe;
+
+  /**
+   * Nuevo: filtra por un creador específico. Admin puede usar cualquiera;
+   * no-admin sólo el suyo.
+   */
+  public UUID createdByUserId;
 }

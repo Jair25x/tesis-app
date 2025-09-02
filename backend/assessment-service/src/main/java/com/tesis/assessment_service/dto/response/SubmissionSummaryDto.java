@@ -8,14 +8,15 @@ import java.util.UUID;
 
 /** Resumen de submission para listados. */
 public record SubmissionSummaryDto(
-    UUID submissionId,
-    UUID studentId,
-    SubmissionStatus status,
-    BigDecimal score,
-    BigDecimal maxScore,
-    OffsetDateTime startedAt,
-    OffsetDateTime submittedAt,
-    OffsetDateTime gradedAt,
-    Integer durationSec,
-    Integer attemptNo) {
+        UUID submissionId,
+        UUID studentId,
+        SubmissionStatus status,
+        BigDecimal score,
+        BigDecimal maxScore,
+        OffsetDateTime startedAt,
+        OffsetDateTime submittedAt,
+        OffsetDateTime gradedAt,
+        Integer durationSec,
+        Integer elapsedSec,
+        Integer attemptNo) {
 }

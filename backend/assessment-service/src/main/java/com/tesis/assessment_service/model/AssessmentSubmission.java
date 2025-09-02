@@ -63,6 +63,9 @@ public class AssessmentSubmission extends AuditableEntity {
   @Column(name = "attempt_no", nullable = false)
   private Integer attemptNo;
 
+  @Column(name = "elapsed_sec")
+  private Integer elapsedSec;
+
   @Column(name = "lock_token", length = 64)
   private String lockToken;
 

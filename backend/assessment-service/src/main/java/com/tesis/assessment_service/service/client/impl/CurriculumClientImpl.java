@@ -24,6 +24,10 @@ public class CurriculumClientImpl implements CurriculumClient {
     this.webClient = webClient;
   }
 
+  /** Payload esperado por curriculum: { "answer": ... } */
+  public record CheckRequest(JsonNode answer) {
+  }
+
   public record CheckResponse(boolean correct, JsonNode feedback, String objectiveId, Integer points) {
   }
 
@@ -32,14 +36,18 @@ public class CurriculumClientImpl implements CurriculumClient {
   @Retry(name = "curriculumClient")
   public CheckResult checkExercise(UUID exerciseId, JsonNode answerPayload) {
     try {
+      // Si viene null, enviamos {} como answer para no romper el contrato
+      JsonNode safeAnswer = (answerPayload == null)
+          ? new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode()
+          : answerPayload;
+
       CheckResponse resp = webClient.post()
           .uri(uriBuilder -> uriBuilder
-              .path("/api/curricula/exercises/{exerciseId}/check")
-              .queryParam("mode", "exam")
+              .path("/internal/curricula/exercises/{exerciseId}/check") // ← RUTA INTERNA
               .build(exerciseId))
           .contentType(MediaType.APPLICATION_JSON)
           .accept(MediaType.APPLICATION_JSON)
-          .bodyValue(answerPayload == null ? "{}" : answerPayload)
+          .bodyValue(new CheckRequest(safeAnswer)) // ← siempre { "answer": ... }
           .retrieve()
           .bodyToMono(CheckResponse.class)
           .block();
@@ -53,6 +61,7 @@ public class CurriculumClientImpl implements CurriculumClient {
         try {
           objective = UUID.fromString(resp.objectiveId());
         } catch (Exception ignore) {
+          log.warn("objetiveId no es UUID: {}", resp.objectiveId());
         }
       }
       return new CheckResult(resp.correct(), resp.feedback(), objective, resp.points());

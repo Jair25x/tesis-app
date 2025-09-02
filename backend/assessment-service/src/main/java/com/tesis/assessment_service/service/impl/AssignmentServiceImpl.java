@@ -26,8 +26,11 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -110,22 +113,20 @@ public class AssignmentServiceImpl implements AssignmentService {
 
   /**
    * Estudiante: asignaciones publicadas visibles (ventana: nulos = abierto) +
-   * flags (prefiltrado en SQL).
+   * flags + último submission + nombre de aula (batch).
    */
   @Override
   public PageResponse<StudentAssignmentSummaryResponse> listMyAssignments(UUID studentId, Pageable pageable) {
     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
-    // 1) Aulas del principal (batch a classroom-service)
+    // 1) Aulas del alumno (para prefiltro)
     List<UUID> myClassrooms = classroomClient.listMyClassrooms(studentId);
 
     // 2) Spec: PUBLISHED + ventana vigente + (PUBLIC OR (CLASSROOM && classroomId
     // IN myClassrooms))
     Specification<AssessmentAssignment> spec = (root, q, cb) -> {
-      // Estado
       Predicate pPublished = cb.equal(root.get("state"), AssignmentState.PUBLISHED);
 
-      // Ventana
       Path<OffsetDateTime> start = root.get("windowStart");
       Path<OffsetDateTime> end = root.get("windowEnd");
       Expression<OffsetDateTime> nowExpr = cb.literal(now);
@@ -134,7 +135,6 @@ public class AssignmentServiceImpl implements AssignmentService {
       Predicate pBeforeEnd = cb.or(cb.isNull(end), cb.greaterThanOrEqualTo(end, nowExpr));
       Predicate pWindow = cb.and(pAfterStart, pBeforeEnd);
 
-      // Alcance
       Path<AssignmentScope> scopePath = root.get("scope");
       Predicate isPublic = cb.equal(scopePath, AssignmentScope.PUBLIC);
 
@@ -152,7 +152,18 @@ public class AssignmentServiceImpl implements AssignmentService {
 
     Page<AssessmentAssignment> page = assignmentRepo.findAll(spec, pageable);
 
-    // 3) Flags por submission del estudiante (sobre la página)
+    // 3) Batch de nombres de aula para los que salieron en la página
+    // (final/effectively-final)
+    List<UUID> clsIdsInPage = page.getContent().stream()
+        .filter(a -> a.getScope() == AssignmentScope.CLASSROOM && a.getClassroomId() != null)
+        .map(AssessmentAssignment::getClassroomId)
+        .distinct()
+        .collect(Collectors.toList());
+
+    final Map<UUID, String> classroomNames = clsIdsInPage.isEmpty() ? Collections.emptyMap()
+        : classroomClient.lookupNames(clsIdsInPage);
+
+    // 4) Flags y últimos envíos por cada asignación
     var mapped = page.map(a -> {
       long attemptsUsed = submissionRepo.countByAssignment_IdAndStudentId(a.getId(), studentId);
 
@@ -170,6 +181,21 @@ public class AssignmentServiceImpl implements AssignmentService {
           && attemptsUsed < (a.getAttemptsAllowed() == null ? 1 : a.getAttemptsAllowed())
           && !started;
 
+      // Último submission por intento
+      UUID lastSubmissionId = null;
+      SubmissionStatus lastStatus = null;
+      var lastOpt = submissionRepo.findTopByAssignment_IdAndStudentIdOrderByAttemptNoDesc(a.getId(), studentId);
+      if (lastOpt.isPresent()) {
+        var s = lastOpt.get();
+        lastSubmissionId = s.getId();
+        lastStatus = s.getStatus();
+      }
+
+      String classroomName = null;
+      if (a.getScope() == AssignmentScope.CLASSROOM && a.getClassroomId() != null) {
+        classroomName = classroomNames.get(a.getClassroomId());
+      }
+
       return new StudentAssignmentSummaryResponse(
           a.getId(),
           a.getTemplate().getId(),
@@ -184,10 +210,97 @@ public class AssignmentServiceImpl implements AssignmentService {
           (int) attemptsUsed,
           canStart,
           started,
-          submitted);
+          submitted,
+          lastSubmissionId,
+          lastStatus,
+          a.getClassroomId(),
+          classroomName);
     });
 
     return PageResponse.of(mapped);
+  }
+
+  @Override
+  public Page<AssignmentSummaryResponse> search(AssignmentSearchCriteria c, Pageable pageable) {
+    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+
+    UUID requesterId = null;
+    if (auth != null && auth.getName() != null) {
+      try {
+        requesterId = UUID.fromString(auth.getName());
+      } catch (Exception ignore) {
+      }
+    }
+    final boolean isAdmin = auth != null && auth.getAuthorities().stream()
+        .anyMatch(a -> "ROLE_ADMIN".equalsIgnoreCase(a.getAuthority()));
+
+    // Prioridad: createdByUserId > createdByMe > mineOnly > default por rol
+    final UUID createdByFilter;
+    if (c.createdByUserId != null) {
+      createdByFilter = c.createdByUserId;
+    } else if (Boolean.TRUE.equals(c.createdByMe)) {
+      createdByFilter = requesterId;
+    } else if (c.mineOnly != null) {
+      createdByFilter = Boolean.TRUE.equals(c.mineOnly) ? requesterId : null;
+    } else {
+      createdByFilter = isAdmin ? null : requesterId;
+    }
+
+    Specification<AssessmentAssignment> spec = (root, query, cb) -> {
+      var preds = new java.util.ArrayList<Predicate>();
+
+      if (createdByFilter != null) {
+        preds.add(cb.equal(root.get("createdByUserId"), createdByFilter));
+      }
+      if (c.state != null)
+        preds.add(cb.equal(root.get("state"), c.state));
+      if (c.type != null)
+        preds.add(cb.equal(root.get("type"), c.type));
+      if (c.scope != null)
+        preds.add(cb.equal(root.get("scope"), c.scope));
+      if (c.classroomId != null)
+        preds.add(cb.equal(root.get("classroomId"), c.classroomId));
+      if (c.templateId != null)
+        preds.add(cb.equal(root.get("template").get("id"), c.templateId));
+      if (c.windowFrom != null)
+        preds.add(cb.greaterThanOrEqualTo(root.get("windowStart"), c.windowFrom));
+      if (c.windowTo != null)
+        preds.add(cb.lessThanOrEqualTo(root.get("windowEnd"), c.windowTo));
+
+      return cb.and(preds.toArray(new Predicate[0]));
+    };
+
+    var page = assignmentRepo.findAll(spec, pageable);
+
+    // Batch de nombres para la página actual del search
+    List<UUID> classIds = page.getContent().stream()
+        .filter(a -> a.getScope() == AssignmentScope.CLASSROOM && a.getClassroomId() != null)
+        .map(AssessmentAssignment::getClassroomId)
+        .distinct()
+        .collect(java.util.stream.Collectors.toList());
+
+    final java.util.Map<UUID, String> classroomNames = classIds.isEmpty()
+        ? java.util.Collections.emptyMap()
+        : classroomClient.lookupNames(classIds);
+
+    return page.map(a -> new AssignmentSummaryResponse(
+        a.getId(),
+        a.getTemplate() != null ? a.getTemplate().getId() : null,
+        a.getTemplate() != null ? a.getTemplate().getTitle() : null,
+        a.getScope(),
+        a.getType(),
+        a.getState(),
+        a.getWindowStart(),
+        a.getWindowEnd(),
+        a.getTimeLimitSec(),
+        a.getAttemptsAllowed(),
+        a.getClassroomId(),
+        (a.getScope() == AssignmentScope.CLASSROOM && a.getClassroomId() != null)
+            ? classroomNames.get(a.getClassroomId())
+            : null,
+        a.getCreatedByUserId(),
+        toOffset(a.getCreatedAt()),
+        toOffset(a.getUpdatedAt())));
   }
 
   @Override
@@ -222,67 +335,6 @@ public class AssignmentServiceImpl implements AssignmentService {
     return toDto(clone);
   }
 
-  @Override
-  public Page<AssignmentSummaryResponse> search(AssignmentSearchCriteria c, Pageable pageable) {
-    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-
-    UUID tmp = null;
-    if (auth != null && auth.getName() != null) {
-      try {
-        tmp = UUID.fromString(auth.getName());
-      } catch (Exception ignore) {
-      }
-    }
-    final UUID requesterId = tmp;
-
-    final boolean isAdmin = auth != null && auth.getAuthorities().stream()
-        .anyMatch(a -> "ROLE_ADMIN".equalsIgnoreCase(a.getAuthority()));
-    final boolean mineOnlyEffective = (c.mineOnly == null) ? !isAdmin : c.mineOnly;
-
-    Specification<AssessmentAssignment> spec = (root, query, cb) -> {
-      var preds = new java.util.ArrayList<Predicate>();
-
-      if (mineOnlyEffective || !isAdmin) {
-        if (requesterId != null)
-          preds.add(cb.equal(root.get("createdByUserId"), requesterId));
-      }
-      if (c.state != null)
-        preds.add(cb.equal(root.get("state"), c.state));
-      if (c.type != null)
-        preds.add(cb.equal(root.get("type"), c.type));
-      if (c.scope != null)
-        preds.add(cb.equal(root.get("scope"), c.scope));
-      if (c.classroomId != null)
-        preds.add(cb.equal(root.get("classroomId"), c.classroomId));
-      if (c.templateId != null)
-        preds.add(cb.equal(root.get("template").get("id"), c.templateId));
-      if (c.windowFrom != null)
-        preds.add(cb.greaterThanOrEqualTo(root.get("windowStart"), c.windowFrom));
-      if (c.windowTo != null)
-        preds.add(cb.lessThanOrEqualTo(root.get("windowEnd"), c.windowTo));
-
-      return cb.and(preds.toArray(new Predicate[0]));
-    };
-
-    var page = assignmentRepo.findAll(spec, pageable);
-
-    return page.map(a -> new AssignmentSummaryResponse(
-        a.getId(),
-        a.getTemplate() != null ? a.getTemplate().getId() : null,
-        a.getTemplate() != null ? a.getTemplate().getTitle() : null,
-        a.getScope(),
-        a.getType(),
-        a.getState(),
-        a.getWindowStart(),
-        a.getWindowEnd(),
-        a.getTimeLimitSec(),
-        a.getAttemptsAllowed(),
-        a.getClassroomId(),
-        a.getCreatedByUserId(),
-        toOffset(a.getCreatedAt()),
-        toOffset(a.getUpdatedAt())));
-  }
-
   // ---- helpers
 
   private java.time.OffsetDateTime toOffset(java.time.LocalDateTime dt) {
@@ -297,17 +349,25 @@ public class AssignmentServiceImpl implements AssignmentService {
   private void checkStaffIfClassroom(AssessmentAssignment a, UUID userId) {
     if (a.getScope() == AssignmentScope.CLASSROOM) {
       boolean staff = classroomClient.isMember(a.getClassroomId(), userId);
-      if (!staff)
+      if (!staff) {
         throw new ForbiddenException("No eres staff del aula");
+      }
     }
   }
 
   private SubmissionSummaryDto toSummary(AssessmentSubmission s) {
     return new SubmissionSummaryDto(
-        s.getId(), s.getStudentId(), s.getStatus(),
-        s.getScore(), s.getMaxScore(),
-        s.getStartedAt(), s.getSubmittedAt(), s.getGradedAt(),
-        s.getDurationSec(), s.getAttemptNo());
+        s.getId(),
+        s.getStudentId(),
+        s.getStatus(),
+        s.getScore(),
+        s.getMaxScore(),
+        s.getStartedAt(),
+        s.getSubmittedAt(),
+        s.getGradedAt(),
+        s.getDurationSec(),
+        s.getElapsedSec(),
+        s.getAttemptNo());
   }
 
   private AssignmentResponse toDto(AssessmentAssignment a) {

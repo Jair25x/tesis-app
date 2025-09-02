@@ -13,33 +13,48 @@ import java.util.UUID;
 
 public interface AssessmentSubmissionRepository extends JpaRepository<AssessmentSubmission, UUID> {
 
-    Optional<AssessmentSubmission> findByAssignment_IdAndStudentIdAndAttemptNo(UUID assignmentId, UUID studentId,
-            int attemptNo);
+        Optional<AssessmentSubmission> findByAssignment_IdAndStudentIdAndAttemptNo(UUID assignmentId, UUID studentId,
+                        int attemptNo);
 
-    Optional<AssessmentSubmission> findTopByAssignment_IdAndStudentIdOrderByCreatedAtDesc(UUID assignmentId,
-            UUID studentId);
+        Optional<AssessmentSubmission> findTopByAssignment_IdAndStudentIdOrderByCreatedAtDesc(UUID assignmentId,
+                        UUID studentId);
 
-    Page<AssessmentSubmission> findByAssignment_Id(UUID assignmentId, Pageable pageable);
+        // Para asignar el próximo attemptNo de forma robusta
+        Optional<AssessmentSubmission> findTopByAssignment_IdAndStudentIdOrderByAttemptNoDesc(UUID assignmentId,
+                        UUID studentId);
 
-    long countByAssignment_Id(UUID assignmentId);
+        // Para idempotencia (si ya hay un IN_PROGRESS, devolver ese)
+        Optional<AssessmentSubmission> findTopByAssignment_IdAndStudentIdAndStatusOrderByCreatedAtDesc(
+                        UUID assignmentId,
+                        UUID studentId,
+                        SubmissionStatus status);
 
-    long countByAssignment_IdAndStatus(UUID assignmentId, SubmissionStatus status);
+        Page<AssessmentSubmission> findByAssignment_Id(UUID assignmentId, Pageable pageable);
 
-    // ------- NUEVOS para flags en "Mis asignaciones" --------
-    long countByAssignment_IdAndStudentId(UUID assignmentId, UUID studentId);
+        // Historial por alumno (con/sin filtro de estado)
+        Page<AssessmentSubmission> findByStudentId(UUID studentId, Pageable pageable);
 
-    boolean existsByAssignment_IdAndStudentIdAndStatus(UUID assignmentId, UUID studentId, SubmissionStatus status);
+        Page<AssessmentSubmission> findByStudentIdAndStatus(UUID studentId, SubmissionStatus status, Pageable pageable);
 
-    boolean existsByAssignment_IdAndStudentIdAndStatusIn(UUID assignmentId, UUID studentId,
-            Collection<SubmissionStatus> statuses);
+        long countByAssignment_Id(UUID assignmentId);
 
-    @Query("""
-            select avg(case when s.maxScore is not null and s.maxScore > 0
-                            then cast(s.score as double) / cast(s.maxScore as double)
-                            else null end)
-            from AssessmentSubmission s
-            where s.assignment.id = :assignmentId and s.status in (com.tesis.assessment_service.model.enums.SubmissionStatus.SUBMITTED,
-                                                                   com.tesis.assessment_service.model.enums.SubmissionStatus.GRADED)
-            """)
-    Double avgNormalizedScoreByAssignment(UUID assignmentId);
+        long countByAssignment_IdAndStatus(UUID assignmentId, SubmissionStatus status);
+
+        // ------- usados en "Mis asignaciones" --------
+        long countByAssignment_IdAndStudentId(UUID assignmentId, UUID studentId);
+
+        boolean existsByAssignment_IdAndStudentIdAndStatus(UUID assignmentId, UUID studentId, SubmissionStatus status);
+
+        boolean existsByAssignment_IdAndStudentIdAndStatusIn(UUID assignmentId, UUID studentId,
+                        Collection<SubmissionStatus> statuses);
+
+        @Query("""
+                        select avg(case when s.maxScore is not null and s.maxScore > 0
+                                        then cast(s.score as double) / cast(s.maxScore as double)
+                                        else null end)
+                        from AssessmentSubmission s
+                        where s.assignment.id = :assignmentId and s.status in (com.tesis.assessment_service.model.enums.SubmissionStatus.SUBMITTED,
+                                                                               com.tesis.assessment_service.model.enums.SubmissionStatus.GRADED)
+                        """)
+        Double avgNormalizedScoreByAssignment(UUID assignmentId);
 }

@@ -48,7 +48,7 @@ public class ProgressClientImpl implements ProgressClient {
         body.set("metadata", req.metadata());
 
       webClient.post()
-          .uri("/api/progress/attempts")
+          .uri("/internal/progress/attempts") // <— RUTA INTERNA
           .contentType(MediaType.APPLICATION_JSON)
           .accept(MediaType.APPLICATION_JSON)
           .bodyValue(body)
