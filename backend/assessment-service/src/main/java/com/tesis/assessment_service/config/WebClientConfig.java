@@ -45,6 +45,16 @@ public class WebClientConfig {
   @Value("${clients.progress.s2s.roles:INTERNAL}")
   private String progressS2SRoles;
 
+  // S2S advisor
+  @Value("${clients.advisor.base-url}")
+  private String advisorBaseUrl;
+
+  @Value("${clients.advisor.s2s.user-id:00000000-0000-0000-0000-000000000000}")
+  private String advisorS2SUserId;
+
+  @Value("${clients.advisor.s2s.roles:INTERNAL}")
+  private String advisorS2SRoles;
+
   @Value("${assessment.http.timeout-ms:2000}")
   private int timeoutMs;
 
@@ -179,12 +189,12 @@ public class WebClientConfig {
 
   @Bean
   @Qualifier("advisorWebClient")
-  public WebClient advisorWebClient(@Value("${clients.advisor.base-url}") String baseUrl) {
+  public WebClient advisorWebClient() {
     return WebClient.builder()
         .clientConnector(connector())
         .exchangeStrategies(strategies())
-        .baseUrl(baseUrl)
-        .filter(forwardAuth()) // si advisor valida el JWT del usuario final
+        .baseUrl(advisorBaseUrl)
+        .filter(s2sHeaders(advisorS2SUserId, advisorS2SRoles))
         .filter(mapErrors())
         .build();
   }

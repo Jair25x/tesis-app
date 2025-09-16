@@ -1,4 +1,3 @@
-// src/main/java/com/tesis/curriculum_service/security/JwtAuthenticationFilter.java
 package com.tesis.curriculum_service.security;
 
 import io.jsonwebtoken.Claims;
@@ -23,6 +22,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import javax.crypto.SecretKey;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -32,22 +32,48 @@ import java.util.stream.Collectors;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
   private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
-  private final JwtProperties jwtProperties;
 
-  /** Cacheo de la clave para evitar decodificar Base64 en cada request */
-  private volatile SecretKey cachedKey;
+  private final JwtProperties jwtProperties; // jwt.secret-key (público)
+  private final S2SJwtProperties s2sJwtProperties; // s2s.jwt.secret (interno)
 
-  private SecretKey signingKey() {
-    SecretKey local = cachedKey;
-    if (local == null) {
-      synchronized (this) {
-        if (cachedKey == null) {
-          cachedKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.getSecretKey()));
-        }
-        local = cachedKey;
+  // Cache sencilla para no recalcular claves en cada request
+  private volatile List<SecretKey> cachedKeys;
+
+  private List<SecretKey> signingKeys() {
+    List<SecretKey> local = cachedKeys;
+    if (local != null)
+      return local;
+
+    synchronized (this) {
+      if (cachedKeys == null) {
+        List<SecretKey> keys = new ArrayList<>();
+        addKeyCandidates(keys, jwtProperties.getSecretKey(), "jwt.secret-key");
+        addKeyCandidates(keys, s2sJwtProperties.getSecret(), "s2s.jwt.secret");
+        cachedKeys = keys;
       }
+      local = cachedKeys;
     }
     return local;
+  }
+
+  private void addKeyCandidates(List<SecretKey> out, String secret, String name) {
+    if (!StringUtils.hasText(secret))
+      return;
+    // 1) intenta Base64
+    try {
+      byte[] b64 = Decoders.BASE64.decode(secret);
+      if (b64.length >= 32) {
+        out.add(Keys.hmacShaKeyFor(b64));
+      }
+    } catch (Exception ignore) {
+      /* no era base64 */ }
+    // 2) texto plano
+    byte[] raw = secret.getBytes(StandardCharsets.UTF_8);
+    if (raw.length >= 32) {
+      out.add(Keys.hmacShaKeyFor(raw));
+    } else {
+      log.warn("La clave '{}' parece corta (<32 bytes). Considera usar Base64 >= 256 bits.", name);
+    }
   }
 
   @Override
@@ -55,81 +81,78 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       HttpServletResponse res,
       FilterChain chain) throws ServletException, IOException {
 
-    // Preflight CORS → dejar pasar
+    // Preflight CORS
     if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
       chain.doFilter(req, res);
       return;
     }
 
-    // 1) Confía en llamadas internas (Gateway u otro MS) con cabeceras S2S
+    // 1) Cabeceras internas (bypass JWT)
     String internal = req.getHeader("X-Internal-Call");
     if (StringUtils.hasText(internal)) {
-      String idHeader = headerOrNull(req, "x-user-id"); // UUID canónico
-      String userHeader = headerOrNull(req, "X-Auth-Username"); // en nuestro gateway también es UUID
-      String rolesHdr = headerOrNull(req, "X-Auth-Roles"); // CSV (ROLE_...)
-
-      String principal = StringUtils.hasText(idHeader) ? idHeader : userHeader;
+      String principal = headerOrNull(req, "x-user-id");
+      if (!StringUtils.hasText(principal))
+        principal = headerOrNull(req, "X-Auth-Username");
+      String rolesHdr = headerOrNull(req, "X-Auth-Roles");
 
       if (StringUtils.hasText(principal) && StringUtils.hasText(rolesHdr)) {
-        if (isUuid(principal)) {
-          var authorities = Arrays.stream(rolesHdr.split(","))
-              .map(String::trim)
-              .filter(s -> !s.isEmpty())
-              .map(this::normalizeRole) // evita ROLE_ROLE_*
-              .map(SimpleGrantedAuthority::new)
-              .collect(Collectors.toList());
-
-          var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
-          SecurityContextHolder.getContext().setAuthentication(auth);
-          log.debug("⚡ curriculum-service: auth interna principal={} roles={}", principal, rolesHdr);
-        } else {
-          log.warn("Llamada interna con principal NO-UUID: {}", principal);
-        }
+        var authorities = Arrays.stream(rolesHdr.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .map(this::normalizeRole)
+            .map(SimpleGrantedAuthority::new)
+            .collect(Collectors.toList());
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken(principal, null, authorities));
+        log.debug("⚡ curriculum-service: auth interna principal={} roles={}", principal, rolesHdr);
       }
       chain.doFilter(req, res);
       return;
     }
 
-    // 2) Fallback: validar JWT directo (tests o llamadas sin gateway)
+    // 2) JWT Bearer
     String bearer = req.getHeader(HttpHeaders.AUTHORIZATION);
     if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
       String token = bearer.substring(7);
-      try {
-        Claims claims = Jwts.parser()
-            .verifyWith(signingKey())
-            .build()
-            .parseSignedClaims(token)
-            .getPayload();
+      Claims claims = parseWithAnyKey(token);
+      if (claims != null) {
+        // Principal: UUID si es público; para INTERNAL no exigimos UUID
+        Collection<String> roles = extractRoles(claims.get("roles"));
+        boolean isInternal = roles.stream().anyMatch(r -> r.equals("INTERNAL") || r.equals("ROLE_INTERNAL"));
 
-        // Principal = userId (UUID) o sub (UUID)
         String principal = claims.get("userId", String.class);
-        if (!StringUtils.hasText(principal)) {
-          principal = claims.getSubject(); // sub
-        }
+        if (!StringUtils.hasText(principal))
+          principal = claims.getSubject();
 
-        if (!isUuid(principal)) {
+        if (!isInternal && !isUuid(principal)) {
           log.warn("JWT sin principal UUID (userId/sub): {}", principal);
           chain.doFilter(req, res);
           return;
         }
 
-        // Roles: lista o CSV
-        Collection<String> rawRoles = extractRoles(claims.get("roles"));
-        var authorities = rawRoles.stream()
-            .map(this::normalizeRole) // evita ROLE_ROLE_*
+        var authorities = roles.stream()
+            .map(this::normalizeRole)
             .map(SimpleGrantedAuthority::new)
             .collect(Collectors.toList());
-
-        var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
-        SecurityContextHolder.getContext().setAuthentication(auth);
-        log.debug("🔐 curriculum-service: auth por JWT principal={} roles={}", principal, rawRoles);
-
-      } catch (Exception ex) {
-        log.warn("curriculum-service: JWT inválido: {}", ex.getMessage());
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken(principal, null, authorities));
+        log.debug("🔐 curriculum-service: auth por JWT principal={} roles={}", principal, roles);
+      } else {
+        log.warn("curriculum-service: JWT inválido (ningún secreto coincide)");
       }
     }
 
     chain.doFilter(req, res);
+  }
+
+  private Claims parseWithAnyKey(String token) {
+    for (SecretKey k : signingKeys()) {
+      try {
+        return Jwts.parser().verifyWith(k).build().parseSignedClaims(token).getPayload();
+      } catch (Exception ignore) {
+        /* intenta con el siguiente */ }
+    }
+    return null;
   }
 
   private String headerOrNull(HttpServletRequest req, String name) {
@@ -150,7 +173,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     if (r == null)
       return "";
     String rr = r.trim();
-    return rr.startsWith("ROLE_") ? rr : "ROLE_" + rr.toUpperCase();
+    return rr.startsWith("ROLE_") ? rr : "ROLE_" + rr.toUpperCase(Locale.ROOT);
   }
 
   @SuppressWarnings("unchecked")
@@ -160,7 +183,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     if (raw instanceof Collection<?> col) {
       return col.stream().filter(Objects::nonNull).map(Object::toString).toList();
     }
-    // CSV fallback
     String s = raw.toString();
     if (!StringUtils.hasText(s))
       return List.of();

@@ -17,7 +17,7 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(ex -> ex
                         // 🔒 Nunca exponer rutas internas por el gateway
-                        .pathMatchers("/internal/**").denyAll()
+                        .pathMatchers("/internal/**", "/_debug/**").denyAll()
                         // El resto lo maneja tu JwtGatewayFilter (roles, open endpoints, etc.)
                         .anyExchange().permitAll())
                 .build();

@@ -99,6 +99,13 @@ public class GatewayConfig {
                                                                 .filter(jwtFilter)
                                                                 .addRequestHeader("X-Internal-Call", "gateway"))
                                                 .uri("lb://ASSESSMENT-SERVICE"))
+
+                                // AI Advisor Service (FastAPI) — público para el FE
+                                .route("ai-advisor-service", r -> r
+                                                .path("/api/ai/**")
+                                                .filters(f -> f.filter(jwtFilter)
+                                                                .addRequestHeader("X-Internal-Call", "gateway"))
+                                                .uri("lb://AI-ADVISOR-SERVICE"))
                                 .build();
         }
 }

@@ -18,6 +18,7 @@ import com.tesis.assessment_service.service.client.CurriculumClient;
 import com.tesis.assessment_service.service.client.ProgressClient;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -56,8 +58,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     // 2) membresía si es aula
     ensureStudentMembership(a, studentId);
 
-    // 3) Idempotencia: si hay un IN_PROGRESS del alumno en esta asignación,
-    // devuélvelo
+    // 3) Idempotencia: si hay un IN_PROGRESS, devuélvelo
     Optional<AssessmentSubmission> inProgress = submissionRepo
         .findTopByAssignment_IdAndStudentIdAndStatusOrderByCreatedAtDesc(assignmentId, studentId,
             SubmissionStatus.IN_PROGRESS);
@@ -78,40 +79,98 @@ public class SubmissionServiceImpl implements SubmissionService {
         .map(s -> (s.getAttemptNo() == null ? 0 : s.getAttemptNo()) + 1)
         .orElse(1);
 
-    // 6) Crear submission + items desde la plantilla (snapshot ordenada por
-    // position)
+    // 6) Crear submission
     AssessmentTemplate tpl = templateRepo.findById(a.getTemplate().getId())
         .orElseThrow(() -> new IllegalStateException("Plantilla inconsistente"));
     Integer timeLimit = a.getTimeLimitSec();
+
     AssessmentSubmission s = AssessmentSubmission.builder()
         .assignment(a)
         .studentId(studentId)
         .status(SubmissionStatus.IN_PROGRESS)
         .startedAt(OffsetDateTime.now(ZoneOffset.UTC))
         .attemptNo(nextAttemptNo)
-        .durationSec(timeLimit) // <<--- GUARDA el LÍMITE
+        .durationSec(timeLimit)
         .build();
     submissionRepo.save(s);
 
+    // 7) Items de la plantilla (ordenados)
     List<AssessmentTemplateItem> templateItems = tpl.getItems() == null
         ? List.of()
         : tpl.getItems().stream()
             .sorted(Comparator.comparingInt(AssessmentTemplateItem::getPosition))
             .toList();
 
-    List<AssessmentSubmissionItem> items = templateItems.stream()
-        .map(ti -> AssessmentSubmissionItem.builder()
-            .submission(s)
-            .exerciseId(ti.getExerciseId())
-            .objectiveId(ti.getObjectiveId())
-            .position(ti.getPosition())
-            .points(ti.getPoints())
-            .gradingMode(ti.getGradingMode())
-            .build())
+    // 8) IDs de ejercicios y lookup batch de dificultad (denormalización)
+    List<UUID> exerciseIds = templateItems.stream()
+        .map(AssessmentTemplateItem::getExerciseId)
+        .filter(Objects::nonNull)
+        .distinct()
         .toList();
+
+    final Map<UUID, String> diffMap = safeGetDifficulties(exerciseIds); // <- FINAL
+
+    // 9) Construir y persistir submission items (seteando exerciseDifficulty si
+    // existe)
+    List<AssessmentSubmissionItem> items = templateItems.stream()
+        .map(ti -> {
+          AssessmentSubmissionItem.AssessmentSubmissionItemBuilder b = AssessmentSubmissionItem.builder()
+              .submission(s)
+              .exerciseId(ti.getExerciseId())
+              .objectiveId(ti.getObjectiveId())
+              .position(ti.getPosition())
+              .points(ti.getPoints())
+              .gradingMode(ti.getGradingMode());
+
+          String d = diffMap.get(ti.getExerciseId()); // puede ser null
+          ExerciseDifficulty ed = parseDifficultySafe(d);
+          if (ed != null) {
+            b.exerciseDifficulty(ed);
+          }
+          return b.build();
+        })
+        .toList();
+
     itemRepo.saveAll(items);
 
     return toStartResponse(s, items);
+  }
+
+  /** Siempre devuelve un Map; registra warning si curriculum falla. */
+  private Map<UUID, String> safeGetDifficulties(List<UUID> exerciseIds) {
+    if (exerciseIds == null || exerciseIds.isEmpty())
+      return Map.of();
+    try {
+      return curriculumClient.getExerciseDifficulties(exerciseIds); // BASIC|INTERMEDIATE|ADVANCED
+    } catch (Exception e) {
+      log.warn("No se pudo resolver dificultades en batch (continuamos sin denormalizar): {}", e.getMessage());
+      return Map.of();
+    }
+  }
+
+  private ExerciseDifficulty parseDifficultySafe(String raw) {
+    if (raw == null || raw.isBlank())
+      return null;
+    String x = raw.trim().toUpperCase(Locale.ROOT);
+    switch (x) {
+      case "EASY":
+        x = "BASIC";
+        break;
+      case "MEDIUM":
+        x = "INTERMEDIATE";
+        break;
+      case "HARD":
+        x = "ADVANCED";
+        break;
+      default:
+        break;
+    }
+    try {
+      return ExerciseDifficulty.valueOf(x);
+    } catch (IllegalArgumentException ex) {
+      log.warn("Valor de dificultad no reconocido '{}', se ignora", raw);
+      return null;
+    }
   }
 
   @Override
@@ -270,7 +329,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     return PageResponse.of(mapped);
   }
 
-  // ---- helpers
+  // ---- helpers menores ----
 
   private void ensureStartAllowed(AssessmentAssignment a) {
     if (a.getState() != AssignmentState.PUBLISHED) {
@@ -294,7 +353,6 @@ public class SubmissionServiceImpl implements SubmissionService {
   }
 
   private void ensureSubmitAllowed(AssessmentAssignment a, AssessmentSubmission s) {
-    // Estado y ventana
     if (a.getState() != AssignmentState.PUBLISHED) {
       throw new BadRequestException("La asignación no está publicada");
     }
@@ -306,12 +364,11 @@ public class SubmissionServiceImpl implements SubmissionService {
       throw new ForbiddenException("La ventana de evaluación ya terminó");
     }
 
-    // ⬇️ Límite efectivo (persistido en submission si existe)
     Integer limit = (s.getDurationSec() != null) ? s.getDurationSec() : a.getTimeLimitSec();
     if (limit != null && s.getStartedAt() != null) {
       OffsetDateTime until = s.getStartedAt().plusSeconds(limit);
       if (OffsetDateTime.now(ZoneOffset.UTC).isAfter(until)) {
-        // permitido; solo marcarás late más adelante
+        // permitido; marcarás late más adelante
       }
     }
   }
@@ -343,7 +400,6 @@ public class SubmissionServiceImpl implements SubmissionService {
 
     JsonNode configNode = loadTemplateConfig(s.getAssignment());
 
-    // Límite efectivo (persistido si existe; si no, desde la asignación)
     Integer effectiveLimit = (s.getDurationSec() != null)
         ? s.getDurationSec()
         : (s.getAssignment() != null ? s.getAssignment().getTimeLimitSec() : null);
@@ -359,14 +415,13 @@ public class SubmissionServiceImpl implements SubmissionService {
         list);
   }
 
-  /** Obtiene el config JSONB (JsonNode) de la plantilla asociada. */
   private JsonNode loadTemplateConfig(AssessmentAssignment a) {
     try {
       UUID tplId = (a.getTemplate() != null ? a.getTemplate().getId() : null);
       if (tplId != null) {
         var tpl = templateRepo.findById(tplId).orElse(null);
         if (tpl != null) {
-          return tpl.getConfigJson(); // JsonNode directo (JSONB)
+          return tpl.getConfigJson();
         }
       }
       return (a.getTemplate() != null) ? a.getTemplate().getConfigJson() : null;
@@ -412,10 +467,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         detailItems);
   }
 
-  /**
-   * Envía el intento a progress-service. Si falla, persiste outbox con JSONB
-   * real.
-   */
+  /** Envío a progress-service con outbox fallback. */
   private void postAttemptBestEffort(AssessmentSubmission s, AssessmentSubmissionItem it, UUID objectiveId) {
     try {
       ObjectNode meta = mapper.createObjectNode();

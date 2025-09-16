@@ -6,6 +6,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,4 +23,7 @@ public interface AssessmentAdvisorOutboxRepository extends JpaRepository<Assessm
   default List<AssessmentAdvisorOutbox> findTopNPendingOrFailed(int limit) {
     return findTopNPendingOrFailed(PageRequest.of(0, limit));
   }
+
+  boolean existsBySubmissionIdAndStatusIn(UUID submissionId, Collection<OutboxStatus> statuses);
+
 }

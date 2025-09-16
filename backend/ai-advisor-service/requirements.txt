@@ -1,0 +1,45 @@
+# Web/API
+fastapi==0.103.2
+starlette==0.27.0
+uvicorn[standard]==0.23.2
+gunicorn==21.2.0
+
+# Configuración
+pydantic==2.3.0
+pydantic-settings==2.0.3
+
+# DB / ORM / Migraciones
+SQLAlchemy==2.0.21
+alembic==1.12.0
+psycopg[binary]==3.1.12
+pgvector==0.2.5
+
+# Cache / Redis
+redis==5.0.1
+
+# Observabilidad
+prometheus-client==0.17.1
+structlog==23.1.0
+
+# Rate limiting
+slowapi==0.1.8
+limits==3.6.0
+
+# HTTP clientes y resiliencia
+httpx==0.24.1
+tenacity==8.2.2
+
+# ML (Fase 3)
+scikit-learn==1.5.1
+joblib==1.4.2
+numpy==1.26.4
+scipy==1.11.4
+
+# JWT
+PyJWT==2.8.0
+
+# OPEN-AI
+openai>=1.40.0
+
+orjson==3.10.7
+py-eureka-client==0.11.7

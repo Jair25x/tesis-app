@@ -2,6 +2,8 @@ package com.tesis.assessment_service.service.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** Contrato hacia curriculum-service para autocorrección. */
@@ -13,4 +15,7 @@ public interface CurriculumClient {
   /** Resultado de autocorrección. */
   record CheckResult(boolean correct, JsonNode feedback, UUID objectiveId, Integer points) {
   }
+
+  Map<UUID, String> getExerciseDifficulties(List<UUID> exerciseIds);
+
 }

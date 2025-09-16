@@ -2,7 +2,7 @@
 code: "CURR-MATH-6"
 name: "Currículo de Matemática - Sexto grado"
 description: "MVP – Ejemplos para 3 plantillas"
-grade: "6°"
+grade: "6"
 competencies:
   - code: "C.1"
     name: "BIENVENIDOS"

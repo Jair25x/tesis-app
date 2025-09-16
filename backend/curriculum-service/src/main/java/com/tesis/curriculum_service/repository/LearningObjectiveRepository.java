@@ -55,4 +55,68 @@ public interface LearningObjectiveRepository extends JpaRepository<LearningObjec
          WHERE lo.id = :id
       """)
   Optional<LearningObjective> findByIdWithFullHierarchy(@Param("id") UUID id);
+
+  // ===== NUEVO: usar nombres de propiedades (createdAt) en JPQL =====
+
+  // Lista reciente (por createdAt desc)
+  @Query("""
+        SELECT lo FROM LearningObjective lo
+        ORDER BY lo.createdAt DESC
+      """)
+  List<LearningObjective> findRecent(org.springframework.data.domain.Pageable pageable);
+
+  default List<LearningObjective> findRecent(int limit) {
+    return findRecent(org.springframework.data.domain.PageRequest.of(
+        0, Math.max(1, Math.min(limit, 200))));
+  }
+
+  // Por grado (JOIN hasta curriculum, orden por createdAt)
+  @Query("""
+        SELECT lo FROM LearningObjective lo
+          JOIN lo.standard s
+          JOIN s.competency c
+          JOIN c.curriculum cur
+        WHERE cur.grade = :grade
+        ORDER BY lo.createdAt DESC
+      """)
+  List<LearningObjective> findTopByGrade(@Param("grade") String grade,
+      org.springframework.data.domain.Pageable pageable);
+
+  default List<LearningObjective> findTopByGrade(String grade, int limit) {
+    return findTopByGrade(
+        grade,
+        org.springframework.data.domain.PageRequest.of(0, Math.max(1, Math.min(limit, 200))));
+  }
+
+  @Query("""
+        SELECT lo FROM LearningObjective lo
+        JOIN lo.standard s
+        JOIN s.competency c
+        JOIN c.curriculum cur
+       WHERE lo.code = :code AND lo.active = true
+      """)
+  Optional<LearningObjective> findActiveByCode(@Param("code") String code);
+
+  @Query("""
+        SELECT lo FROM LearningObjective lo
+          JOIN lo.standard s
+          JOIN s.competency c
+          JOIN c.curriculum cur
+        WHERE cur.grade = :grade
+          AND lo.active = true
+        ORDER BY lo.code ASC, lo.createdAt ASC
+      """)
+  List<LearningObjective> findOrderedByGrade(@Param("grade") String grade);
+
+  @Query(value = """
+        SELECT lo.*
+          FROM learning_objectives lo
+          JOIN standards s   ON s.id  = lo.standard_id
+          JOIN competencies c ON c.id = s.competency_id
+          JOIN curricula cur  ON cur.id = c.curriculum_id
+         WHERE regexp_replace(cur.grade, '[^0-9]', '', 'g') = :grade
+           AND lo.active = true
+         ORDER BY lo.code ASC, lo.created_at ASC
+      """, nativeQuery = true)
+  List<LearningObjective> findOrderedByGradeNormalized(@Param("grade") String grade);
 }

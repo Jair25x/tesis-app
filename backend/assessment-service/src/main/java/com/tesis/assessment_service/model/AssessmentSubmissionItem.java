@@ -1,8 +1,10 @@
+// com.tesis.assessment_service.model.AssessmentSubmissionItem (versión con difficulty)
 package com.tesis.assessment_service.model;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.tesis.assessment_service.model.base.AuditableEntity;
 import com.tesis.assessment_service.model.enums.GradingMode;
+import com.tesis.assessment_service.model.enums.ExerciseDifficulty; // <-- NUEVO
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -22,7 +24,8 @@ import java.util.UUID;
 @Table(name = "assessment_submission_item", indexes = {
     @Index(name = "idx_sitem_submission_position", columnList = "submission_id, position"),
     @Index(name = "idx_sitem_submission_exercise", columnList = "submission_id, exercise_id"),
-    @Index(name = "idx_sitem_submission_objective", columnList = "submission_id, objective_id")
+    @Index(name = "idx_sitem_submission_objective", columnList = "submission_id, objective_id"),
+    @Index(name = "idx_sitem_difficulty", columnList = "exercise_difficulty") // <-- NUEVO
 })
 public class AssessmentSubmissionItem extends AuditableEntity {
 
@@ -51,19 +54,16 @@ public class AssessmentSubmissionItem extends AuditableEntity {
   @Column(name = "grading_mode", nullable = false, length = 12)
   private GradingMode gradingMode;
 
-  /** Respuesta del alumno (JSONB). */
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "answer_json", columnDefinition = "jsonb")
   private JsonNode answerJson;
 
-  /** Resultado (AUTO) o luego de calificar (MANUAL). */
   @Column(name = "correct")
   private Boolean correct;
 
   @Column(name = "score", precision = 8, scale = 2)
   private BigDecimal score;
 
-  /** Feedback de la corrección (JSONB). */
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "feedback_json", columnDefinition = "jsonb")
   private JsonNode feedbackJson;
@@ -81,4 +81,9 @@ public class AssessmentSubmissionItem extends AuditableEntity {
   @Lob
   @Column(name = "statement_rendered", columnDefinition = "text")
   private String statementRendered;
+
+  // --- NUEVO: denormalización de dificultad del ejercicio ---
+  @Enumerated(EnumType.STRING)
+  @Column(name = "exercise_difficulty", length = 20)
+  private ExerciseDifficulty exerciseDifficulty;
 }

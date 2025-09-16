@@ -73,4 +73,36 @@ public interface ExerciseRepository extends JpaRepository<Exercise, UUID> {
         WHERE is_diagnostic = true AND active = true
       """)
   List<Exercise> findAllByDiagnosticTrueAndActiveTrue();
+
+  /**
+   * Filtro por objetivo, activo y dificultad (opcional), orden DESC por
+   * created_at, con LIMIT.
+   */
+  @Query(value = """
+      SELECT * FROM exercises
+       WHERE learning_objective_id = :objectiveId
+         AND active = :active
+         AND (:difficulty IS NULL OR difficulty = :difficulty)
+       ORDER BY created_at DESC
+       LIMIT :limit
+      """, nativeQuery = true)
+  List<Exercise> findForObjectiveOrderByCreatedDesc(
+      @Param("objectiveId") UUID objectiveId,
+      @Param("active") boolean active,
+      @Param("difficulty") String difficulty, // BASIC|INTERMEDIATE|ADVANCED o NULL
+      @Param("limit") int limit);
+
+  @Query(value = """
+      SELECT * FROM exercises
+       WHERE learning_objective_id = :objectiveId
+         AND active = :active
+         AND (:difficulty IS NULL OR difficulty = :difficulty)
+       ORDER BY created_at ASC
+       LIMIT :limit
+      """, nativeQuery = true)
+  List<Exercise> findForObjectiveOrderByCreatedAsc(
+      @Param("objectiveId") UUID objectiveId,
+      @Param("active") boolean active,
+      @Param("difficulty") String difficulty,
+      @Param("limit") int limit);
 }

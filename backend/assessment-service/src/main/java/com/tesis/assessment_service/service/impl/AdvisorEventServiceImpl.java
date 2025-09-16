@@ -1,3 +1,5 @@
+// com.tesis.assessment_service.service.impl.AdvisorEventServiceImpl
+// (reemplazo completo)
 package com.tesis.assessment_service.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,12 +18,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.stream.Collectors;
 
-/**
- * Publica un evento "AssessmentGraded" hacia el advisor mediante outbox.
- * payload_json ahora es JSONB (JsonNode), no String.
- */
 @Service
 @RequiredArgsConstructor
 public class AdvisorEventServiceImpl implements AdvisorEventService {
@@ -37,67 +36,94 @@ public class AdvisorEventServiceImpl implements AdvisorEventService {
 
     var items = itemRepo.findBySubmission_IdOrderByPositionAsc(s.getId());
 
-    // Agregación por objetivo
-    var byObjective = items.stream()
-        .collect(Collectors.groupingBy(AssessmentSubmissionItem::getObjectiveId));
-
+    // --- agregación por objetivo (informativa)
+    var byObjective = items.stream().collect(Collectors.groupingBy(AssessmentSubmissionItem::getObjectiveId));
     var objectiveResults = mapper.createArrayNode();
     byObjective.forEach((objectiveId, list) -> {
-      BigDecimal score = list.stream()
+      BigDecimal scoreSum = list.stream()
           .map(i -> i.getScore() == null ? BigDecimal.ZERO : i.getScore())
           .reduce(BigDecimal.ZERO, BigDecimal::add);
-      int points = list.stream().mapToInt(i -> i.getPoints() == null ? 0 : i.getPoints()).sum();
-      double accuracy = points == 0 ? 0d : score.doubleValue() / points;
+      int pointsSum = list.stream().mapToInt(i -> i.getPoints() == null ? 0 : i.getPoints()).sum();
+      double accuracy = pointsSum == 0 ? 0d : scoreSum.doubleValue() / (double) pointsSum;
 
       ObjectNode node = mapper.createObjectNode();
       node.put("objectiveId", objectiveId.toString());
-      node.put("score", score);
-      node.put("maxScore", points);
+      node.put("score", scoreSum);
+      node.put("maxScore", pointsSum);
       node.put("accuracy", accuracy);
       objectiveResults.add(node);
     });
 
+    // --- detalle por ítem
     var itemResults = mapper.createArrayNode();
     items.forEach(i -> {
       ObjectNode n = mapper.createObjectNode();
+
+      n.put("submissionItemId", i.getId().toString());
       n.put("exerciseId", i.getExerciseId().toString());
       n.put("objectiveId", i.getObjectiveId().toString());
       n.put("gradingMode", i.getGradingMode() == null ? GradingMode.AUTO.name() : i.getGradingMode().name());
+      n.put("source", "ASSESSMENT"); // opcional (tu schema lo asume por defecto)
+
       if (i.getCorrect() != null)
         n.put("correct", i.getCorrect());
-      if (i.getScore() != null)
-        n.put("score", i.getScore());
-      n.put("points", i.getPoints() == null ? 0 : i.getPoints());
+
+      int maxPts = (i.getPoints() == null ? 0 : i.getPoints());
+      n.put("maxPoints", maxPts);
+
+      BigDecimal raw = i.getScore(); // puntos logrados
+      if (raw != null) {
+        n.put("points", raw.intValue());
+        if (maxPts > 0) {
+          double norm = raw.doubleValue() / (double) maxPts;
+          if (norm < 0)
+            norm = 0;
+          if (norm > 1)
+            norm = 1;
+          n.put("score", norm);
+        }
+      }
+
+      OffsetDateTime at = (i.getCheckedAt() != null) ? i.getCheckedAt()
+          : (i.getUpdatedAt() != null) ? i.getUpdatedAt().atOffset(ZoneOffset.UTC)
+              : (s.getGradedAt() != null) ? s.getGradedAt() : OffsetDateTime.now(ZoneOffset.UTC);
+      n.put("answeredAt", at.toInstant().toString());
+
+      // (Opcional) si denormalizas dificultad:
+      // n.put("difficulty", i.getExerciseDifficulty().name());
+
       itemResults.add(n);
     });
 
+    // --- envelope (el client lo “aplana” a 1 POST por item)
     ObjectNode payload = mapper.createObjectNode();
     payload.put("assignmentId", s.getAssignment().getId().toString());
     payload.put("assignmentType", s.getAssignment().getType().name());
     payload.put("studentId", s.getStudentId().toString());
-    if (s.getAssignment().getClassroomId() != null) {
+    if (s.getAssignment().getClassroomId() != null)
       payload.put("classroomId", s.getAssignment().getClassroomId().toString());
-    }
     payload.put("curriculumId", s.getAssignment().getTemplate().getCurriculumId().toString());
+
     if (s.getScore() != null)
       payload.put("score", s.getScore());
     if (s.getMaxScore() != null)
       payload.put("maxScore", s.getMaxScore());
     if (s.getDurationSec() != null)
       payload.put("durationSec", s.getDurationSec());
+
     payload.set("objectiveResults", objectiveResults);
     payload.set("itemResults", itemResults);
 
     ObjectNode event = mapper.createObjectNode();
     event.put("eventId", java.util.UUID.randomUUID().toString());
-    event.put("occurredAt", OffsetDateTime.now().toString());
+    event.put("occurredAt", OffsetDateTime.now(ZoneOffset.UTC).toString());
     event.put("type", "AssessmentGraded");
     event.set("payload", payload);
 
     var out = AssessmentAdvisorOutbox.builder()
         .submissionId(s.getId())
         .status(OutboxStatus.PENDING)
-        .payloadJson(event) // JsonNode directo (JSONB)
+        .payloadJson(event)
         .build();
 
     advisorRepo.save(out);
