@@ -8,7 +8,7 @@ import { X } from "lucide-react";
 import StudentMenu from "./StudentMenu";
 import AdminMenu from "./AdminMenu";
 import SettingsMenu from "./SettingsMenu";
-import TeacherMenu from "./TeacherMenu"; // 👈 nuevo
+import TeacherMenu from "./TeacherMenu";
 
 interface SidebarProps {
   sidebarOpen: boolean;
@@ -48,27 +48,29 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
-        <div className="flex flex-col justify-between h-full">
-          <div className="space-y-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-[#2d3b46] dark:text-white">
-                TesisApp
-              </h2>
-              <button
-                className="md:hidden text-gray-700 dark:text-gray-300"
-                onClick={() => setSidebarOpen(false)}
-                aria-label="Cerrar menú"
-              >
-                <X size={24} />
-              </button>
-            </div>
+        <div className="flex h-full flex-col">
+          {/* Header fijo */}
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-[#2d3b46] dark:text-white">
+              TesisApp
+            </h2>
+            <button
+              className="md:hidden text-gray-700 dark:text-gray-300"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Cerrar menú"
+            >
+              <X size={24} />
+            </button>
+          </div>
 
-            {isAuthenticated && user && (
-              <p className="text-sm italic text-gray-700 dark:text-gray-300">
-                👋 Hola, <span className="font-semibold">{user.nombres}</span>
-              </p>
-            )}
+          {isAuthenticated && user && (
+            <p className="mb-4 text-sm italic text-gray-700 dark:text-gray-300">
+              👋 Hola, <span className="font-semibold">{user.nombres}</span>
+            </p>
+          )}
 
+          {/* Zona scrollable con fade inferior */}
+          <div className="relative flex-1 overflow-y-auto no-scrollbar pr-1">
             <nav className="space-y-2">
               <Link
                 to="/profile-dashboard"
@@ -104,7 +106,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                 </button>
               )}
 
-              {/* Menú de Docente siempre visible para TEACHER/ADMIN */}
+              {/* Menú Docente para TEACHER/ADMIN */}
               {isTeacher && (
                 <TeacherMenu
                   teacherOpen={teacherOpen}
@@ -113,7 +115,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                 />
               )}
 
-              {/* Menú de Estudiante solo cuando está en “vista estudiante” */}
+              {/* Menú Estudiante cuando está en “vista estudiante” */}
               {isStudentView && (
                 <StudentMenu
                   studentOpen={studentOpen}
@@ -122,6 +124,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                 />
               )}
 
+              {/* Menú Admin */}
               {roles.includes("ROLE_ADMIN") && (
                 <AdminMenu
                   adminOpen={adminOpen}
@@ -136,19 +139,29 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                 setSidebarOpen={setSidebarOpen}
               />
             </nav>
+
+            {/* Fade inferior (sugiere que hay más contenido) */}
+            <div
+              className="pointer-events-none absolute bottom-0 left-0 right-0 h-6
+                         bg-gradient-to-t from-white to-transparent
+                         dark:from-[#1e2a34]"
+            />
           </div>
 
+          {/* Footer fijo (logout) */}
           {isAuthenticated && (
-            <button
-              onClick={async () => {
-                await logout();
-                navigate("/login", { replace: true });
-                setSidebarOpen(false);
-              }}
-              className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm"
-            >
-              🔓 Cerrar sesión
-            </button>
+            <div className="pt-4">
+              <button
+                onClick={async () => {
+                  await logout();
+                  navigate("/login", { replace: true });
+                  setSidebarOpen(false);
+                }}
+                className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm"
+              >
+                🔓 Cerrar sesión
+              </button>
+            </div>
           )}
         </div>
       </aside>

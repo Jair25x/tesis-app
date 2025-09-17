@@ -44,3 +44,7 @@ body,
     }
   }
 }
+
+/* Ocultar scrollbar de manera accesible (sigue siendo desplazable) */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

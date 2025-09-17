@@ -5,7 +5,7 @@ export type AchievementDto = {
   code: string;
   name: string;
   description?: string;
-  earnedAt: string; // ISO (LocalDateTime en backend -> ISO string)
+  earnedAt: string; // ISO
 };
 
 export type StreakDto = {
@@ -43,13 +43,13 @@ export type AttemptResponseDto = {
   attemptId?: string;
 
   correct: boolean;
-  score?: number; // BigDecimal en backend -> number
-  feedback?: Record<string, unknown>; // backend devuelve objeto
+  score?: number;
+  feedback?: Record<string, unknown>;
 
   sop?: SopDto;
   streak?: StreakDto;
 
-  unlocked?: AchievementDto[]; // logros desbloqueados
+  unlocked?: AchievementDto[];
 };
 
 export type OverviewDto = {
@@ -61,18 +61,35 @@ export type OverviewDto = {
   dailyCorrect: number;
 };
 
-// ---------- Tipos de UI (los que usan tus componentes) ----------
+// 🔥 DTO de estados por objetivo (lo que devuelve el BE)
+export type ObjectiveProgressStatus = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
+
+export type ObjectiveStatusItem = {
+  objectiveId: string;
+  status: ObjectiveProgressStatus;
+};
+
+export type ObjectiveStatusResponse = ObjectiveStatusItem[];
+
+// Sets ya procesados (útiles en el FE)
+export type ObjectiveStatusSets = {
+  completedIds: Set<string>;
+  inProgressIds: Set<string>;
+  notStartedIds: Set<string>;
+};
+
+// ---------- Tipos de UI ----------
 export type Overview = {
-  date: string; // YYYY-MM-DD (lo fabricamos en el service)
-  attempts: number; // mapea de dailyAttempts
-  correct: number; // mapea de dailyCorrect
-  objectivesCompleted: number; // mapea de masteredObjectives
+  date: string; // YYYY-MM-DD
+  attempts: number;
+  correct: number;
+  objectivesCompleted: number;
 };
 
 export type Streak = {
   current: number;
   longest: number;
-  lastUpdated: string; // fabricado en FE con new Date().toISOString()
+  lastUpdated: string;
 };
 
 export type Achievement = {
@@ -82,7 +99,6 @@ export type Achievement = {
   earnedAt: string; // ISO
 };
 
-// Request que envías desde el FE (con campos opcionales)
 export type AttemptRequest = {
   curriculumId: string;
   learningObjectiveId: string;
@@ -97,13 +113,11 @@ export type AttemptRequest = {
   hintsUsed?: number;
 };
 
-// Respuesta que consumen tus componentes del FE
 export type AttemptResponse = {
   attemptId?: string;
-  exerciseId?: string; // opcional si quieres, no viene en el DTO pero útil
+  exerciseId?: string; // opcional
   correct: boolean;
   score?: number;
-  // feedback podría ser texto en algún futuro; de momento mantenlo flexible:
   feedback?: string | Record<string, unknown>;
   updatedStreak?: Streak;
   awardedAchievements?: Achievement[];
@@ -117,18 +131,27 @@ export type AchievementMeta = {
   points?: number;
 };
 
-// --- Serie diaria (nuevo) ---
+// --- Serie diaria ---
 export type SeriesRange = "today" | "7d" | "14d";
 
 export interface DailyStatDto {
   date: string;
   attempts: number;
   correct: number;
-  activeStudents?: number; // ⬅️ nuevo opcional
+  activeStudents?: number;
 }
 export interface DailyStat {
   date: string;
   attempts: number;
   correct: number;
-  activeStudents?: number; // ⬅️
+  activeStudents?: number;
 }
+
+// 🔥 Cobertura por objetivo (ejercicios distintos correctos / total del OA)
+export type ObjectiveCoverageItem = {
+  objectiveId: string;
+  solvedDistinct: number; // ejercicios distintos correctos
+  totalExercises: number; // total activos del OA
+};
+
+export type ObjectiveCoverageResponse = ObjectiveCoverageItem[];

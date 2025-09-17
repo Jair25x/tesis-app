@@ -15,6 +15,10 @@ import type {
   DailyStat,
   DailyStatDto,
   SeriesRange,
+  ObjectiveStatusItem,
+  ObjectiveStatusResponse,
+  ObjectiveCoverageItem,
+  ObjectiveCoverageResponse,
 } from "../types/progress/ProgressTypes";
 
 // Overview
@@ -63,10 +67,7 @@ export const getAchievements = async (
 export const postAttempt = async (
   req: AttemptRequest
 ): Promise<AttemptResponse> => {
-  const dto: AttemptRequestDto = {
-    ...req,
-    source: req.source ?? "PRACTICE",
-  };
+  const dto: AttemptRequestDto = { ...req, source: req.source ?? "PRACTICE" };
 
   const { data } = await api.post<AttemptResponseDto>(
     "/progress/attempts",
@@ -77,7 +78,7 @@ export const postAttempt = async (
     attemptId: data.attemptId,
     correct: data.correct,
     score: data.score,
-    feedback: data.feedback, // objeto o string; el Player ya lo serializa si hace falta
+    feedback: data.feedback,
     sop: data.sop,
     updatedStreak: data.streak
       ? {
@@ -111,7 +112,6 @@ export const getAchievementsCatalog = async (
       points: a.points,
     }));
   } catch {
-    // Fallback: catálogo vacío -> UI solo mostrará desbloqueados
     return [];
   }
 };
@@ -138,15 +138,49 @@ export const getMySeries = async (
     { signal }
   );
 
-  // Normaliza por si el backend en el futuro cambia fecha → aquí mantenemos formato
   return (Array.isArray(data) ? data : []).map((d) => ({
     date: d.date,
     attempts: d.attempts ?? 0,
     correct: d.correct ?? 0,
+    activeStudents: d.activeStudents,
   }));
 };
 
-// 👇 Alias para que tus hooks actuales no rompan
+// Estados por objetivo
+export const getObjectiveStatuses = async (
+  curriculumId?: string,
+  signal?: AbortSignal
+): Promise<ObjectiveStatusItem[]> => {
+  const params = new URLSearchParams();
+  if (curriculumId) params.set("curriculumId", curriculumId);
+
+  const { data } = await api.get<ObjectiveStatusResponse>(
+    `/progress/students/me/objectives/status${
+      params.toString() ? `?${params}` : ""
+    }`,
+    { signal }
+  );
+  return Array.isArray(data) ? data : [];
+};
+
+// 🔥 Cobertura por objetivo
+export const getObjectiveCoverage = async (
+  curriculumId?: string,
+  signal?: AbortSignal
+): Promise<ObjectiveCoverageItem[]> => {
+  const params = new URLSearchParams();
+  if (curriculumId) params.set("curriculumId", curriculumId);
+
+  const { data } = await api.get<ObjectiveCoverageResponse>(
+    `/progress/students/me/objectives/coverage${
+      params.toString() ? `?${params}` : ""
+    }`,
+    { signal }
+  );
+  return Array.isArray(data) ? data : [];
+};
+
+// 👇 Alias para compatibilidad
 export {
   getMySeries as getStudentDailySeries,
   getOverview as getMyOverview,

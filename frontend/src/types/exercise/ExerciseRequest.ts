@@ -1,14 +1,15 @@
+// src/types/exercise/ExerciseRequest.ts
 import type { Difficulty } from "./Difficulty";
 import type { TemplateType } from "./TemplateSchemaResponse";
-
 
 export interface ExerciseRequest {
   statement: string;
   difficulty: Difficulty;
   type: string;
   templateType: TemplateType;
+  correctAnswer?: string; // solo admin
   parameters: Record<string, unknown>;
   learningObjectiveId: string;
-  correctAnswer: string;
-  isDiagnostic?: boolean; // opcional para compatibilidad retro
+  isDiagnostic?: boolean;
+  examMode?: boolean; // 👈 NUEVO
 }

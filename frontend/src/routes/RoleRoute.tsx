@@ -11,14 +11,14 @@ interface RoleRouteProps {
 
 const RoleRoute = ({ roles, children }: RoleRouteProps) => {
   const { isAuthenticated, user } = useAuth();
-  const { isStudentView } = useStudentView(); // ⬅️  NUEVO
+  const { isStudentView } = useStudentView();
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
-  // ✅ 1) Rol directo
-  const hasDirectRole = user?.roles.some((r) => roles.includes(r));
+  // 1) Rol directo
+  const hasDirectRole = user?.roles.some((r) => roles.includes(r)) ?? false;
 
-  // ✅ 2) Acceso a STUDENT por modo simulación
+  // 2) Acceso a STUDENT por modo simulación
   const hasImpersonatedRole = roles.includes("ROLE_STUDENT") && isStudentView;
 
   if (!hasDirectRole && !hasImpersonatedRole) {

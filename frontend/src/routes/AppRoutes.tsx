@@ -2,39 +2,53 @@
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import { lazy, Suspense } from "react";
 
-/* ───────────────────────────── Layouts ───────────────────────────── */
+/* ╔═════════════════════════════════════════════╗
+   ║                   LAYOUTS                   ║
+   ╚═════════════════════════════════════════════╝ */
 import MainLayout from "../layouts/MainLayout";
 import SettingsLayout from "../layouts/SettingsLayout";
 import MinimalLayout from "../layouts/MinimalLayout";
 
-/* ───────────────────────────── Públicas ──────────────────────────── */
+/* ╔═════════════════════════════════════════════╗
+   ║                 RUTAS PÚBLICAS              ║
+   ╚═════════════════════════════════════════════╝ */
 import Login from "../pages/Login";
 import Register from "../pages/Register";
 import NotFound from "../pages/NotFound";
 
-/* ───────────────────────────── Student core ──────────────────────── */
+/* ╔═════════════════════════════════════════════╗
+   ║               STUDENT (núcleo)              ║
+   ╚═════════════════════════════════════════════╝ */
 import StudentDashboard from "../pages/student/StudentDashboard";
 import Practice from "../pages/student/Practice";
 import Roadmap from "../pages/student/Roadmap";
 import StudentProfile from "../pages/student/Profile";
 import Achievements from "../pages/student/Achievements";
 
-/* ───────────────────────────── Perfil / Ajustes ──────────────────── */
+/* ╔═════════════════════════════════════════════╗
+   ║            PERFIL / AJUSTES (usuario)       ║
+   ╚═════════════════════════════════════════════╝ */
 import ProfileDashboard from "../pages/user/ProfileDashboard";
 import Profile from "../pages/user/Profile";
 import EditProfile from "../pages/user/EditProfile";
 import ChangePassword from "../pages/user/ChangePassword";
 import ThemeSettings from "../pages/user/ThemeSettings";
 
-/* ───────────────────────────── Guards ────────────────────────────── */
+/* ╔═════════════════════════════════════════════╗
+   ║                 GUARDS / ROUTES             ║
+   ╚═════════════════════════════════════════════╝ */
 import ProtectedRoute from "./ProtectedRoute";
 import PublicRoute from "./PublicRoute";
 import RoleRoute from "./RoleRoute";
 
-/* ───────────────────────────── Skeleton ──────────────────────────── */
+/* ╔═════════════════════════════════════════════╗
+   ║                SKELETON / LOADING           ║
+   ╚═════════════════════════════════════════════╝ */
 import LoadingScreen from "../components/LoadingScreen";
 
-/* ───────────────────────────── Admin (lazy) ──────────────────────── */
+/* ╔═════════════════════════════════════════════╗
+   ║                 ADMIN (lazy)                ║
+   ╚═════════════════════════════════════════════╝ */
 const AdminDashboard = lazy(() => import("../pages/admin/AdminDashboard"));
 const UserList = lazy(() => import("../pages/admin/users/UserList"));
 const EditUser = lazy(() => import("../pages/admin/users/EditUser"));
@@ -110,7 +124,9 @@ const SolutionStepDetails = lazy(
 import ExplorerDashboard from "../pages/admin/explorer/ExplorerDashboard";
 import { ExplorerProvider } from "../pages/admin/explorer/ExplorerProvider";
 
-/* ───────────────────────────── Providers ─────────────────────────── */
+/* ╔═════════════════════════════════════════════╗
+   ║                  PROVIDERS                  ║
+   ╚═════════════════════════════════════════════╝ */
 import { StandardProvider } from "../context/StandardProvider";
 import { CompetencyProvider } from "../context/CompetencyProvider";
 import { LearningObjectiveProvider } from "../context/LearningObjectiveProvider";
@@ -119,29 +135,80 @@ import { HintProvider } from "../context/HintProvider";
 import { SolutionStepProvider } from "../context/SolutionStepProvider";
 import { CurriculumProvider } from "../context/CurriculumProvider";
 
-/* ───────────────────────────── Student extras ─────────────────────── */
+/* ╔═════════════════════════════════════════════╗
+   ║               STUDENT (extras)              ║
+   ╚═════════════════════════════════════════════╝ */
 import ExercisePlayerByHierarchy from "../pages/student/ExercisePlayerByHierarchy";
 import RoadmapLauncher from "../pages/student/RoadmapLauncher";
+
+/* ╔═════════════════════════════════════════════╗
+   ║             TEACHER (dashboard)             ║
+   ╚═════════════════════════════════════════════╝ */
 const TeacherDashboard = lazy(
   () => import("../pages/teacher/TeacherDashboard")
 );
 
-/* ───────────────────────────── Nuevas páginas (Teacher/Student) ──── */
-/* Teacher */
+/* Teacher: aulas */
 const TeacherClassrooms = lazy(() => import("../pages/teacher/Classrooms"));
-
 const TeacherClassroomDetail = lazy(
   () => import("../pages/teacher/ClassroomDetail")
 );
 const ClassroomStudentDetailPage = lazy(
   () => import("../pages/teacher/ClassroomStudentDetailPage")
 );
-/* Student (aulas) */
+
+/* Student: aulas */
 const StudentClassrooms = lazy(
   () => import("../pages/student/StudentClassroomsPage")
 );
 const JoinClassroom = lazy(() => import("../pages/student/JoinClassroomPage"));
 
+/* ╔═════════════════════════════════════════════╗
+   ║             ASSESSMENTS (Student)           ║
+   ╚═════════════════════════════════════════════╝ */
+const AvailableAssignments = lazy(
+  () => import("../pages/student/assessments/AvailableAssignments")
+);
+const TakeAssessment = lazy(
+  () => import("../pages/student/assessments/TakeAssessment")
+);
+const SubmissionResult = lazy(
+  () => import("../pages/student/assessments/SubmissionResult")
+); // ✅ NUEVO
+const StudentHistory = lazy(
+  () => import("../pages/student/assessments/History")
+);
+/* ╔═════════════════════════════════════════════╗
+   ║              ASSESSMENTS (Teacher)          ║
+   ╚═════════════════════════════════════════════╝ */
+const AssignmentsList = lazy(
+  () => import("../pages/teacher/assessments/AssignmentsList")
+);
+const AssignmentSubmissionsList = lazy(
+  () => import("../pages/teacher/assessments/AssignmentSubmissionsList")
+);
+import AssignmentOverview from "../pages/teacher/assessments/AssignmentOverview";
+import SubmissionDetailTeacher from "../pages/teacher/assessments/SubmissionDetailTeacher";
+import AdminAssignmentsList from "../pages/admin/assessments/AdminAssignmentsList";
+/* ╔═════════════════════════════════════════════╗
+   ║          ADMIN: herramientas/authoring      ║
+   ╚═════════════════════════════════════════════╝ */
+import AdminAssessmentTools from "../pages/admin/assessments/AdminAssessmentTools";
+import TemplateForm from "../pages/admin/assessments/TemplateForm";
+import AssignmentForm from "../pages/admin/assessments/AssignmentForm";
+import TemplatesList from "../pages/admin/assessments/TemplatesList";
+
+/* ╔═════════════════════════════════════════════╗
+   ║          IA: utilidades de IA               ║
+   ╚═════════════════════════════════════════════╝ */
+import AdvisorChat from "../pages/student/ai/AdvisorChat";
+const AdminAdvisorChat = lazy(
+  () => import("../pages/admin/ai/AdminAdvisorChat")
+);
+
+/* ╔═════════════════════════════════════════════╗
+   ║                  DEFINICIÓN ROUTER          ║
+   ╚═════════════════════════════════════════════╝ */
 export const router = createBrowserRouter([
   /* ╔══════════════════════╗
      ║   BLOQUE PRINCIPAL   ║  (con sidebar / MainLayout)
@@ -150,16 +217,17 @@ export const router = createBrowserRouter([
     path: "/",
     element: (
       <ProtectedRoute>
-        {/* ⬇️ monta el provider solo una vez, alrededor del layout */}
+        {/* Montamos providers globales que necesitan estar alrededor del layout */}
         <CurriculumProvider>
           <MainLayout />
         </CurriculumProvider>
       </ProtectedRoute>
     ),
     children: [
+      /* Redirección a dashboard de estudiante por defecto */
       { index: true, element: <Navigate to="student/dashboard" replace /> },
 
-      /* ───────────── Rama Student ───────────── */
+      /* ──────────────────────── STUDENT ──────────────────────── */
       {
         path: "student",
         element: (
@@ -169,6 +237,8 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "dashboard", element: <StudentDashboard /> },
+          // Ia chat
+          { path: "ai-advisor", element: <AdvisorChat /> },
 
           // Practice con sidebar
           {
@@ -201,14 +271,53 @@ export const router = createBrowserRouter([
           // Otros
           { path: "profile", element: <StudentProfile /> },
           { path: "achievements", element: <Achievements /> },
-          // { path: "diagnostic", element: <Suspense fallback={<LoadingScreen />}><DiagnosticTest/></Suspense> },
+
+          // Assessments (estudiante)
+          {
+            path: "assessments",
+            element: (
+              <Navigate to="available" replace />
+            ) /* Alias de conveniencia */,
+          },
+          {
+            path: "assessments/available",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <AvailableAssignments />
+              </Suspense>
+            ),
+          },
+          {
+            path: "assessments/take/:submissionId",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <TakeAssessment />
+              </Suspense>
+            ),
+          },
+          {
+            path: "assessments/result/:submissionId", // ✅ NUEVO: detalle/polling de resultados
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <SubmissionResult />
+              </Suspense>
+            ),
+          },
+          {
+            path: "assessments/history",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <StudentHistory />
+              </Suspense>
+            ),
+          },
         ],
       },
 
-      /* ───────────── Perfil general ───────────── */
+      /* ───────────────────── PERFIL GENERAL ───────────────────── */
       { path: "profile-dashboard", element: <ProfileDashboard /> },
 
-      /* ───────────── Ajustes ───────────── */
+      /* ───────────────────────── AJUSTES ──────────────────────── */
       {
         path: "settings",
         element: <SettingsLayout />,
@@ -220,7 +329,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      /* ───────────── Rama Admin ───────────── */
+      /* ────────────────────────── ADMIN ───────────────────────── */
       {
         path: "admin",
         element: (
@@ -237,8 +346,32 @@ export const router = createBrowserRouter([
               </Suspense>
             ),
           },
+          /* Herramientas de IA */
+          {
+            path: "ai-advisor",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <AdminAdvisorChat />
+              </Suspense>
+            ),
+          },
 
-          /* Explorador */
+          /* Herramientas assessments */
+          { path: "assessments/tools", element: <AdminAssessmentTools /> },
+          { path: "assessments/templates/new", element: <TemplateForm /> },
+          { path: "assessments/templates", element: <TemplatesList /> },
+          { path: "assessments/assignments/new", element: <AssignmentForm /> },
+          { path: "assessments/templates/:id/edit", element: <TemplateForm /> },
+          {
+            path: "assessments/assignments",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <AdminAssignmentsList />
+              </Suspense>
+            ),
+          },
+
+          /* Explorador curricular (provee su propio provider) */
           {
             path: "explorer",
             element: (
@@ -526,7 +659,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      /* ───────────── Rama Teacher ───────────── */
+      /* ───────────────────────── TEACHER ───────────────────────── */
       {
         path: "teacher",
         element: (
@@ -567,15 +700,76 @@ export const router = createBrowserRouter([
               </Suspense>
             ),
           },
+
+          // Assessments (docente)
+          {
+            path: "assessments",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <AssignmentsList />
+              </Suspense>
+            ),
+          },
+          { path: "assessments/new", element: <AssignmentForm /> },
+          {
+            path: "assessments/:assignmentId/submissions",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <AssignmentSubmissionsList />
+              </Suspense>
+            ),
+          },
+          {
+            path: "assessments/:assignmentId/overview",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <AssignmentOverview />
+              </Suspense>
+            ),
+          },
+          {
+            path: "assessments/:assignmentId/submissions/:submissionId",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <SubmissionDetailTeacher />
+              </Suspense>
+            ),
+          },
+          {
+            path: "assessments/templates",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                {/* Reutilizamos la misma vista usada en Admin */}
+                <TemplatesList />
+              </Suspense>
+            ),
+          },
+          {
+            path: "assessments/templates/new",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <TemplateForm />
+              </Suspense>
+            ),
+          },
+          {
+            path: "assessments/templates/:id/edit",
+            element: (
+              <Suspense fallback={<LoadingScreen />}>
+                <TemplateForm />
+              </Suspense>
+            ),
+          },
         ],
       },
 
+      /* Catch-all de rutas desconocidas dentro del layout principal */
       { path: "*", element: <NotFound /> },
     ],
   },
 
   /* ╔══════════════════════╗
-     ║   PLAYER sin sidebar  ║
+     ║  PLAYER sin sidebar  ║
      ╚══════════════════════╝ */
   {
     path: "/student/exercises/:curriculumId/:competencyId/:standardId/:learningObjectiveId/:exerciseId",
@@ -590,7 +784,9 @@ export const router = createBrowserRouter([
     ),
   },
 
-  /* ───────────── Públicas ───────────── */
+  /* ╔══════════════════════╗
+     ║       PÚBLICAS       ║
+     ╚══════════════════════╝ */
   {
     path: "/login",
     element: (
@@ -607,5 +803,7 @@ export const router = createBrowserRouter([
       </PublicRoute>
     ),
   },
+
+  /* Catch-all global (por fuera del layout) */
   { path: "*", element: <NotFound /> },
 ]);

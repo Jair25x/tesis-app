@@ -1,5 +1,3 @@
-// src/pages/admin/exercises/ExerciseDetails.tsx
-
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
@@ -70,7 +68,7 @@ export default function ExerciseDetails() {
       }
     };
 
-    fetchExercise();
+    void fetchExercise();
   }, [curriculumId, competencyId, standardId, learningObjectiveId, exerciseId]);
 
   const handleConfirmDelete = async () => {
@@ -191,16 +189,6 @@ export default function ExerciseDetails() {
               <span className="text-green-600 font-medium">Activo</span>
             ) : (
               <span className="text-red-500 font-medium">Inactivo</span>
-            )
-          }
-        />
-        <Detail
-          label="Ejercicio diagnóstico"
-          value={
-            exercise.isDiagnostic ? (
-              <span className="text-blue-600 font-medium">Sí</span>
-            ) : (
-              <span className="text-gray-500 dark:text-gray-400">No</span>
             )
           }
         />

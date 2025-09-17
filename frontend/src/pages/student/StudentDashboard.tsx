@@ -1,15 +1,25 @@
 // src/pages/student/StudentDashboard.tsx
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/useAuth";
 import { useOverview } from "../../hooks/progress/useOverview";
 import { useStreak } from "../../hooks/progress/useStreak";
 import { useAchievements as useAchievementsQ } from "../../hooks/progress/useAchievements";
-import { showAchievementToast } from "../../utils/showAchievementToast";
+import {
+  showAchievementToast,
+  dismissAllAchievementToasts,
+} from "../../utils/showAchievementToast";
 
-// 👇 nuevos imports
 import { useMySeries } from "../../hooks/progress/useMySeries";
 import MyDailySeriesChart from "../../components/student/MyDailySeriesChart";
+import RecommendationsPanel from "../../components/student/RecommendationsPanel";
+
+import {
+  getActiveCurricula,
+  getCurrentCurriculumId,
+  getCurriculumById,
+} from "../../services/curriculumService";
+import type { CurriculumResponse } from "../../types/curriculum/Curriculum";
 
 type StatCardProps = {
   label: string;
@@ -47,8 +57,60 @@ function StatCard({ label, value, hint, color }: StatCardProps) {
   );
 }
 
+function inferSubjectFromCurriculumName(
+  name?: string
+): "math" | "lang" | undefined {
+  if (!name) return undefined;
+  const n = name.toLowerCase();
+  if (n.includes("mate")) return "math";
+  if (n.includes("leng") || n.includes("comunica")) return "lang";
+  return undefined;
+}
+
 export default function StudentDashboard() {
   const { user } = useAuth();
+
+  // Cerrar toasts de logros al salir del Dashboard
+  useEffect(() => {
+    return () => {
+      dismissAllAchievementToasts();
+    };
+  }, []);
+
+  // Asegura currículo activo
+  useEffect(() => {
+    (async () => {
+      try {
+        const currId = getCurrentCurriculumId();
+        if (currId) return;
+        const list = await getActiveCurricula();
+        if (list && list.length > 0) {
+          localStorage.setItem("app:curriculumId", list[0].id);
+        }
+      } catch {
+        /* noop */
+      }
+    })();
+  }, []);
+
+  // Currículo para inferir subject
+  const [curriculum, setCurriculum] = useState<CurriculumResponse | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const id = getCurrentCurriculumId();
+        if (!id) return;
+        const c = await getCurriculumById(id, false);
+        setCurriculum(c);
+      } catch {
+        /* noop */
+      }
+    })();
+  }, []);
+  const subject: "math" | "lang" = useMemo(
+    () => inferSubjectFromCurriculumName(curriculum?.name) ?? "math",
+    [curriculum?.name]
+  );
 
   const {
     data: overview,
@@ -66,14 +128,23 @@ export default function StudentDashboard() {
     isError: errorAch,
   } = useAchievementsQ();
 
-  // Serie diaria (nuevo)
+  // Serie diaria
   const [range, setRange] = useState<"today" | "7d" | "14d">("7d");
   const { data: series, isLoading: seriesLoading } = useMySeries(range);
 
-  // Toast por logro nuevo (una sola vez)
+  // Evitar duplicar toasts del mismo logro (mismo montaje)
   const lastAchRef = useRef<string | null>(null);
-  React.useEffect(() => {
+
+  // Clave por usuario (sin any)
+  const userKeyForSession = useMemo<string>(() => {
+    // Tu tipo User tiene id:number; si no hubiera user, usamos "me"
+    return String(user?.id ?? "me");
+  }, [user?.id]);
+
+  // Toast por logro NUEVO (no repetir al volver al Dashboard en la MISMA sesión)
+  useEffect(() => {
     if (!achievements || achievements.length === 0) return;
+
     const newest = achievements
       .slice()
       .sort(
@@ -81,15 +152,25 @@ export default function StudentDashboard() {
           new Date(b.earnedAt).getTime() - new Date(a.earnedAt).getTime()
       )[0];
     if (!newest) return;
-    const key = `${newest.code}:${newest.earnedAt}`;
-    if (lastAchRef.current === key) return;
-    lastAchRef.current = key;
-    showAchievementToast({
-      title: "¡Nuevo logro!",
-      description: `${newest.name} — ${newest.description ?? ""}`.trim(),
-      icon: "🏅",
-    });
-  }, [achievements]);
+
+    const volatileKey = `${newest.code}:${newest.earnedAt}`;
+    if (lastAchRef.current === volatileKey) return;
+
+    const storageKey = `ach:lastShown:${userKeyForSession}`;
+    const lastShownIso = sessionStorage.getItem(storageKey) || "";
+    const lastShown = lastShownIso ? new Date(lastShownIso).getTime() : 0;
+    const newestTime = new Date(newest.earnedAt).getTime();
+
+    if (newestTime > lastShown) {
+      lastAchRef.current = volatileKey;
+      sessionStorage.setItem(storageKey, newest.earnedAt);
+      showAchievementToast({
+        title: "¡Nuevo logro!",
+        description: `${newest.name} — ${newest.description ?? ""}`.trim(),
+        icon: "🏅",
+      });
+    }
+  }, [achievements, userKeyForSession]);
 
   const dateLabel = useMemo(() => {
     if (!overview?.date) return "";
@@ -110,7 +191,7 @@ export default function StudentDashboard() {
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Columna izquierda (70%) */}
         <section className="flex-1 lg:w-3/4 space-y-8">
-          {/* Stats del día (overview) */}
+          {/* Stats del día */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-xl font-semibold">
@@ -147,7 +228,7 @@ export default function StudentDashboard() {
             )}
           </div>
 
-          {/* 👇 Nuevo: Serie diaria con selector de rango */}
+          {/* Serie diaria */}
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">
               Tu actividad reciente
@@ -168,46 +249,12 @@ export default function StudentDashboard() {
           </div>
           <MyDailySeriesChart data={series} loading={seriesLoading} />
 
-          {/* Sugerencias IA (placeholder tuyo) */}
+          {/* Recomendaciones IA reales (subject dinámico) */}
           <div>
             <h2 className="text-lg font-bold text-blue-700 dark:text-blue-200 mb-4">
               🤖 Sugerencias de CapiBOT
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="rounded-xl border border-blue-300 bg-blue-50 dark:bg-blue-900 dark:border-blue-700 p-4 shadow hover:shadow-md transition cursor-pointer">
-                <h3 className="text-md font-semibold text-blue-800 dark:text-blue-100 mb-1">
-                  📘 Fracciones equivalentes
-                </h3>
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  “Resuelve problemas con fracciones equivalentes”
-                </p>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                  Cantidad → Est. 6.3 → OA 6.3.2
-                </p>
-              </div>
-              <div className="rounded-xl border border-green-300 bg-green-50 dark:bg-green-900 dark:border-green-700 p-4 shadow hover:shadow-md transition cursor-pointer">
-                <h3 className="text-md font-semibold text-green-800 dark:text-green-100 mb-1">
-                  🧮 Números decimales
-                </h3>
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  “Compara y ordena números decimales hasta los milésimos”
-                </p>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                  Cantidad → Est. 6.2 → OA 6.2.1
-                </p>
-              </div>
-              <div className="rounded-xl border border-purple-300 bg-purple-50 dark:bg-purple-900 dark:border-purple-700 p-4 shadow hover:shadow-md transition cursor-pointer">
-                <h3 className="text-md font-semibold text-purple-800 dark:text-purple-100 mb-1">
-                  🔢 Múltiplos y divisores
-                </h3>
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  “Identifica múltiplos y divisores de números hasta el 1000”
-                </p>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                  Cambio y relaciones → Est. 6.4 → OA 6.4.1
-                </p>
-              </div>
-            </div>
+            <RecommendationsPanel limit={6} subject={subject} />
           </div>
         </section>
 

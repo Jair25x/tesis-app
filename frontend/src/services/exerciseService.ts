@@ -2,6 +2,7 @@
 import api from "./api";
 import type { ExerciseRequest } from "../types/exercise/ExerciseRequest";
 import type { ExerciseResponse } from "../types/exercise/ExerciseResponse";
+import type { ExamExerciseResponse } from "../types/exercise/ExamExerciseResponse";
 
 const BASE_PATH = "/curricula";
 
@@ -127,3 +128,19 @@ export const getExerciseAdminById = async (
  * - checkAnswer -> usar progress-service (POST /api/progress/attempts)
  * - submitExerciseAttempt -> ya lo hace el endpoint anterior
  */
+
+
+/**
+ * Obtener ejercicio para examen (sin hints/steps si el BE aplica examMode=true).
+ * ⚠️ Recomendado: expón en BE GET /curricula/exercises/{exerciseId}?mode=exam
+ * Si aún no existe, puedes crear un endpoint alterno o extender StartResponse con la ruta jerárquica completa.
+ */
+export const getExerciseForExam = async (
+  exerciseId: string
+): Promise<ExamExerciseResponse> => {
+  const { data } = await api.get<ExamExerciseResponse>(
+    `/curricula/exercises/${exerciseId}`,
+    { params: { mode: "exam" } }
+  );
+  return data;
+};

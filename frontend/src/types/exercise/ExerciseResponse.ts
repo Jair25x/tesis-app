@@ -21,10 +21,12 @@ export interface ExerciseResponse {
 
   // OJO: correctAnswer NO va aquí (solo en vista admin)
   solutionSteps: SolutionStepResponse[];
-  hints: HintResponse[];
+  hints: HintResponse[]; 
 
   createdAt: string;
   updatedAt: string;
   active: boolean;
   isDiagnostic: boolean;
+  examMode?: boolean;
+  statementRendered?: string | null;
 }

@@ -1,4 +1,3 @@
-// src/pages/admin/exercise/ExerciseForm.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -35,8 +34,6 @@ const difficultyOptions: Difficulty[] = ["BASIC", "INTERMEDIATE", "ADVANCED"];
 
 /* ------------------------------------
    Zod: validación por plantilla
-   (ajustada a la nueva firma de z.record
-   y evitando .passthrough() deprecado)
 -------------------------------------*/
 const zChoice = z.string().min(1);
 const zChoices = z
@@ -44,28 +41,19 @@ const zChoices = z
   .min(2, "Debes proporcionar al menos 2 opciones");
 
 const schemaByTemplate: Record<TemplateType, z.ZodTypeAny> = {
-  // EQUATION_SINGLE_CHOICE: choices[] + answer (string). Permitimos extras (.loose()).
   EQUATION_SINGLE_CHOICE: z
     .object({
       choices: zChoices,
       answer: z.string().min(1, "Debes indicar la respuesta correcta"),
     })
     .loose(),
-
-  // FREQUENCY_TABLE_QA:
-  // - columns: string[]
-  // - rows: array de "record<string, string|number>" con al menos 1 key
-  // - questions: shape mínimo
   FREQUENCY_TABLE_QA: z
     .object({
       columns: z.array(z.string().min(1)).min(2),
       rows: z
         .array(
           z
-            .record(
-              z.string(), // key type
-              z.union([z.string(), z.number()]) // value type
-            )
+            .record(z.string(), z.union([z.string(), z.number()]))
             .refine((o) => Object.keys(o).length > 0, "Fila vacía no permitida")
         )
         .min(1),
@@ -75,27 +63,20 @@ const schemaByTemplate: Record<TemplateType, z.ZodTypeAny> = {
             id: z.string().min(1),
             kind: z.enum(["single_choice", "numeric"]),
             prompt: z.string().min(1),
-            options: z.array(z.string()).optional(), // solo para single_choice
+            options: z.array(z.string()).optional(),
             answer: z.union([z.string(), z.number()]),
           })
         )
         .min(1),
     })
     .loose(),
-
-  // FREQUENCY_TABLE_COMPLETE:
-  // - columns / rows igual que arriba
-  // - missing: [{ cell: string, answer: number }]
   FREQUENCY_TABLE_COMPLETE: z
     .object({
       columns: z.array(z.string().min(1)).min(2),
       rows: z
         .array(
           z
-            .record(
-              z.string(), // key type
-              z.union([z.string(), z.number()]) // value type
-            )
+            .record(z.string(), z.union([z.string(), z.number()]))
             .refine((o) => Object.keys(o).length > 0, "Fila vacía no permitida")
         )
         .min(1),
@@ -136,7 +117,7 @@ export default function ExerciseForm() {
     TemplateSchemaResponse[]
   >([]);
 
-  // Form principal
+  // Form principal (sin isDiagnostic/examMode)
   const [form, setForm] = useState<ExerciseRequest>({
     statement: "",
     difficulty: "BASIC",
@@ -145,7 +126,6 @@ export default function ExerciseForm() {
     correctAnswer: "",
     parameters: {},
     learningObjectiveId: learningObjectiveId || "",
-    isDiagnostic: false,
   });
 
   // JSON editor
@@ -200,7 +180,6 @@ export default function ExerciseForm() {
           correctAnswer: response.correctAnswer || "",
           parameters: response.parameters,
           learningObjectiveId: response.learningObjectiveId,
-          isDiagnostic: response.isDiagnostic ?? false,
         });
         setJsonText(JSON.stringify(response.parameters, null, 2));
       })
@@ -227,12 +206,10 @@ export default function ExerciseForm() {
       .then((schema) => {
         setSelectedSchema(schema);
 
-        // Si statement está vacío y hay pattern, prellenar
         if (!form.statement && schema.pattern) {
           setForm((prev) => ({ ...prev, statement: schema.pattern || "" }));
         }
 
-        // Si parameters vacío, prellenar con example
         const paramsEmpty =
           !form.parameters ||
           (Object.keys(form.parameters).length === 0 &&
@@ -279,7 +256,6 @@ export default function ExerciseForm() {
     });
   }, [jsonText, form.templateType]);
 
-  // Marcador simple de estado
   const isParamsValid = zodErrors.length === 0 && !jsonError;
 
   /* ------------------------------
@@ -290,12 +266,11 @@ export default function ExerciseForm() {
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
     >
   ) => {
-    const { name, value, type, checked } = e.target as HTMLInputElement;
+    const { name, value } = e.target as HTMLInputElement;
 
     setForm((prev) => {
-      const next = { ...prev, [name]: type === "checkbox" ? checked : value };
+      const next = { ...prev, [name]: value };
 
-      // 👇 Si cambia la plantilla, cargamos ejemplo y patrón (si lo hay)
       if (name === "templateType") {
         const selected = templateOptions.find((t) => t.type === value);
         if (selected) {
@@ -306,7 +281,6 @@ export default function ExerciseForm() {
             setJsonError("");
           }
           if (selected.pattern && typeof selected.pattern === "string") {
-            // Sólo si quieres sobreescribir el enunciado cuando la plantilla define un patrón:
             next.statement = selected.pattern;
           }
         }
@@ -391,7 +365,6 @@ export default function ExerciseForm() {
           form
         );
 
-        // Crear nuevos hints/steps si hay pendientes
         for (const h of pendingHints) {
           await createHint(
             curriculumId,
@@ -459,7 +432,7 @@ export default function ExerciseForm() {
           ],
         });
       } catch {
-        /* si no usas esta key aún, no pasa nada */
+        /* ok */
       }
 
       navigate(
@@ -722,24 +695,6 @@ export default function ExerciseForm() {
           />
         </div>
 
-        {/* Diagnóstico */}
-        <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            id="isDiagnostic"
-            name="isDiagnostic"
-            checked={form.isDiagnostic}
-            onChange={handleChange}
-            className="h-4 w-4 rounded border-gray-300 bg-gray-100 text-blue-600 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:focus:ring-blue-600 dark:ring-offset-gray-800"
-          />
-          <label
-            htmlFor="isDiagnostic"
-            className="text-sm text-gray-700 dark:text-gray-300"
-          >
-            Marcar este ejercicio como parte del test diagnóstico
-          </label>
-        </div>
-
         {/* Parámetros JSON + validación */}
         <div>
           <div className="mb-1 flex items-center justify-between">
@@ -773,7 +728,6 @@ export default function ExerciseForm() {
             className="w-full rounded-md border px-4 py-2 font-mono text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
           />
 
-          {/* Errores de Zod */}
           {!jsonError && !isParamsValid && (
             <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
               <div className="mb-1 font-semibold">Problemas detectados:</div>

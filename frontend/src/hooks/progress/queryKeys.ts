@@ -4,6 +4,14 @@ export const qk = {
   streak: ["progress", "streak"] as const,
   achievements: ["progress", "achievements"] as const,
 
+  // Estados por objetivo (me)
+  objectiveStatuses: (curriculumId?: string) =>
+    ["progress", "objective-statuses", curriculumId ?? "all"] as const,
+
+  // Cobertura por objetivo (me)
+  objectiveCoverage: (curriculumId?: string) =>
+    ["progress", "objective-coverage", curriculumId ?? "all"] as const,
+
   classroomOverview: (classroomId: string, curriculumId?: string) =>
     [
       "progress",
@@ -30,7 +38,6 @@ export const qk = {
   mySeries: (range: "today" | "7d" | "14d", curriculumId?: string) =>
     ["progress", "me", "series", range, curriculumId ?? "default"] as const,
 
-  // ✅ NUEVO
   classroomSeries: (
     classroomId: string,
     curriculumId?: string,
@@ -45,7 +52,6 @@ export const qk = {
       range,
     ] as const,
 
-  // ✅ NUEVO
   studentSeries: (
     classroomId: string,
     studentId: string,

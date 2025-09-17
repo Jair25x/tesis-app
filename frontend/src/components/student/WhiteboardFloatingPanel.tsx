@@ -18,42 +18,69 @@ export default function WhiteboardFloatingPanel({
 }: WhiteboardFloatingPanelProps) {
   const canvasRef = useRef<ReactSketchCanvasRef>(null);
   const [isEraser, setIsEraser] = useState(false);
+  const loadedOnceRef = useRef(false);
 
-  // Restaurar trazos previos al abrir
+  // Restaurar trazos previos al abrir (evita StrictMode doble)
   useEffect(() => {
+    if (!isOpen) return;
+    if (loadedOnceRef.current) return;
+    loadedOnceRef.current = true;
+
     const restorePaths = async () => {
       try {
         const saved = localStorage.getItem(storageKey);
-        if (saved && canvasRef.current) {
-          const parsed = JSON.parse(saved);
-          await canvasRef.current.loadPaths(parsed);
-        }
+        if (!saved || !canvasRef.current) return;
+
+        const parsed = JSON.parse(saved) as unknown;
+        const paths = Array.isArray(parsed)
+          ? parsed
+          : typeof parsed === "object" &&
+            parsed !== null &&
+            Array.isArray((parsed as { paths?: unknown[] }).paths)
+          ? (parsed as { paths: unknown[] }).paths
+          : [];
+
+        if (paths.length === 0) return;
+        await canvasRef.current.loadPaths(paths as never);
       } catch (error) {
+        // El lib puede lanzar "No stroke found!" si paths = []
+        if (error instanceof Error && /No stroke found/i.test(error.message)) {
+          return; // ignoramos ese mensaje
+        }
+        // Otros errores sí los mostramos para depurar
+        // eslint-disable-next-line no-console
         console.error("Error al restaurar la pizarra:", error);
       }
     };
-    if (isOpen) restorePaths();
-  }, [isOpen, storageKey]); // ⬅️ incluye storageKey
 
-  // Guardar trazos automáticamente
+    void restorePaths();
+  }, [isOpen, storageKey]);
+
+  // Guardar trazos automáticamente tras cada stroke
   const handleStroke = async () => {
     try {
       const paths = await canvasRef.current?.exportPaths();
-      if (paths) {
-        localStorage.setItem(storageKey, JSON.stringify(paths)); // ⬅️ usa storageKey
+      if (paths && paths.length > 0) {
+        localStorage.setItem(storageKey, JSON.stringify(paths));
+      } else {
+        // si se borró todo con undo, limpiamos storage
+        localStorage.removeItem(storageKey);
       }
-    } catch (error) {
-      console.error("Error al guardar los trazos:", error);
+    } catch {
+      // noop
     }
   };
 
   const toggleTool = () => {
     canvasRef.current?.eraseMode(!isEraser);
-    setIsEraser(!isEraser);
+    setIsEraser((v) => !v);
   };
 
   const handleExportImage = async () => {
     try {
+      const paths = await canvasRef.current?.exportPaths();
+      if (!paths || paths.length === 0) return; // nada que exportar
+
       const dataUrl = await canvasRef.current?.exportImage("png");
       if (dataUrl) {
         const link = document.createElement("a");
@@ -62,13 +89,14 @@ export default function WhiteboardFloatingPanel({
         link.click();
       }
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error("Error al exportar la imagen:", error);
     }
   };
 
   const handleClear = async () => {
     await canvasRef.current?.clearCanvas();
-    localStorage.removeItem(storageKey); // ⬅️ limpia también persistencia
+    localStorage.removeItem(storageKey);
   };
 
   if (!isOpen) return null;

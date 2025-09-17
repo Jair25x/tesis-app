@@ -14,9 +14,11 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 60_000, // 1 min: si quieres menos tráfico al BE, sube a 5 min (300_000)
-      gcTime: 5 * 60_000, // 5 min
+      staleTime: 60_000,
+      gcTime: 5 * 60_000,
       refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: true,
     },
     mutations: { retry: 0 },
   },

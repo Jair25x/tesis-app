@@ -11,6 +11,8 @@ type Props = {
   standardId: string;
   learningObjectiveId: string;
   index?: number;
+  /** Si true, oculta acciones que no aplican en examen (ej. “Resolver” fuera del player) */
+  examMode?: boolean;
 };
 
 const difColor: Record<string, string> = {
@@ -28,6 +30,7 @@ export default function ExerciseCard({
   standardId,
   learningObjectiveId,
   index = 0,
+  examMode = false,
 }: Props) {
   const preview = useMemo(() => {
     try {
@@ -57,12 +60,15 @@ export default function ExerciseCard({
         {preview}
       </div>
 
-      <Link
-        className="inline-block rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
-        to={`/student/exercises/${curriculumId}/${competencyId}/${standardId}/${learningObjectiveId}/${exercise.id}`}
-      >
-        Resolver
-      </Link>
+      {/* En examMode no tiene sentido llevar al player de práctica */}
+      {!examMode && (
+        <Link
+          className="inline-block rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+          to={`/student/exercises/${curriculumId}/${competencyId}/${standardId}/${learningObjectiveId}/${exercise.id}`}
+        >
+          Resolver
+        </Link>
+      )}
     </li>
   );
 }

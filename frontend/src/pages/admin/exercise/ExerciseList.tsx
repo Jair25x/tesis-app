@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   getExercises,
@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import type { ExerciseResponse } from "../../../types/exercise/ExerciseResponse";
 
+type FilterStatus = "all" | "active" | "inactive";
+
 export default function ExerciseList() {
   const { curriculumId, competencyId, standardId, learningObjectiveId } =
     useParams<{
@@ -31,7 +33,7 @@ export default function ExerciseList() {
     }>();
 
   const [exercises, setExercises] = useState<ExerciseResponse[]>([]);
-  const [status, setStatus] = useState<"all" | "active" | "inactive">("active");
+  const [status, setStatus] = useState<FilterStatus>("active");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,12 +49,15 @@ export default function ExerciseList() {
       return;
     setLoading(true);
     try {
+      // El service solo acepta "active" | "all"
+      const apiStatus: "active" | "all" =
+        status === "inactive" ? "all" : status;
       const data = await getExercises(
         curriculumId,
         competencyId,
         standardId,
         learningObjectiveId,
-        status
+        apiStatus
       );
       setExercises(data);
       setError(null);
@@ -65,7 +70,8 @@ export default function ExerciseList() {
   };
 
   useEffect(() => {
-    loadExercises();
+    void loadExercises();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, curriculumId, competencyId, standardId, learningObjectiveId]);
 
   const openModal = (id: string, action: "delete" | "reactivate") => {
@@ -117,6 +123,13 @@ export default function ExerciseList() {
     }
   };
 
+  // Filtrado final para "inactive" (y por si acaso para "active")
+  const displayExercises = useMemo(() => {
+    if (status === "inactive") return exercises.filter((e) => !e.active);
+    if (status === "active") return exercises.filter((e) => e.active);
+    return exercises;
+  }, [exercises, status]);
+
   return (
     <section className="p-6 md:p-8">
       <BackLink
@@ -167,7 +180,7 @@ export default function ExerciseList() {
         </p>
       ) : error ? (
         <p className="text-center text-red-500 dark:text-red-400">{error}</p>
-      ) : exercises.length === 0 ? (
+      ) : displayExercises.length === 0 ? (
         <p className="text-center text-gray-500 dark:text-gray-400">
           No hay ejercicios para mostrar.
         </p>
@@ -183,9 +196,6 @@ export default function ExerciseList() {
                   Dificultad
                 </th>
                 <th className="p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
-                  Diagnóstico
-                </th>
-                <th className="p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
                   Creación
                 </th>
                 <th className="p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
@@ -197,24 +207,13 @@ export default function ExerciseList() {
               </tr>
             </thead>
             <tbody>
-              {exercises.map((ex) => (
+              {displayExercises.map((ex) => (
                 <tr
                   key={ex.id}
                   className="border-t border-gray-200 dark:border-gray-700"
                 >
                   <td className="p-3">{ex.templateType}</td>
                   <td className="p-3">{ex.difficulty}</td>
-                  <td className="p-3">
-                    {ex.isDiagnostic ? (
-                      <span className="inline-block px-2 py-0.5 text-xs font-semibold text-blue-700 bg-blue-100 dark:bg-blue-800 dark:text-blue-100 rounded">
-                        Sí
-                      </span>
-                    ) : (
-                      <span className="inline-block px-2 py-0.5 text-xs font-medium text-gray-500 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 rounded">
-                        No
-                      </span>
-                    )}
-                  </td>
                   <td className="p-3">{formatDate(ex.createdAt)}</td>
                   <td className="p-3">
                     {ex.active ? (
@@ -298,6 +297,7 @@ export default function ExerciseList() {
     </section>
   );
 }
+
 function TooltipIcon({
   to,
   label,

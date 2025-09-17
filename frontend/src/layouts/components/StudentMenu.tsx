@@ -1,11 +1,35 @@
 // src/layouts/components/StudentMenu.tsx
-import { Link, useLocation } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "../../utils/cn";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { listMySubmissions } from "../../services/assessmentsService";
+import { assessmentsKeys } from "../../hooks/assessments/queryKeys";
 
 interface StudentMenuProps {
   studentOpen: boolean;
   setStudentOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setSidebarOpen: (open: boolean) => void;
+}
+
+const baseItem =
+  "group relative block rounded-md px-3 py-2 text-sm transition outline-none hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 dark:hover:bg-gray-800";
+const activeItem =
+  "bg-emerald-600/15 text-emerald-700 ring-1 ring-inset ring-emerald-600/20 dark:bg-emerald-400/10 dark:text-emerald-200";
+
+function CountPill({ n }: { n: number }) {
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return (
+    <span className="ml-2 inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-500/30 dark:bg-amber-400/10 dark:text-amber-200">
+      {n}
+    </span>
+  );
+}
+
+function getLastSeenSubmittedCount(): number {
+  const raw = localStorage.getItem("assess:lastSeenSubmittedCount");
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
 export default function StudentMenu({
@@ -14,75 +38,138 @@ export default function StudentMenu({
   setSidebarOpen,
 }: StudentMenuProps) {
   const location = useLocation();
+  const sectionActive = location.pathname.startsWith("/student");
+  const item = ({ isActive }: { isActive: boolean }) =>
+    cn(baseItem, isActive && activeItem);
 
-  const isSectionActive = location.pathname.startsWith("/student");
+  const [lastSubmissionId, setLastSubmissionId] = useState<string | null>(null);
 
-  const itemClass =
-    "block px-4 py-2 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700";
+  useEffect(() => {
+    const id = localStorage.getItem("assess:lastSubmissionId");
+    setLastSubmissionId(id);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "assess:lastSubmissionId") {
+        setLastSubmissionId(e.newValue);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Pendientes del BE = SUBMITTED (size=1 para obtener totalElements rápido)
+  const { data: serverSubmitted = 0 } = useQuery({
+    queryKey: assessmentsKeys.mySubmissionsCount("SUBMITTED"),
+    queryFn: async () => {
+      const page = await listMySubmissions({
+        status: "SUBMITTED",
+        page: 0,
+        size: 1,
+      });
+      return page.totalElements ?? 0;
+    },
+    // Queremos que refleje cambios al volver al foco
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
+
+  // “No vistos” = servidor − vistos (localStorage)
+  const unseen = Math.max(serverSubmitted - getLastSeenSubmittedCount(), 0);
 
   return (
     <div className="relative">
       <button
+        aria-expanded={studentOpen}
         className={cn(
-          "w-full text-left px-4 py-2 rounded-md text-sm font-medium flex justify-between items-center transition hover:bg-gray-200 dark:hover:bg-gray-700",
-          isSectionActive ? "bg-green-500 text-white" : ""
+          "w-full text-left px-4 py-2 rounded-md text-sm font-medium flex justify-between items-center transition hover:bg-gray-200 dark:hover:bg-gray-700 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500",
+          sectionActive ? "bg-green-500 text-white" : ""
         )}
         onClick={() => setStudentOpen((prev) => !prev)}
       >
-        📚 Estudiante
+        <span className="flex items-center gap-2">📚 Estudiante</span>
         <span className="ml-2">{studentOpen ? "▴" : "▾"}</span>
       </button>
 
       {studentOpen && (
         <div className="ml-4 mt-1 space-y-1">
-          <Link
+          <NavLink
             to="/student/dashboard"
-            className={itemClass}
+            className={item}
             onClick={() => setSidebarOpen(false)}
           >
             🏠 Dashboard
-          </Link>
+          </NavLink>
 
-          {/* Launcher del mapa */}
-          <Link
+          <NavLink
             to="/student/roadmap"
-            className={itemClass}
+            className={item}
             onClick={() => setSidebarOpen(false)}
           >
             🗺️ Mapa de estudio
-          </Link>
+          </NavLink>
 
-          {/* 🔹 NUEVOS: Aulas */}
-          <Link
+          <NavLink
             to="/student/classrooms"
-            className={itemClass}
+            className={item}
             onClick={() => setSidebarOpen(false)}
           >
             🏫 Mis aulas
-          </Link>
-          <Link
+          </NavLink>
+
+          <NavLink
             to="/student/join"
-            className={itemClass}
+            className={item}
             onClick={() => setSidebarOpen(false)}
           >
             ➕ Unirme a un aula
-          </Link>
+          </NavLink>
 
-          <Link
+          <NavLink
             to="/student/achievements"
-            className={itemClass}
+            className={item}
             onClick={() => setSidebarOpen(false)}
           >
             🏆 Logros
-          </Link>
-
-          <Link
-            to="/student/diagnostic"
-            className={itemClass}
+          </NavLink>
+          <NavLink
+            to="/student/ai-advisor"
+            className={item}
             onClick={() => setSidebarOpen(false)}
           >
-            📋 Test de Diagnóstico
-          </Link>
+            🤖 Asistente IA
+          </NavLink>
+          <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">
+            <div className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide opacity-60">
+              Evaluaciones
+            </div>
+            <nav className="space-y-1">
+              <NavLink
+                to="/student/assessments/available"
+                className={item}
+                onClick={() => setSidebarOpen(false)}
+              >
+                📝 Disponibles
+              </NavLink>
+
+              <NavLink
+                to="/student/assessments/history"
+                className={item}
+                onClick={() => setSidebarOpen(false)}
+              >
+                ✅ Mis resultados
+                <CountPill n={unseen} />
+              </NavLink>
+
+              {lastSubmissionId && (
+                <NavLink
+                  to={`/student/assessments/result/${lastSubmissionId}`}
+                  className={item}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  📄 Mi último resultado
+                </NavLink>
+              )}
+            </nav>
+          </div>
         </div>
       )}
     </div>

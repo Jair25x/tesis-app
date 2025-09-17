@@ -1,4 +1,3 @@
-// src/context/AuthProvider.tsx
 import React, { useState, useEffect } from "react";
 import { AuthContext, type User } from "./AuthContext";
 import {
@@ -8,6 +7,7 @@ import {
 import LoadingScreen from "../components/LoadingScreen";
 import { bindAuthTokenAccessors } from "../services/api";
 import { useQueryClient } from "@tanstack/react-query";
+import { dismissAllAchievementToasts } from "../utils/showAchievementToast";
 
 function readToken(where: Storage, key: string) {
   try {
@@ -20,6 +20,17 @@ function writeToken(where: Storage, key: string, val?: string) {
   try {
     if (val == null) where.removeItem(key);
     else where.setItem(key, val);
+  } catch {
+    /* noop */
+  }
+}
+
+/** Limpia marcas de “último logro mostrado” asociadas al usuario en esta sesión */
+function clearAchievementSessionMarks(userId?: number | null) {
+  try {
+    if (userId != null) {
+      sessionStorage.removeItem(`ach:lastShown:${String(userId)}`);
+    }
   } catch {
     /* noop */
   }
@@ -49,7 +60,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return sessionStorage;
   };
 
-  // Bindings para api.ts (refresh)
+  // Bindings para api.ts (refresh tokens y hardLogout)
   useEffect(() => {
     bindAuthTokenAccessors({
       getAccessToken: () =>
@@ -143,11 +154,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     storage.setItem("user", JSON.stringify(userData));
     setUser(userData);
     setIsAuthenticated(true);
-    // También siembra el perfil en caché (opcional, si lo tienes a mano)
-    // qc.setQueryData(["me"], { ...mapa a UserProfile si lo tuvieras });
+    // (Opcional) sembrar caché de perfil si lo tienes mapeado
+    // qc.setQueryData(["me"], profileMap);
   };
 
   const hardLogout = () => {
+    // 🔔 Cierra toasts de logros y limpia “último mostrado” (por usuario)
+    try {
+      dismissAllAchievementToasts();
+      clearAchievementSessionMarks(user?.id);
+    } catch {
+      /* noop */
+    }
+
     // Siempre limpia ambos storages
     ["localStorage", "sessionStorage"].forEach((name) => {
       const s = name === "localStorage" ? localStorage : sessionStorage;
@@ -160,11 +179,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         /* noop */
       }
     });
+
+    // Estado de autenticación
     setUser(null);
     setIsAuthenticated(false);
     setImpersonateStudentView(false);
-    // Limpia caché relacionada
-    qc.removeQueries({ queryKey: ["me"] });
+
+    // Limpia caché (todo) para evitar fugas de datos entre sesiones
+    try {
+      // React Query v4: removeQueries() sin filtros remueve todo
+      qc.removeQueries();
+    } catch {
+      /* noop */
+    }
   };
 
   const logout = async () => {
