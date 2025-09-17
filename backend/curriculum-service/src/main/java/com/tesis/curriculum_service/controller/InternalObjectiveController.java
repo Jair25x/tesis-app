@@ -1,6 +1,8 @@
 // curriculum-service/src/main/java/com/tesis/curriculum_service/controller/InternalObjectiveController.java
 package com.tesis.curriculum_service.controller;
 
+import com.tesis.curriculum_service.dto.ObjectiveExerciseCountsRequest;
+import com.tesis.curriculum_service.dto.ObjectiveExerciseCountsResponse;
 import com.tesis.curriculum_service.dto.ObjectiveExerciseLiteResponse;
 import com.tesis.curriculum_service.model.Exercise;
 import com.tesis.curriculum_service.model.LearningObjective;
@@ -67,6 +69,30 @@ public class InternalObjectiveController {
         .toList();
 
     return ResponseEntity.ok(Map.of("items", items));
+  }
+
+  // ---------------- Batch: conteo de ejercicios por objetivo ----------------
+
+  @Operation(summary = "Conteo de ejercicios por objetivo (batch) — uso interno")
+  @PreAuthorize("hasRole('INTERNAL')")
+  @PostMapping("/exercise-counts")
+  public ResponseEntity<ObjectiveExerciseCountsResponse> exerciseCounts(
+      @RequestBody ObjectiveExerciseCountsRequest request
+  ) {
+    if (request == null || request.getIds() == null || request.getIds().isEmpty()) {
+      return ResponseEntity.ok(ObjectiveExerciseCountsResponse.builder().counts(Map.of()).build());
+    }
+    // true por defecto, para alinear con lo que quiere ver el alumno en producción
+    Boolean active = request.getActive() == null ? Boolean.TRUE : request.getActive();
+
+    List<Object[]> rows = exerciseRepository.countByObjectiveIds(request.getIds(), active);
+    Map<String, Integer> counts = new LinkedHashMap<>();
+    for (Object[] r : rows) {
+      UUID oid = (UUID) r[0];
+      int total = (r[1] instanceof Number) ? ((Number) r[1]).intValue() : Integer.parseInt(String.valueOf(r[1]));
+      counts.put(oid.toString(), total);
+    }
+    return ResponseEntity.ok(ObjectiveExerciseCountsResponse.builder().counts(counts).build());
   }
 
   // ---------------- Siguiente objetivo por grado (fallback incluido) ----------------

@@ -1,7 +1,10 @@
 // src/main/java/com/tesis/progress_service/service/ProgressQueryService.java
 package com.tesis.progress_service.service;
 
+import com.tesis.progress_service.client.CurriculumClient;
 import com.tesis.progress_service.dto.DailyStatDto;
+import com.tesis.progress_service.dto.ObjectiveCoverageDto;
+import com.tesis.progress_service.dto.ObjectiveStatusDto;
 import com.tesis.progress_service.dto.OverviewDto;
 import com.tesis.progress_service.dto.StreakDto;
 import com.tesis.progress_service.dto.StudentOverviewDto;
@@ -13,6 +16,7 @@ import com.tesis.progress_service.repository.StreakRepository;
 import com.tesis.progress_service.repository.StudentObjectiveProgressRepository;
 import com.tesis.progress_service.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -34,6 +38,7 @@ public class ProgressQueryService {
   private final StudentObjectiveProgressRepository sopRepository;
   private final AttemptRepository attemptRepository;
   private final StreakRepository streakRepository;
+  private final CurriculumClient curriculumClient; // ⬅️ NUEVO
 
   // ===========================================================================
   // RANGO DE FECHAS (DIARIO)
@@ -83,23 +88,92 @@ public class ProgressQueryService {
   }
 
   // ===========================================================================
+  // NUEVO: Estados por objetivo (para FE Roadmap)
+  // ===========================================================================
+  /**
+   * Estados por objetivo del alumno autenticado. Si curriculumId es null, trae
+   * todos.
+   */
+  public List<ObjectiveStatusDto> getMyObjectiveStatuses(@Nullable UUID curriculumId) {
+    final UUID studentId = SecurityUtils.getCurrentUserIdOrThrow();
+
+    final List<StudentObjectiveProgress> rows = (curriculumId == null)
+        ? sopRepository.findAllByStudentId(studentId)
+        : sopRepository.findAllByStudentIdAndCurriculumId(studentId, curriculumId);
+
+    return rows.stream()
+        .map(row -> new ObjectiveStatusDto(
+            row.getLearningObjectiveId().toString(),
+            mapStatus(row.getStatus())))
+        .toList();
+  }
+
+  /** Mapea el enum interno a string estable para el FE. */
+  private static String mapStatus(ProgressStatus st) {
+    if (st == null)
+      return "IN_PROGRESS";
+    return switch (st) {
+      case MASTERED -> "COMPLETED";
+      case IN_PROGRESS -> "IN_PROGRESS";
+      case NOT_STARTED -> "NOT_STARTED";
+      default -> "IN_PROGRESS";
+    };
+  }
+
+  // ===========================================================================
+  // NUEVO: Cobertura por objetivo (ejercicios correctos distintos / total)
+  // ===========================================================================
+  public List<ObjectiveCoverageDto> getObjectiveCoverage(UUID studentId, @Nullable UUID curriculumId) {
+    // 1) Distintos correctos por OA
+    List<Object[]> rows = attemptRepository.distinctCorrectByObjective(studentId, curriculumId);
+    Map<UUID, Integer> solvedByObjective = new HashMap<>();
+    for (Object[] r : rows) {
+      UUID objectiveId = (UUID) r[0];
+      int solved = (r[1] instanceof Number) ? ((Number) r[1]).intValue() : Integer.parseInt(String.valueOf(r[1]));
+      solvedByObjective.put(objectiveId, solved);
+    }
+
+    // 2) Universo de OAs (limitado por curriculumId si aplica)
+    List<StudentObjectiveProgress> sops = (curriculumId != null)
+        ? sopRepository.findAllByStudentIdAndCurriculumId(studentId, curriculumId)
+        : sopRepository.findAllByStudentId(studentId);
+
+    Set<UUID> objectiveIds = sops.stream()
+        .map(StudentObjectiveProgress::getLearningObjectiveId)
+        .collect(Collectors.toSet());
+    if (objectiveIds.isEmpty())
+      return List.of();
+
+    // 3) Totales por OA (curriculum-service, batch)
+    Map<UUID, Integer> totals = curriculumClient.getExerciseCountsForObjectives(objectiveIds, true);
+
+    // 4) Armar DTOs
+    List<ObjectiveCoverageDto> out = new ArrayList<>();
+    for (UUID oid : objectiveIds) {
+      int solved = solvedByObjective.getOrDefault(oid, 0);
+      int total = totals.getOrDefault(oid, 0);
+      out.add(ObjectiveCoverageDto.builder()
+          .objectiveId(oid)
+          .solvedDistinct(solved)
+          .totalExercises(total)
+          .build());
+    }
+    return out;
+  }
+
+  // ===========================================================================
   // OVERVIEW(S)
   // ===========================================================================
-  /** “Me/overview” (opcional por currículo). */
-  public OverviewDto getOverview(UUID curriculumId) {
+  public OverviewDto getOverview(@Nullable UUID curriculumId) {
     UUID studentId = SecurityUtils.getCurrentUserIdOrThrow();
     return computeOverviewFor(studentId, curriculumId);
   }
 
-  /** Overview para un alumno concreto (docente/admin). */
-  public OverviewDto getOverviewForStudent(UUID studentId, UUID curriculumId) {
+  public OverviewDto getOverviewForStudent(UUID studentId, @Nullable UUID curriculumId) {
     return computeOverviewFor(studentId, curriculumId);
   }
 
-  /**
-   * Overview agregado por alumno para un conjunto de estudiantes (docente/admin).
-   */
-  public List<StudentOverviewDto> getOverviewForStudents(List<UUID> studentIds, UUID curriculumId) {
+  public List<StudentOverviewDto> getOverviewForStudents(List<UUID> studentIds, @Nullable UUID curriculumId) {
     if (studentIds == null || studentIds.isEmpty())
       return List.of();
     return studentIds.stream()
@@ -110,7 +184,6 @@ public class ProgressQueryService {
         .toList();
   }
 
-  /** Racha del alumno (current/longest). */
   public StreakDto getStreak(UUID studentId) {
     Streak s = streakRepository.findByStudentId(studentId)
         .orElseGet(() -> Streak.builder().studentId(studentId).current(0).longest(0).build());
@@ -123,25 +196,15 @@ public class ProgressQueryService {
   // ===========================================================================
   // SERIES DIARIAS
   // ===========================================================================
-
-  /**
-   * Serie por estudiante (attempts/correct). No aplica activeStudents (dejar
-   * null).
-   * Usa tu método existente en AttemptRepository: seriesForStudent(...)
-   * con resultado [day, attempts, correct].
-   */
-  public List<DailyStatDto> getDailySeriesForStudent(UUID studentId, UUID curriculumId, String rangeParam) {
+  public List<DailyStatDto> getDailySeriesForStudent(UUID studentId, @Nullable UUID curriculumId, String rangeParam) {
     DateRange dr = DateRange.of(rangeParam);
 
-    // Si ya tienes definido seriesForStudent en el repo, úsalo:
-    // SELECT date(...), count(*), sum(correct) ... GROUP BY date(...)
     List<Object[]> rows = attemptRepository.seriesForStudent(
         studentId,
         dr.from(),
         dr.to(),
         curriculumId);
 
-    // Mapear resultados y rellenar ceros
     Map<LocalDate, DailyStatDto> byDate = new HashMap<>();
     for (Object[] r : rows) {
       LocalDate day = toLocalDate(r[0]);
@@ -152,7 +215,7 @@ public class ProgressQueryService {
           .date(day)
           .attempts(attempts)
           .correct(correct)
-          .activeStudents(null) // no aplica para series por alumno
+          .activeStudents(null)
           .build());
     }
 
@@ -162,17 +225,11 @@ public class ProgressQueryService {
         .collect(Collectors.toList());
   }
 
-  /**
-   * Serie agregada por aula: attempts/correct y alumnos activos por día (distinct
-   * students).
-   * Usa el método nuevo aggregateDailyForStudents(...) con resultado:
-   * [day, attempts, correct, active]
-   */
-  public List<DailyStatDto> getDailySeriesForStudents(List<UUID> studentIds, UUID curriculumId, String rangeParam) {
+  public List<DailyStatDto> getDailySeriesForStudents(List<UUID> studentIds, @Nullable UUID curriculumId,
+      String rangeParam) {
     DateRange dr = DateRange.of(rangeParam);
 
     if (studentIds == null || studentIds.isEmpty()) {
-      // Devuelve serie densa con ceros
       return dr.days().stream()
           .map(d -> DailyStatDto.builder()
               .date(d)
@@ -209,7 +266,7 @@ public class ProgressQueryService {
   // ===========================================================================
   // HELPERS
   // ===========================================================================
-  private OverviewDto computeOverviewFor(UUID studentId, UUID curriculumId) {
+  private OverviewDto computeOverviewFor(UUID studentId, @Nullable UUID curriculumId) {
     List<StudentObjectiveProgress> list = (curriculumId != null)
         ? sopRepository.findAllByStudentIdAndCurriculumId(studentId, curriculumId)
         : sopRepository.findAllByStudentId(studentId);
@@ -222,7 +279,6 @@ public class ProgressQueryService {
     LocalDateTime from = today.atStartOfDay();
     LocalDateTime to = today.plusDays(1).atStartOfDay();
 
-    // Nota: estos contadores diarios son globales del alumno (no por currículo).
     int dailyAttempts = (int) attemptRepository.countByStudentIdAndCreatedAtBetween(studentId, from, to);
     int dailyCorrect = (int) attemptRepository.countByStudentIdAndCorrectTrueAndCreatedAtBetween(studentId, from, to);
 

@@ -6,8 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.*;
 
-import java.util.UUID;
-
 public interface StudentObjectiveProgressRepository extends JpaRepository<StudentObjectiveProgress, UUID> {
 
   Optional<StudentObjectiveProgress> findByStudentIdAndLearningObjectiveId(UUID studentId, UUID learningObjectiveId);
@@ -15,4 +13,8 @@ public interface StudentObjectiveProgressRepository extends JpaRepository<Studen
   List<StudentObjectiveProgress> findAllByStudentId(UUID studentId);
 
   List<StudentObjectiveProgress> findAllByStudentIdAndCurriculumId(UUID studentId, UUID curriculumId);
+
+  Optional<StudentObjectiveProgress> findByStudentIdAndCurriculumIdAndLearningObjectiveId(
+      UUID studentId, UUID curriculumId, UUID learningObjectiveId
+  );
 }
