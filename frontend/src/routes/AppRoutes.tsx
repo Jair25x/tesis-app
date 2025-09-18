@@ -21,7 +21,13 @@ import Login from "../pages/Login";
 import Register from "../pages/Register";
 import NotFound from "../pages/NotFound";
 
-// Perfil general
+// Páginas de usuario (settings)
+import Profile from "../pages/user/Profile";
+import EditProfile from "../pages/user/EditProfile";
+import ChangePassword from "../pages/user/ChangePassword";
+import ThemeSettings from "../pages/user/ThemeSettings";
+
+// Perfil dashboard (si tienes enlaces externos que apuntan aquí)
 import ProfileDashboard from "../pages/user/ProfileDashboard";
 
 // Player sin sidebar
@@ -48,24 +54,35 @@ export const router = createBrowserRouter([
       adminRoute,
 
       // Perfil / ajustes
+      // Ruta histórica por compatibilidad si ya tienes enlaces viejos
       { path: "profile-dashboard", element: <ProfileDashboard /> },
+
       {
         path: "settings",
         element: <SettingsLayout />,
         children: [
-          { path: "profile", element: <ProfileDashboard /> }, // o tu componente de edición si prefieres
+          // Redirección por si acceden a /settings
+          { index: true, element: <Navigate to="profile" replace /> },
+
+          // 👇 Estas cuatro rutas son las que tu menú muestra
+          { path: "profile", element: <Profile /> },
+          { path: "edit-profile", element: <EditProfile /> },
+          { path: "change-password", element: <ChangePassword /> },
           {
             path: "theme",
             element: (
               <Suspense fallback={<LoadingScreen />}>
-                <div />
+                <ThemeSettings />
               </Suspense>
             ),
-          }, // ya tienes ThemeSettings si quieres importarlo aquí
+          },
+
+          // Cualquier otra subruta de settings → 404
           { path: "*", element: <NotFound /> },
         ],
       },
 
+      // 404 dentro del layout
       { path: "*", element: <NotFound /> },
     ],
   },
@@ -100,5 +117,6 @@ export const router = createBrowserRouter([
     ),
   },
 
+  // 404 global fuera del layout protegido
   { path: "*", element: <NotFound /> },
 ]);
