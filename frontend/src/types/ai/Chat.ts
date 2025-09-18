@@ -6,10 +6,12 @@ export interface StudentContext {
 
 export interface ChatRequest {
   question: string;
-  grade?: string | null;    // "6", "5", etc.
-  subject?: string | null;  // "math" | "lang" | ...
+  grade?: string | null;
+  subject?: string | null;
   objectiveId?: string | null;
   stream?: boolean;
+  /** Nuevo: soportado por el backend */
+  studentId?: string;
   studentContext?: StudentContext;
 }
 

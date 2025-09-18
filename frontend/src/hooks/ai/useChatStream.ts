@@ -1,4 +1,3 @@
-// src/hooks/ai/useChatStream.ts
 import { useEffect, useRef, useState } from "react";
 import { chatStream } from "../../services/aiService";
 import type { Citation } from "../../types/ai/Chat";
@@ -6,7 +5,7 @@ import type { Citation } from "../../types/ai/Chat";
 export type StartEvent = {
   citations?: Citation[];
   // Puedes ampliar si quieres: meta, model, etc.
-  // meta?: { ranking?: Array<any> }
+  // meta?: { ranking?: Array<unknown> }
   // model?: string
 };
 
@@ -15,6 +14,9 @@ export type StartPayload = {
   grade?: string;
   subject?: string;
   objectiveId?: string;
+  /** Nuevos: soportados por el backend */
+  studentId?: string;
+  studentContext?: Record<string, unknown>;
   bypassLLM?: boolean;
   // 🔽 Callbacks opcionales
   onStart?: (evt: StartEvent) => void;
@@ -51,7 +53,16 @@ export function useChatStream() {
   }, []);
 
   const start = (payload: StartPayload) => {
-    const { question, grade, subject, objectiveId, bypassLLM } = payload;
+    const {
+      question,
+      grade,
+      subject,
+      objectiveId,
+      studentId,
+      studentContext,
+      bypassLLM,
+    } = payload;
+
     if (!question.trim()) return;
 
     // reset
@@ -71,6 +82,8 @@ export function useChatStream() {
         grade,
         subject,
         objectiveId,
+        studentId, // 👈 propagado
+        studentContext, // 👈 propagado
         stream: true,
       },
       // onStart
@@ -103,6 +116,7 @@ export function useChatStream() {
       { bypassLLM, signal: ac.signal }
     ).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : "Error en el chat.";
+      // eslint-disable-next-line no-console
       console.error(err);
       setError(msg);
       setLoading(false);

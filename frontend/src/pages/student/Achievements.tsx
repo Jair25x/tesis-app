@@ -1,4 +1,3 @@
-import React from "react";
 import { useAchievements as useAchievementsQ } from "../../hooks/progress/useAchievements";
 import { useAchievementsCatalog } from "../../hooks/progress/useAchievementsCatalog";
 

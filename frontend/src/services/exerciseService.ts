@@ -1,8 +1,11 @@
-// src/services/exerciseService.ts
 import api from "./api";
 import type { ExerciseRequest } from "../types/exercise/ExerciseRequest";
 import type { ExerciseResponse } from "../types/exercise/ExerciseResponse";
 import type { ExamExerciseResponse } from "../types/exercise/ExamExerciseResponse";
+import type {
+  CheckAnswerRequest,
+  CheckAnswerResponse,
+} from "../types/exercise/CheckAnswer";
 
 const BASE_PATH = "/curricula";
 
@@ -12,15 +15,26 @@ export async function getExercises(
   competencyId: string,
   standardId: string,
   learningObjectiveId: string,
-  status: "active" | "all" = "active",
+  status: "active" | "all" | "inactive" = "active",
   signal?: AbortSignal
 ): Promise<ExerciseResponse[]> {
-  const suffix = status === "all" ? "/all" : "";
+  // Si piden "inactive", usamos /all y filtramos en FE por active=false.
+  const suffix =
+    status === "all" ? "/all" : status === "inactive" ? "/all" : "";
+
   const { data } = await api.get<ExerciseResponse[]>(
     `${BASE_PATH}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises${suffix}`,
     { signal }
   );
-  return data ?? [];
+
+  const list = data ?? [];
+  if (status === "inactive") {
+    return list.filter((e) => e.active === false);
+  }
+  if (status === "active") {
+    return list.filter((e) => e.active !== false); // tolerante si no viene el campo
+  }
+  return list;
 }
 
 /** Alias semántico usado en varias vistas */
@@ -124,16 +138,24 @@ export const getExerciseAdminById = async (
 };
 
 /**
- * DEPRECADO en FE:
- * - checkAnswer -> usar progress-service (POST /api/progress/attempts)
- * - submitExerciseAttempt -> ya lo hace el endpoint anterior
+ * ✅ Compatibilidad para hooks antiguos:
+ * Verifica respuesta contra el atajo del curriculum-service (si existe).
+ * Si tu BE no expone este endpoint, puedes eliminar esta función y
+ * actualizar los imports de los hooks que lo usaban.
  */
-
+export async function checkAnswer(
+  payload: CheckAnswerRequest
+): Promise<CheckAnswerResponse> {
+  const { data } = await api.post<CheckAnswerResponse>(
+    `/curricula/exercises/check`,
+    payload
+  );
+  return data;
+}
 
 /**
  * Obtener ejercicio para examen (sin hints/steps si el BE aplica examMode=true).
  * ⚠️ Recomendado: expón en BE GET /curricula/exercises/{exerciseId}?mode=exam
- * Si aún no existe, puedes crear un endpoint alterno o extender StartResponse con la ruta jerárquica completa.
  */
 export const getExerciseForExam = async (
   exerciseId: string

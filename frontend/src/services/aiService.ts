@@ -1,11 +1,7 @@
 // src/services/aiService.ts
 import api, { readAccessToken, readBaseURL } from "./api";
-import type {
-  ChatRequest,
-  ChatResponse,
-  ChatSSEEvent,
-} from "../types/ai/Chat";
-import type { RecommendationItem } from "../types/ai/Recommendations";
+import type { ChatRequest, ChatResponse, ChatSSEEvent } from "../types/ai/Chat";
+import type { RecommendationItem, RecommendationsResponse } from "../types/ai/Recommendations";
 import { AxiosError } from "axios";
 
 const BASE_PATH = "/ai";
@@ -21,9 +17,10 @@ function makeAbsBase(b: string): string {
 }
 
 function advisorBaseAbs(): string {
-  const base = ENV_ADVISOR && String(ENV_ADVISOR).trim().length > 0
-    ? String(ENV_ADVISOR)
-    : readBaseURL();
+  const base =
+    ENV_ADVISOR && String(ENV_ADVISOR).trim().length > 0
+      ? String(ENV_ADVISOR)
+      : readBaseURL();
   return makeAbsBase(base);
 }
 
@@ -54,7 +51,8 @@ export async function chatOnce(
 
     if (status === 422) {
       const detail =
-        err.response?.data?.detail || "No se encontraron fuentes del currículo.";
+        err.response?.data?.detail ||
+        "No se encontraron fuentes del currículo.";
       throw new Error(detail);
     }
     if (status === 504) {
@@ -94,7 +92,9 @@ export async function chatStream(
   try {
     const currId = localStorage.getItem("app:curriculumId");
     if (currId) headers["X-Curriculum-Id"] = currId;
-  } catch {/* noop */}
+  } catch {
+    /* noop */
+  }
   if (opts?.bypassLLM) headers["X-Bypass-LLM"] = "1";
 
   const res = await fetch(chatUrl, {
@@ -150,13 +150,15 @@ export async function chatStream(
 }
 
 // ---------- Recomendaciones (Axios) ----------
+
+/** Recos para el estudiante autenticado */
 export async function getMyRecommendations(opts?: {
   limit?: number;
   subject?: "math" | "lang";
   objectiveId?: string;
 }): Promise<RecommendationItem[]> {
   try {
-    const { data } = await api.get<{ items?: RecommendationItem[] }>(
+    const { data } = await api.get<RecommendationsResponse>(
       url(`${BASE_PATH}/recommendations/students/me`),
       {
         params: {
@@ -164,6 +166,63 @@ export async function getMyRecommendations(opts?: {
           subject: opts?.subject,
           objectiveId: opts?.objectiveId,
         },
+      }
+    );
+    return data.items ?? [];
+  } catch (e) {
+    const err = e as AxiosError<{ message?: string }>;
+    const status = err.response?.status;
+    if (status === 429) {
+      throw new Error("Demasiadas solicitudes. Intenta en un momento.");
+    }
+    const msg = err.response?.data?.message || err.message || "Error de red";
+    throw new Error(msg);
+  }
+}
+
+/** Recos para un studentId (ruta /students/{id}) */
+export async function getRecommendationsForStudent(
+  studentId: string,
+  opts?: { limit?: number; subject?: "math" | "lang"; objectiveId?: string }
+): Promise<RecommendationItem[]> {
+  if (!studentId) throw new Error("studentId requerido");
+  try {
+    const { data } = await api.get<RecommendationsResponse>(
+      url(`${BASE_PATH}/recommendations/students/${studentId}`),
+      {
+        params: {
+          limit: opts?.limit ?? 8,
+          subject: opts?.subject,
+          objectiveId: opts?.objectiveId,
+        },
+      }
+    );
+    return data.items ?? [];
+  } catch (e) {
+    const err = e as AxiosError<{ message?: string }>;
+    const status = err.response?.status;
+    if (status === 429) {
+      throw new Error("Demasiadas solicitudes. Intenta en un momento.");
+    }
+    const msg = err.response?.data?.message || err.message || "Error de red";
+    throw new Error(msg);
+  }
+}
+
+/** Recos (endpoint base /recommendations) — p/soporte o listados */
+export async function getRecommendationsQuery(opts: {
+  studentId: string;
+  limit?: number;
+  subject?: "math" | "lang";
+  objectiveId?: string;
+}): Promise<RecommendationItem[]> {
+  const { studentId, limit = 8, subject, objectiveId } = opts;
+  if (!studentId) throw new Error("studentId requerido");
+  try {
+    const { data } = await api.get<RecommendationsResponse>(
+      url(`${BASE_PATH}/recommendations`),
+      {
+        params: { studentId, limit, subject, objectiveId },
       }
     );
     return data.items ?? [];

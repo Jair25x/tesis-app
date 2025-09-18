@@ -1,5 +1,4 @@
 // src/pages/user/ThemeSettings.tsx
-import React from "react";
 import { useTheme } from "../../hooks/useTheme";
 
 export default function ThemeSettings() {

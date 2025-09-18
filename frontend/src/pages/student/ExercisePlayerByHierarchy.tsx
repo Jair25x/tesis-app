@@ -60,7 +60,6 @@ export default function ExercisePlayerByHierarchy() {
   const [revealedSteps, setRevealedSteps] = useState(0);
 
   const attemptMutation = useAttemptMutation();
-  // Mutations en React Query v4 -> usar isPending (no existe isLoading)
   const isSubmitting = attemptMutation.isPending === true;
 
   const [startedAt, setStartedAt] = useState<number>(() => Date.now());
@@ -158,12 +157,13 @@ export default function ExercisePlayerByHierarchy() {
     return next ? next.id : null;
   }, [currentIndex, loExercises]);
 
-  const renderedStatement = useMemo(() => {
-    if (!exercise) return "";
+  /** HTML ya sanitizado para inyección segura */
+  const statementHtml = useMemo(() => {
+    if (!exercise) return { __html: "" };
     try {
       return renderStatement(exercise.statement, exercise.parameters ?? {});
     } catch {
-      return exercise.statement;
+      return { __html: exercise.statement ?? "" };
     }
   }, [exercise]);
 
@@ -333,9 +333,10 @@ export default function ExercisePlayerByHierarchy() {
           <div className="mb-3 text-xs uppercase text-gray-500 dark:text-gray-400">
             Dificultad: {exercise.difficulty}
           </div>
-          <div className="mb-6 rounded-lg border bg-white p-4 text-base leading-relaxed dark:border-gray-800 dark:bg-gray-800 dark:text-gray-100">
-            {renderedStatement}
-          </div>
+          <div
+            className="mb-6 rounded-lg border bg-white p-4 text-base leading-relaxed dark:border-gray-800 dark:bg-gray-800 dark:text-gray-100"
+            dangerouslySetInnerHTML={statementHtml}
+          />
         </div>
 
         {/* Pistas reveladas (solo práctica) */}
@@ -384,7 +385,6 @@ export default function ExercisePlayerByHierarchy() {
               value: value as never,
               onChange: (next: unknown) => setValue(next),
               submissionItemId: practiceKey, // 👈 requerido por CoreModule
-              // statementHtml: undefined, // opcional en práctica
             })
           )}
 

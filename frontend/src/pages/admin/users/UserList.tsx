@@ -1,3 +1,4 @@
+// src/pages/admin/users/UserList.tsx
 import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import { setUserEnabled } from "../../../services/adminService";
@@ -23,7 +24,7 @@ export default function UserList() {
     setSelectedEnabled(enabled);
     setIsConfirmOpen(true);
   };
-  
+
   const handleConfirmToggle = useCallback(async () => {
     if (selectedUserId === null) return;
 
@@ -46,7 +47,11 @@ export default function UserList() {
     <EntityList
       title="Gestión de Usuarios"
       addButtonText="Nuevo Usuario"
-      onAddClick={() => (window.location.href = "/admin/users/new")}
+      onAddClick={() => {
+        // Hasta tener /admin/users/new, evita 404:
+        showToast.info("Formulario de creación: próximamente.");
+        // nav("/admin/users/new");
+      }}
       loading={false}
       error={error || ""}
       emptyMessage="No hay usuarios disponibles."

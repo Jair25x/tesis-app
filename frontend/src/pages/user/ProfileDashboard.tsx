@@ -1,9 +1,28 @@
-// src/pages/user/Dashboard.tsx
+// src/pages/user/ProfileDashboard.tsx
 import { Link } from "react-router-dom";
 import { useMe } from "../../hooks/useMe";
+import { formatDate } from "../../utils/formatDate";
+import type { UserProfile } from "../../types/user/ProfileTypes";
 
-export default function Dashboard() {
-  const { data: me, isLoading, error } = useMe();
+function extractJoinDate(obj: unknown): string | null {
+  if (obj === null || typeof obj !== "object") return null;
+  const o = obj as Record<string, unknown>;
+  const keys = [
+    "fechaRegistro",
+    "createdAt",
+    "created_at",
+    "joinDate",
+  ] as const;
+  for (const k of keys) {
+    const v = o[k];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return null;
+}
+
+export default function ProfileDashboard() {
+  const { data, isLoading, error } = useMe();
+  const me: UserProfile | undefined = data;
 
   if (isLoading) {
     return (
@@ -20,6 +39,9 @@ export default function Dashboard() {
     );
   }
 
+  const joinedRaw = extractJoinDate(me);
+  const joined = joinedRaw ? formatDate(joinedRaw) : null;
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#1e2a34] text-black dark:text-white px-4 py-8 flex flex-col items-center">
       <div className="max-w-5xl mx-auto space-y-8">
@@ -29,29 +51,34 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold tracking-tight">
             {me.nombres} {me.apellidos}
           </h1>
+
+          {joined && (
+            <p className="text-sm text-gray-500 dark:text-gray-300 mt-1">
+              Se unió el {joined}
+            </p>
+          )}
+
           <p className="text-sm text-gray-500 dark:text-gray-300 mt-1">
-            Se unió en julio de 2025
-          </p>
-          <p className="text-sm text-gray-500 dark:text-gray-300 mt-1">
-            Rol:{" "}
+            Roles:{" "}
             <span className="font-semibold text-gray-700 dark:text-white">
               {me.roles.join(", ")}
             </span>
           </p>
         </div>
 
-        {/* Navegación de funcionalidades */}
+        {/* Navegación válida */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          <DashboardCard to="/profile" icon="👤" label="Ver Perfil" />
-          <DashboardCard to="/curriculum" icon="📚" label="Ver Currículo" />
-          <DashboardCard to="/progress" icon="📈" label="Ver Progreso" />
-        </div>
-
-        {/* Estadísticas simuladas */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          <StatCard label="Días de racha" value="12 🔥" />
-          <StatCard label="EXP total" value="2,340 ⚡" />
-          <StatCard label="Nivel actual" value="Nivel 4 🧠" />
+          <DashboardCard
+            to="/settings/profile"
+            icon="👤"
+            label="Ajustes de perfil"
+          />
+          <DashboardCard to="/settings/theme" icon="🎨" label="Tema" />
+          <DashboardCard
+            to="/settings/change-password"
+            icon="🔒"
+            label="Cambiar contraseña"
+          />
         </div>
       </div>
     </div>
@@ -75,14 +102,5 @@ function DashboardCard({
       <div className="text-4xl mb-2">{icon}</div>
       <p className="font-semibold">{label}</p>
     </Link>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-white dark:bg-[#2d3b46] text-center rounded-2xl p-5 shadow-md">
-      <p className="text-sm text-gray-500 dark:text-gray-300">{label}</p>
-      <p className="text-2xl font-bold mt-1">{value}</p>
-    </div>
   );
 }

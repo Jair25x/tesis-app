@@ -1,13 +1,16 @@
-// src/pages/admin/ai/AdminAdvisorChat.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { showToast } from "../../../utils/showToast";
 import { chatOnce } from "../../../services/aiService";
-import { useChatStream, type StartEvent } from "../../../hooks/ai/useChatStream";
+import {
+  useChatStream,
+  type StartEvent,
+} from "../../../hooks/ai/useChatStream";
 import AdvisorCitations from "../../../components/student/AdvisorCitations";
 import type { Citation } from "../../../types/ai/Chat";
 import { MarkdownAnswer } from "../../../components/ui/MarkdownAnswer";
 import { getCurrentCurriculumId } from "../../../services/curriculumService";
 import { useCurriculumFullQuery } from "../../../hooks/useCurriculumFullQuery";
+import { useAuth } from "../../../context/useAuth";
 
 const STREAM_DEFAULT = String(import.meta.env.VITE_CHAT_STREAM) === "true";
 // El backend limita a 4000, mantenemos consistente
@@ -25,6 +28,38 @@ function inferSubjectFromCurriculumName(
   const n = name.toLowerCase();
   if (n.includes("mate")) return "math";
   if (n.includes("leng") || n.includes("comunica")) return "lang";
+  return undefined;
+}
+
+/** Extrae un id plausible sin usar `any`, tolerando distintas formas de user. */
+function extractUserIdSafe(source: unknown): string | undefined {
+  if (!source || typeof source !== "object") return undefined;
+
+  // Caso 1: { user: { id } }
+  if ("user" in source) {
+    const u = (source as { user?: unknown }).user;
+    if (u && typeof u === "object" && "id" in (u as Record<string, unknown>)) {
+      const idVal = (u as { id?: unknown }).id;
+      if (typeof idVal === "string" && idVal.trim().length > 0) return idVal;
+    }
+    if (u && typeof u === "object" && "sub" in (u as Record<string, unknown>)) {
+      const subVal = (u as { sub?: unknown }).sub;
+      if (typeof subVal === "string" && subVal.trim().length > 0) return subVal;
+    }
+  }
+
+  // Caso 2: { id } directamente
+  if ("id" in (source as Record<string, unknown>)) {
+    const idVal = (source as { id?: unknown }).id;
+    if (typeof idVal === "string" && idVal.trim().length > 0) return idVal;
+  }
+
+  // Caso 3: { sub } (JWT claims)
+  if ("sub" in (source as Record<string, unknown>)) {
+    const subVal = (source as { sub?: unknown }).sub;
+    if (typeof subVal === "string" && subVal.trim().length > 0) return subVal;
+  }
+
   return undefined;
 }
 
@@ -51,6 +86,10 @@ export default function AdminAdvisorChat() {
     () => inferSubjectFromCurriculumName(curr?.name) ?? "math",
     [curr]
   );
+
+  // StudentId (opcional) — si el admin es también estudiante o para pruebas
+  const auth = useAuth();
+  const studentId = extractUserIdSafe(auth);
 
   // Hook stream (leemos solo loading/error/controles)
   const { loading, error, start, stop } = useChatStream();
@@ -105,6 +144,7 @@ export default function AdminAdvisorChat() {
         question: q,
         grade,
         subject,
+        studentId, // 👈 si existe
         bypassLLM,
         onStart: (evt: StartEvent) => {
           if (evt?.citations && evt.citations.length > 0) {
@@ -123,13 +163,14 @@ export default function AdminAdvisorChat() {
         setAnswerOnce("");
         setOnceCitations([]);
         const res = await chatOnce(
-          { question: q, grade, subject, stream: false },
+          { question: q, grade, subject, studentId, stream: false },
           { bypassLLM }
         );
         setAnswerOnce(res.answer ?? "");
         setOnceCitations(res.citations || []);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Error en la conversación.";
+        const msg =
+          e instanceof Error ? e.message : "Error en la conversación.";
         showToast.error(msg);
       }
     }
@@ -142,14 +183,20 @@ export default function AdminAdvisorChat() {
       <h1 className="text-2xl font-bold mb-2">CapiBOT (Debug)</h1>
       <p className="text-sm text-muted-foreground mb-4">
         Streaming y Bypass LLM visibles. Contexto: grado {grade ?? "—"} ·{" "}
-        {subject === "math" ? "Matemática" : subject === "lang" ? "Comunicación" : "—"}
+        {subject === "math"
+          ? "Matemática"
+          : subject === "lang"
+          ? "Comunicación"
+          : "—"}
       </p>
 
       <div className="rounded-xl border p-4 space-y-3">
         <textarea
           ref={inputRef}
           value={question}
-          onChange={(e) => e.target.value.length <= MAX_LEN && setQuestion(e.target.value)}
+          onChange={(e) =>
+            e.target.value.length <= MAX_LEN && setQuestion(e.target.value)
+          }
           placeholder="Pregunta…"
           className="w-full min-h-[96px] rounded-lg border p-3 outline-none focus:ring-2 focus:ring-blue-500 bg-background"
         />
@@ -175,7 +222,9 @@ export default function AdminAdvisorChat() {
               Bypass LLM (debug)
             </label>
           </div>
-          <span>{question.length} / {MAX_LEN}</span>
+          <span>
+            {question.length} / {MAX_LEN}
+          </span>
         </div>
 
         <div className="flex gap-2">
@@ -202,13 +251,18 @@ export default function AdminAdvisorChat() {
       <div className="mt-6 rounded-xl border p-4">
         <div className="text-sm text-muted-foreground mb-2">
           {useStream
-            ? (loading ? "Respondiendo..." : (streamAnswer ? "Respuesta (stream)" : "Esperando…"))
-            : (answerOnce ? "Respuesta" : "Esperando…")}
+            ? loading
+              ? "Respondiendo..."
+              : streamAnswer
+              ? "Respuesta (stream)"
+              : "Esperando…"
+            : answerOnce
+            ? "Respuesta"
+            : "Esperando…"}
         </div>
 
         {useStream ? (
           <>
-            {/* Si prefieres texto plano durante el stream, cambia a un <div className="whitespace-pre-wrap"> */}
             <MarkdownAnswer text={streamAnswer || (loading ? "…" : "")} />
             {streamCitations.length > 0 && (
               <div className="mt-3">

@@ -54,6 +54,13 @@ export default function TeacherMenu({
           >
             🏫 Mis aulas
           </NavLink>
+          <NavLink
+            to="/teacher/ai/recommendations"
+            className={item}
+            onClick={() => setSidebarOpen(false)}
+          >
+            🤖 Recomendaciones (IA)
+          </NavLink>
 
           {/* ——— Evaluaciones: Plantillas ——— */}
           <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">

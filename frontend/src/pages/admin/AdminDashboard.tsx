@@ -1,5 +1,4 @@
 // src/pages/admin/AdminDashboard.tsx
-import React from "react";
 import { useUserStats } from "../../hooks/useUserStats";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -18,7 +17,7 @@ export default function AdminDashboard() {
     total: stats?.total ?? 0,
     active: stats?.active ?? 0,
     inactive: stats?.inactive ?? 0,
-    byRole: stats?.byRole ?? {}, 
+    byRole: stats?.byRole ?? {},
   };
 
   const roleConfig: Record<
@@ -44,9 +43,25 @@ export default function AdminDashboard() {
   // console.log("📊 stats desde hook:", stats);
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold text-center mb-10 text-gray-900 dark:text-white">
-        📊 Panel de Administración
-      </h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          📊 Panel de Administración
+        </h1>
+
+        {import.meta.env.DEV && (
+          <button
+            onClick={() => {
+              // Puedes capturar manualmente o solo lanzar:
+              // Sentry.captureException(new Error("Sentry test (manual)"));
+              throw new Error("Sentry test error!");
+            }}
+            className="rounded-md bg-rose-600 px-3 py-1.5 text-white text-sm hover:bg-rose-700"
+            title="Lanza un error para validar Sentry"
+          >
+            Probar Sentry
+          </button>
+        )}
+      </div>
 
       {/* Total de usuarios */}
       <section className="mb-10">

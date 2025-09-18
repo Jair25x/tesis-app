@@ -88,20 +88,35 @@ export default function AdminMenu({
               <ItemLink to="/admin/curricula" onNavigate={closeSidebar}>
                 📚 Currículos
               </ItemLink>
-              <ItemLink to="/admin/competencies" onNavigate={closeSidebar}>
-                📗 Competencias
-              </ItemLink>
-              <ItemLink to="/admin/standards" onNavigate={closeSidebar}>
-                📘 Estándares
-              </ItemLink>
-              <ItemLink to="/admin/objectives" onNavigate={closeSidebar}>
-                🎯 Objetivos
-              </ItemLink>
-              <ItemLink to="/admin/exercises" onNavigate={closeSidebar}>
-                ✏️ Ejercicios
-              </ItemLink>
-              <ItemLink to="/admin/explorer" onNavigate={closeSidebar}>
+              {/* <ItemLink to="/admin/explorer" onNavigate={closeSidebar}>
                 🧭 Explorador Curricular
+              </ItemLink> */}
+            </nav>
+          </div>
+
+          {/* Catálogo global */}
+          <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">
+            <div className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide opacity-60">
+              Catálogo global
+            </div>
+            <nav className="space-y-1">
+              <ItemLink
+                to="/admin/catalog/competencies"
+                onNavigate={closeSidebar}
+              >
+                🗂️ Competencias (todas)
+              </ItemLink>
+              <ItemLink to="/admin/catalog/standards" onNavigate={closeSidebar}>
+                🗃️ Estándares (todos)
+              </ItemLink>
+              <ItemLink
+                to="/admin/catalog/objectives"
+                onNavigate={closeSidebar}
+              >
+                🧩 Objetivos (todos)
+              </ItemLink>
+              <ItemLink to="/admin/catalog/exercises" onNavigate={closeSidebar}>
+                ✏️ Ejercicios (todos)
               </ItemLink>
             </nav>
           </div>

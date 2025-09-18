@@ -1,5 +1,5 @@
 // src/pages/student/StudentDashboard.tsx
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/useAuth";
 import { useOverview } from "../../hooks/progress/useOverview";

@@ -1,3 +1,4 @@
+// src/pages/Login.tsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { login as loginRequest } from "../services/authService";
@@ -10,6 +11,7 @@ import AuthButton from "../components/auth/AuthButton";
 import AuthFormWrapper from "../components/auth/AuthFormWrapper";
 import AuthSeparator from "../components/auth/AuthSeparator";
 import SocialLoginButton from "../components/auth/SocialLoginButton";
+import { showToast } from "../utils/showToast";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -47,17 +49,16 @@ export default function Login() {
         data.refreshToken,
         rememberMe
       );
-
-      // Redirección inmediata y segura
       navigate("/profile-dashboard", { replace: true });
     } catch (err) {
-      setLoading(false);
       const axiosError = err as TypedAxiosError;
       setError(
         axiosError.response?.status === 401
           ? "Credenciales inválidas."
           : "Error al iniciar sesión."
       );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -93,7 +94,9 @@ export default function Login() {
               <button
                 type="button"
                 className="text-sm text-blue-300 hover:underline"
-                onClick={() => alert("Funcionalidad pendiente")}
+                onClick={() =>
+                  showToast.info("Recuperación de contraseña: próximamente.")
+                }
               >
                 ¿SE TE OLVIDÓ?
               </button>

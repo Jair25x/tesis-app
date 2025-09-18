@@ -1,4 +1,3 @@
-// src/components/student/ExerciseCard.tsx
 import { useMemo } from "react";
 import type { ExerciseResponse } from "../../types/exercise/ExerciseResponse";
 import { Link } from "react-router-dom";
@@ -32,11 +31,11 @@ export default function ExerciseCard({
   index = 0,
   examMode = false,
 }: Props) {
-  const preview = useMemo(() => {
+  const previewHtml = useMemo(() => {
     try {
       return renderStatement(exercise.statement, exercise.parameters ?? {});
     } catch {
-      return exercise.statement;
+      return { __html: exercise.statement ?? "" };
     }
   }, [exercise.statement, exercise.parameters]);
 
@@ -56,9 +55,10 @@ export default function ExerciseCard({
         </span>
       </div>
 
-      <div className="mb-4 text-sm text-gray-800 dark:text-gray-100">
-        {preview}
-      </div>
+      <div
+        className="mb-4 text-sm text-gray-800 dark:text-gray-100"
+        dangerouslySetInnerHTML={previewHtml}
+      />
 
       {/* En examMode no tiene sentido llevar al player de práctica */}
       {!examMode && (

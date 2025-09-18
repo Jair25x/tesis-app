@@ -5,6 +5,7 @@ import { useChatStream } from "../../../hooks/ai/useChatStream";
 import { MarkdownAnswer } from "../../../components/ui/MarkdownAnswer";
 import { getCurrentCurriculumId } from "../../../services/curriculumService";
 import { useCurriculumFullQuery } from "../../../hooks/useCurriculumFullQuery";
+import { useAuth } from "../../../context/useAuth";
 
 // 👇 avatar de CapiBOT
 import capiGif from "../../../assets/capibaramini.gif";
@@ -40,9 +41,43 @@ function useDebugBypass(): boolean {
       if (usp.has("bypass")) return setBypass(true);
       const ls = localStorage.getItem("ai:bypassLLM");
       setBypass(ls === "1" || ls === "true");
-    } catch {/* noop */}
+    } catch {
+      /* noop */
+    }
   }, []);
   return bypass;
+}
+
+/** Extrae un id plausible sin usar `any`, tolerando distintas formas de user. */
+function extractUserIdSafe(source: unknown): string | undefined {
+  if (!source || typeof source !== "object") return undefined;
+
+  // Caso 1: { user: { id } }
+  if ("user" in source) {
+    const u = (source as { user?: unknown }).user;
+    if (u && typeof u === "object" && "id" in (u as Record<string, unknown>)) {
+      const idVal = (u as { id?: unknown }).id;
+      if (typeof idVal === "string" && idVal.trim().length > 0) return idVal;
+    }
+    if (u && typeof u === "object" && "sub" in (u as Record<string, unknown>)) {
+      const subVal = (u as { sub?: unknown }).sub;
+      if (typeof subVal === "string" && subVal.trim().length > 0) return subVal;
+    }
+  }
+
+  // Caso 2: { id } directamente
+  if ("id" in (source as Record<string, unknown>)) {
+    const idVal = (source as { id?: unknown }).id;
+    if (typeof idVal === "string" && idVal.trim().length > 0) return idVal;
+  }
+
+  // Caso 3: { sub } (JWT claims)
+  if ("sub" in (source as Record<string, unknown>)) {
+    const subVal = (source as { sub?: unknown }).sub;
+    if (typeof subVal === "string" && subVal.trim().length > 0) return subVal;
+  }
+
+  return undefined;
 }
 
 export default function AdvisorChat() {
@@ -64,6 +99,10 @@ export default function AdvisorChat() {
     [curr]
   );
 
+  // === StudentId (opcional) desde auth — si no lo tenemos, el BE infiere por token ===
+  const auth = useAuth();
+  const studentId = extractUserIdSafe(auth);
+
   // === Streaming hook (SSE) — usamos callbacks directos ===
   const { loading, error, start, stop } = useChatStream();
 
@@ -79,7 +118,9 @@ export default function AdvisorChat() {
   useEffect(() => {
     if (!error) return;
     if (error.includes("No se encontraron fuentes")) {
-      showToast.warning("No se encontraron fuentes del currículo. Reformula la pregunta o prueba otra.");
+      showToast.warning(
+        "No se encontraron fuentes del currículo. Reformula la pregunta o prueba otra."
+      );
     } else if (error.includes("Demasiadas solicitudes")) {
       showToast.warning("Demasiadas solicitudes. Intenta en un momento.");
     } else if (error.includes("tardando más de lo esperado")) {
@@ -95,9 +136,8 @@ export default function AdvisorChat() {
   }, [loading]);
 
   // ✅ FIN DEL STREAM: “congela” la burbuja viva cuando loading cambia a false
-  // (no limpiamos en onEndEvt para no perder deltas que lleguen en el mismo tick)
   useEffect(() => {
-    if (loading) return; // sólo cuando termina
+    if (loading) return;
     if (liveIdxRef.current == null) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     liveIdxRef.current = null; // pasa a render con Markdown
@@ -113,17 +153,22 @@ export default function AdvisorChat() {
     if (!q) return;
 
     if (!navigator.onLine) {
-      showToast.warning("Parece que estás sin conexión. Intenta cuando vuelvas a estar en línea.");
+      showToast.warning(
+        "Parece que estás sin conexión. Intenta cuando vuelvas a estar en línea."
+      );
       return;
     }
 
     // 1) agrega mensaje del estudiante
     setMessages((prev) => [...prev, { role: "user", text: q }]);
     setQuestion("");
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 0);
+    setTimeout(
+      () => bottomRef.current?.scrollIntoView({ behavior: "smooth" }),
+      0
+    );
 
     if (useStream) {
-      // 2) inserta burbuja viva del asistente (vacía, texto plano mientras llega)
+      // 2) inserta burbuja viva del asistente
       setMessages((prev) => {
         const draft: Msg = { role: "assistant", text: "" };
         const next = [...prev, draft];
@@ -136,8 +181,8 @@ export default function AdvisorChat() {
         question: q,
         grade,
         subject,
+        studentId, // 👈 si existe
         bypassLLM,
-
         // Ignoramos citaciones en UI del estudiante (no aportan aquí)
         onDeltaText: (delta) => {
           if (!delta) return;
@@ -158,16 +203,22 @@ export default function AdvisorChat() {
       // Fallback JSON: pedimos la respuesta completa y la fijamos al historial
       try {
         const res = await chatOnce(
-          { question: q, grade, subject, stream: false },
+          { question: q, grade, subject, studentId, stream: false },
           { bypassLLM }
         );
         const txt = (res.answer ?? "").trim();
         setMessages((prev) => [...prev, { role: "assistant", text: txt }]);
-        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 0);
+        setTimeout(
+          () => bottomRef.current?.scrollIntoView({ behavior: "smooth" }),
+          0
+        );
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Error en la conversación.";
+        const msg =
+          e instanceof Error ? e.message : "Error en la conversación.";
         if (msg.includes("No se encontraron fuentes")) {
-          showToast.warning("No se encontraron fuentes del currículo. Reformula la pregunta o prueba otra.");
+          showToast.warning(
+            "No se encontraron fuentes del currículo. Reformula la pregunta o prueba otra."
+          );
         } else if (msg.includes("Demasiadas solicitudes")) {
           showToast.warning("Demasiadas solicitudes. Intenta en un momento.");
         } else if (msg.includes("tardando más de lo esperado")) {
@@ -204,8 +255,7 @@ export default function AdvisorChat() {
 
         <div className="space-y-4">
           {messages.map((m, idx) => {
-            // Si es la burbuja viva actualmente, marcamos streaming=true para texto plano
-            const streaming = (liveIdxRef.current === idx);
+            const streaming = liveIdxRef.current === idx;
             return (
               <ChatBubble
                 key={idx}
@@ -222,7 +272,9 @@ export default function AdvisorChat() {
 
       {/* Caja de entrada */}
       <div className="mt-4 rounded-xl border p-3 md:p-4">
-        <label htmlFor="question" className="sr-only">Escribe tu pregunta</label>
+        <label htmlFor="question" className="sr-only">
+          Escribe tu pregunta
+        </label>
         <textarea
           id="question"
           ref={inputRef}
@@ -237,7 +289,9 @@ export default function AdvisorChat() {
           aria-label="Caja de texto para la pregunta"
         />
         <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-          <span>{remaining} / {MAX_LEN}</span>
+          <span>
+            {remaining} / {MAX_LEN}
+          </span>
           <div className="flex gap-2">
             {useStream && (
               <button
@@ -273,7 +327,11 @@ function ChatBubble(props: {
   const isUser = role === "user";
 
   return (
-    <div className={`flex items-start gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
+    <div
+      className={`flex items-start gap-3 ${
+        isUser ? "justify-end" : "justify-start"
+      }`}
+    >
       {!isUser && (
         <img
           src={capiGif}
@@ -289,15 +347,13 @@ function ChatBubble(props: {
             ? "bg-blue-600 text-white rounded-br-none"
             : "bg-gray-100 dark:bg-gray-800 dark:text-gray-100 rounded-bl-none"
         }`}
-        aria-live={streaming ? "polite" : undefined} // accesibilidad para stream
+        aria-live={streaming ? "polite" : undefined}
       >
         {isUser ? (
           <div className="whitespace-pre-wrap">{text}</div>
         ) : streaming ? (
-          // 🔴 Streaming: texto plano (sin Markdown) para ver desde el primer delta
           <div className="whitespace-pre-wrap">{text || "…"} </div>
         ) : (
-          // ✅ Final: Markdown total (seguro)
           <div className="prose prose-sm max-w-none">
             <MarkdownAnswer text={text} />
           </div>

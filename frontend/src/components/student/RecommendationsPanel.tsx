@@ -3,8 +3,14 @@ import { getMyRecommendations } from "../../services/aiService";
 import type { RecommendationItem } from "../../types/ai/Recommendations";
 import { showToast } from "../../utils/showToast";
 import { useExerciseDeepLink } from "../../hooks/exercises/useExerciseDeepLink";
-import { newSourceRefId, setRecoAttribution } from "../../utils/recoAttribution";
-import { getActiveCurricula, getCurrentCurriculumId } from "../../services/curriculumService";
+import {
+  newSourceRefId,
+  setRecoAttribution,
+} from "../../utils/recoAttribution";
+import {
+  getActiveCurricula,
+  getCurrentCurriculumId,
+} from "../../services/curriculumService";
 import { useState } from "react";
 
 type Props = {
@@ -14,9 +20,15 @@ type Props = {
 };
 
 function difficultyPill(d?: "EASY" | "MEDIUM" | "HARD" | null) {
-  const label = d === "EASY" ? "Fácil" : d === "MEDIUM" ? "Medio" : d === "HARD" ? "Difícil" : "—";
-  const base =
-    "inline-block text-xs px-2 py-0.5 rounded-full border";
+  const label =
+    d === "EASY"
+      ? "Fácil"
+      : d === "MEDIUM"
+      ? "Medio"
+      : d === "HARD"
+      ? "Difícil"
+      : "—";
+  const base = "inline-block text-xs px-2 py-0.5 rounded-full border";
   const color =
     d === "EASY"
       ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800"
@@ -44,13 +56,20 @@ export default function RecommendationsPanel({
 
   if (isLoading) {
     return (
-      <div className="text-sm text-muted-foreground" role="status" aria-live="polite">
+      <div
+        className="text-sm text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
         Cargando recomendaciones…
       </div>
     );
   }
   if (isError) {
-    const msg = error instanceof Error ? error.message : "Error al cargar recomendaciones.";
+    const msg =
+      error instanceof Error
+        ? error.message
+        : "Error al cargar recomendaciones.";
     return (
       <div className="text-sm text-red-500" role="alert">
         {msg}
@@ -59,7 +78,11 @@ export default function RecommendationsPanel({
   }
   if (!data || data.length === 0) {
     return (
-      <div className="text-sm text-muted-foreground" role="status" aria-live="polite">
+      <div
+        className="text-sm text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
         No hay recomendaciones por ahora.
       </div>
     );
@@ -71,7 +94,7 @@ export default function RecommendationsPanel({
       if (current) return true;
       setEnsuring(true);
       const list = await getActiveCurricula();
-      if (list && list.length > 0) {
+      if (Array.isArray(list) && list.length > 0) {
         localStorage.setItem("app:curriculumId", list[0].id);
         return true;
       }
@@ -113,40 +136,45 @@ export default function RecommendationsPanel({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-      {data.map((item) => (
-        <article
-          key={item.exerciseId}
-          className="rounded-2xl border shadow-sm bg-white/90 dark:bg-gray-900/40 dark:border-gray-800 p-4 hover:shadow-md transition"
-          aria-label={`Recomendación: ${item.title}`}
-        >
-          {/* Header */}
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="font-semibold leading-snug text-gray-900 dark:text-gray-100">
-              {item.title}
-            </h3>
-            {difficultyPill(item.difficulty)}
-          </div>
+      {data.map((item) => {
+        const fallbackTitle = `Ejercicio ${item.exerciseId.slice(0, 8)}`;
+        const displayTitle = (item.title ?? "").trim() || fallbackTitle;
 
-          {/* Razón */}
-          {item.reason && (
-            <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
-              {item.reason}
-            </p>
-          )}
+        return (
+          <article
+            key={item.exerciseId}
+            className="rounded-2xl border shadow-sm bg-white/90 dark:bg-gray-900/40 dark:border-gray-800 p-4 hover:shadow-md transition"
+            aria-label={`Recomendación: ${displayTitle}`}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="font-semibold leading-snug text-gray-900 dark:text-gray-100">
+                {displayTitle}
+              </h3>
+              {difficultyPill(item.difficulty)}
+            </div>
 
-          {/* CTA */}
-          <div className="mt-3">
-            <button
-              onClick={() => void handleResolve(item)}
-              disabled={ensuring}
-              className="w-full rounded-lg px-3 py-2 border hover:bg-gray-50 dark:hover:bg-gray-800 transition text-sm"
-              aria-label={`Resolver ejercicio recomendado: ${item.title}`}
-            >
-              {ensuring ? "Preparando…" : "Resolver"}
-            </button>
-          </div>
-        </article>
-      ))}
+            {/* Razón */}
+            {item.reason && (
+              <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
+                {item.reason}
+              </p>
+            )}
+
+            {/* CTA */}
+            <div className="mt-3">
+              <button
+                onClick={() => void handleResolve(item)}
+                disabled={ensuring}
+                className="w-full rounded-lg px-3 py-2 border hover:bg-gray-50 dark:hover:bg-gray-800 transition text-sm"
+                aria-label={`Resolver ejercicio recomendado: ${displayTitle}`}
+              >
+                {ensuring ? "Preparando…" : "Resolver"}
+              </button>
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }

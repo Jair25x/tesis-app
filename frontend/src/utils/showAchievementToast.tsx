@@ -1,5 +1,4 @@
 // src/utils/showAchievementToast.tsx
-import React from "react";
 import toast from "react-hot-toast";
 import { X } from "lucide-react";
 

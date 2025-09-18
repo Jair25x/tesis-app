@@ -11,6 +11,7 @@ import AuthSelect from "../components/auth/AuthSelect";
 import AuthButton from "../components/auth/AuthButton";
 import AuthRedirectNotice from "../components/auth/AuthRedirectNotice";
 import AuthError from "../components/auth/AuthError";
+import { showToast } from "../utils/showToast";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -21,7 +22,6 @@ export default function Register() {
       rolesFromApi && rolesFromApi.length
         ? rolesFromApi
         : ["ROLE_STUDENT", "ROLE_TEACHER"];
-    // NO expongas ROLE_ADMIN en registro público
     return base.filter((r) => r === "ROLE_STUDENT" || r === "ROLE_TEACHER");
   }, [rolesFromApi]);
 
@@ -48,8 +48,8 @@ export default function Register() {
 
     try {
       await register({ ...formData, role: [formData.role] });
-      alert("¡Registro exitoso!");
-      navigate("/login");
+      showToast.success("¡Registro exitoso! Ahora puedes iniciar sesión.");
+      navigate("/login", { replace: true });
     } catch (err) {
       const axiosError = err as TypedAxiosError;
       if (axiosError.response?.data?.message) {

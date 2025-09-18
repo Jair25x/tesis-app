@@ -5,6 +5,10 @@ export interface UserProfile {
   nombres: string;
   apellidos: string;
   roles: string[];
+  fechaRegistro?: string;
+  profilePictureUrl?: string;
+  preferences?: Record<string, unknown>;
+  enabled?: boolean;
 }
 
 export interface UpdateProfileDto {

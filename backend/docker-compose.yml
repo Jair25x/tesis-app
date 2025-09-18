@@ -477,6 +477,20 @@ services:
       timeout: 5s
       retries: 10
 
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    image: tesis-frontend:latest
+    container_name: frontend
+    ports:
+      - "80:80"
+    restart: on-failure
+    networks:
+      - tesis-network
+    depends_on:
+      - gateway-service
+
 # --- Definición de Volúmenes ---
 volumes:
   auth-profile-db-data:
