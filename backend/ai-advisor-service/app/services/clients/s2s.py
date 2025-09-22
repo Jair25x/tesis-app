@@ -6,7 +6,7 @@ import jwt  # PyJWT
 
 from app.core.settings import settings
 
-_DEFAULT_ROLES: Sequence[str] = ("INTERNAL", "ROLE_INTERNAL")
+_DEFAULT_ROLES: Sequence[str] = ("ROLE_INTERNAL",)
 
 def mint_internal_jwt(
     *,
@@ -16,21 +16,29 @@ def mint_internal_jwt(
     ttl_seconds: int | None = None,
 ) -> str:
     """
-    Firma un JWT HS256 con S2S_JWT_SECRET para llamadas S2S a otros MS.
-    Compatible con el JwtAuthenticationFilter del curriculum-service.
+    Firma un JWT HS256 con S2S_JWT_SECRET para llamadas S2S.
+    Compatible con filtros S2S en tus MS Spring.
     """
     secret = settings.S2S_JWT_SECRET
     if not secret:
-        return ""  # sin secreto => no mandes Authorization (el MS destino responderá 401)
+        return ""
 
     now = int(time.time())
+    iss = issuer or settings.S2S_JWT_ISSUER or "ai-advisor-service"
+    sub = subject or iss
+    ttl = int(ttl_seconds or settings.S2S_JWT_TTL_SECONDS or 120)
+
+    # Asegurar prefijo ROLE_
+    norm_roles = [r if str(r).upper().startswith("ROLE_") else f"ROLE_{r}".upper() for r in (roles or [])]
+
     payload = {
-        "sub": subject or settings.S2S_JWT_ISSUER or "ai-advisor-service",
-        "roles": list(roles),
-        "authorities": list(roles),
-        "iss": issuer or settings.S2S_JWT_ISSUER or "ai-advisor-service",
+        "iss": iss,
+        "sub": sub,
+        "roles": norm_roles,
+        "authorities": norm_roles,  # compatibilidad con filtros que leen authorities
+        "scope": "internal",
         "iat": now,
-        "exp": now + int(ttl_seconds or settings.S2S_JWT_TTL_SECONDS or 120),
+        "exp": now + ttl,
     }
     return jwt.encode(payload, secret, algorithm="HS256")
 

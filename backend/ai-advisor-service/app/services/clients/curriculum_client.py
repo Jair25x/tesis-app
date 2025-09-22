@@ -1,15 +1,20 @@
 # app/services/clients/curriculum_client.py
 from __future__ import annotations
-from typing import Optional, Callable, Dict, List
-import httpx
+from typing import Optional, Callable, Dict, List, Any, Iterable
 
 from app.core.settings import settings
+from app.cache.redis_cache import cache_get_json, cache_set_json
+from app.services.clients.http_client import HttpClient
+from app.services.clients.s2s import mint_internal_jwt
+
+TTL_OBJMETA_SECONDS = 60 * 60 * 12  # 12h
 
 class CurriculumClient:
     """
     Cliente S2S hacia curriculum-service.
     - Token S2S via s2s_token_provider()
-    - Timeouts y 1 retry simple en errores transitorios
+    - Timeouts y reintentos (HttpClient)
+    - Caché Redis para metadatos de objetivos
     """
     def __init__(
         self,
@@ -18,37 +23,50 @@ class CurriculumClient:
         timeout: float = 5.0,
     ):
         self.base_url = (base_url or settings.CURRICULUM_BASE_URL).rstrip("/")
-        self.s2s_token_provider = s2s_token_provider
-        self.timeout = timeout
+        self._s2s = s2s_token_provider or (lambda: mint_internal_jwt())
+        self.http = HttpClient(
+            base_url=self.base_url,
+            default_timeout=timeout,
+            headers_provider=lambda: {
+                "Authorization": f"Bearer {self._s2s()}",
+                "X-Internal-Call": "advisor",
+                "X-Auth-Roles": "ROLE_INTERNAL",
+                "X-Auth-Username": "ai-advisor",
+            },
+        )
 
-    def _headers(self) -> Dict[str, str]:
-        tok = self.s2s_token_provider() if self.s2s_token_provider else ""
-        return {"Authorization": f"Bearer {tok}"} if tok else {}
+    # -------- NUEVO: obj meta + lookup --------
 
-    def _client(self) -> httpx.Client:
-        # timeouts finos: connect/read
-        return httpx.Client(timeout=httpx.Timeout(self.timeout, connect=2.0, read=self.timeout-2))
+    def get_objective_meta(self, objective_id: str) -> Dict[str, Any] | None:
+        ck = f"objmeta:{objective_id}"
+        c = cache_get_json(ck)
+        if c is not None:
+            return c
+        data = self.http.get_json(f"/internal/objectives/{objective_id}")
+        if data:
+            cache_set_json(ck, data, TTL_OBJMETA_SECONDS)
+        return data or None
 
-    def _get_json_with_retry(self, url: str, params: Dict[str, str] | None = None) -> Dict:
-        params = params or {}
-        data: Dict = {}
-        with self._client() as c:
-            for attempt in range(2):  # 1 retry
-                try:
-                    r = c.get(url, params=params, headers=self._headers())
-                    r.raise_for_status()
-                    data = r.json()
-                    break
-                except httpx.HTTPStatusError as e:
-                    # 4xx no suele ayudar reintentar; 5xx sí
-                    if 500 <= e.response.status_code < 600 and attempt == 0:
-                        continue
-                    raise
-                except httpx.HTTPError:
-                    if attempt == 0:
-                        continue
-                    raise
-        return data or {}
+    def lookup_objectives_batch(self, ids: Iterable[str]) -> List[Dict[str, Any]]:
+        ids = list(ids or [])
+        if not ids:
+            return []
+        result: List[Dict[str, Any]] = []
+        miss: List[str] = []
+        for oid in ids:
+            ck = f"objmeta:{oid}"
+            c = cache_get_json(ck)
+            if c is not None:
+                result.append(c)
+            else:
+                miss.append(oid)
+        if miss:
+            data = self.http.post_json("/internal/objectives/lookup", body={"ids": miss})
+            for item in (data or []):
+                oid = str(item.get("id"))
+                cache_set_json(f"objmeta:{oid}", item, TTL_OBJMETA_SECONDS)
+            result.extend(data or [])
+        return result
 
     # -------- existentes --------
 
@@ -58,9 +76,8 @@ class CurriculumClient:
         params = {"limit": "1", "active": "true", "random": "true" if random else "false"}
         if difficulty:
             params["difficulty"] = difficulty  # EASY|MEDIUM|HARD
-        url = f"{self.base_url}/internal/objectives/{objective_id}/exercises"
-        data = self._get_json_with_retry(url, params)
-        items = data.get("items") or []
+        data = self.http.get_json(f"/internal/objectives/{objective_id}/exercises", params=params)
+        items = (data or {}).get("items") or []
         return items[0] if items else None
 
     def get_exercises_for_objective(
@@ -80,30 +97,19 @@ class CurriculumClient:
         }
         if difficulty:
             params["difficulty"] = difficulty
-        url = f"{self.base_url}/internal/objectives/{objective_id}/exercises"
-        data = self._get_json_with_retry(url, params)
-        return data.get("items") or []
+        data = self.http.get_json(f"/internal/objectives/{objective_id}/exercises", params=params)
+        return (data or {}).get("items") or []
 
     def get_exercise_detail(self, exercise_id: str) -> Optional[Dict]:
-        url = f"{self.base_url}/internal/curricula/exercises/{exercise_id}/detail"
-        data = self._get_json_with_retry(url)
-        if not data:
-            return None
-        # si detalle no existe, curriculum debería devolver 404; aquí devolvemos None si data vacío
-        return data
+        data = self.http.get_json(f"/internal/curricula/exercises/{exercise_id}/detail")
+        return data or None
 
     def get_objective_by_code(self, code: str) -> Optional[Dict]:
-        url = f"{self.base_url}/internal/learning-objectives/lookup-by-code"
-        data = self._get_json_with_retry(url, {"code": code})
-        if not data:
-            return None
-        return data
-
-    # -------- nuevo: siguiente objetivo --------
+        data = self.http.get_json(f"/internal/learning-objectives/lookup-by-code", params={"code": code})
+        return data or None
 
     def get_next_objective(self, grade: str, subject: str, after: Optional[str] = None) -> Dict:
         params: Dict[str, str] = {"grade": grade, "subject": subject}
         if after:
             params["after"] = after
-        url = f"{self.base_url}/internal/objectives/next"
-        return self._get_json_with_retry(url, params)
+        return self.http.get_json("/internal/objectives/next", params=params) or {}

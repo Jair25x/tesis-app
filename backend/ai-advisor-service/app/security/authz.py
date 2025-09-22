@@ -7,7 +7,6 @@ from typing import Iterable, Any
 from fastapi import Header, HTTPException, status
 
 from app.security.jwt import (
-    decode_jwt,
     extract_roles,
     normalize_role,
     pick_principal,
@@ -54,39 +53,37 @@ def authorize_request(
     prefer_public: bool,
 ) -> AuthContext:
     """
-    Estrategia alineada a tus servicios Java:
-    1) Si hay X-Internal-Call -> confía en headers internos (roles/usuario).
-    2) Si no, valida Bearer:
-       - prefer_public=True  -> PUBLIC_JWT_SECRET (o S2S si no está configurado)
-       - prefer_public=False -> S2S_JWT_SECRET (para endpoints internos llamados sin gateway)
-    3) Si hay X-Act-As-User y el llamante tiene ROLE_INTERNAL -> permite "impersonación" controlada.
+    Estrategia robusta:
+    1) Si hay X-Internal-Call, intentamos headers internos del gateway.
+       - Si roles y principal están OK -> se usa ese camino.
+       - Si faltan o vienen vacíos -> Fallback automático a Bearer (no 403 directo).
+    2) Si no hay X-Internal-Call, validamos Bearer normal.
     """
 
-    # 1) Camino interno por headers del gateway
+    # 1) Camino interno por headers del gateway (preferido cuando estén completos)
     if x_internal_call:
-        roles, principal_hdr = _from_internal_headers(
-            x_auth_roles=x_auth_roles, x_auth_username=x_auth_username, x_user_id=x_user_id
+        roles_hdr, principal_hdr = _from_internal_headers(
+            x_auth_roles=x_auth_roles,
+            x_auth_username=x_auth_username,
+            x_user_id=x_user_id,
         )
-        if not roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Faltan roles en llamada interna")
-        verify_roles(roles, allowed_roles)
+        if roles_hdr and principal_hdr:
+            verify_roles(roles_hdr, allowed_roles)
+            principal = pick_effective_user(
+                principal_from_headers=principal_hdr,
+                principal_from_claims=None,
+                act_as_user_header=x_act_as_user,
+                caller_roles=roles_hdr,
+            )
+            return AuthContext(
+                principal=principal,
+                roles=[normalize_role(r) for r in roles_hdr],
+                claims={},  # sin JWT en este camino
+                source="internal-headers",
+            )
+        # Si llega X-Internal-Call pero sin roles/principal, caemos a Bearer 👇
 
-        principal_claims = None  # no hay token, claims vacíos
-        principal = pick_effective_user(
-            principal_from_headers=principal_hdr,
-            principal_from_claims=None,
-            act_as_user_header=x_act_as_user,
-            caller_roles=roles,
-        )
-
-        return AuthContext(
-            principal=principal,
-            roles=[normalize_role(r) for r in roles],
-            claims={},  # sin JWT en este camino
-            source="internal-headers",
-        )
-
-    # 2) Camino por Bearer
+    # 2) Camino por Bearer (público o s2s según prefer_public)
     secret = resolve_public_secret() if prefer_public else resolve_s2s_secret()
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token requerido")
@@ -97,12 +94,11 @@ def authorize_request(
 
     principal_claims = pick_principal(claims)
     principal = pick_effective_user(
-        principal_from_headers=x_user_id or x_auth_username,  # por si te llega además del token
+        principal_from_headers=x_user_id or x_auth_username,  # opcional
         principal_from_claims=principal_claims,
         act_as_user_header=x_act_as_user,
         caller_roles=roles,
     )
-
     return AuthContext(
         principal=principal,
         roles=[normalize_role(r) for r in roles],
@@ -154,7 +150,6 @@ def require_internal(*allowed: str):
       @router.post("/internal/...")
       def endpoint(ctx: AuthContext = Depends(require_internal("ROLE_INTERNAL"))): ...
     """
-    # Garantiza que ROLE_INTERNAL esté siempre exigido
     normalized = {normalize_role(a) for a in allowed} | {"ROLE_INTERNAL"}
 
     def _dep(

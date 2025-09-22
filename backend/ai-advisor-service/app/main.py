@@ -23,6 +23,8 @@ from app.api.routers import ml_admin
 from app.api.routers import curriculum_debug
 from app.api.routers import reco_debug, emb_debug
 from app.api.routers import llm_debug, rag_debug
+from app.api.routers import chat_history
+from app.api.routers import metrics as metrics_router
 
 from app.core.logging import configure_logging
 from app.observability.request_id import RequestIdMiddleware
@@ -55,11 +57,6 @@ def _eureka_register_compat(
     data_center_name: str,
     metadata: dict,
 ) -> Tuple[bool, str]:
-    """
-    Intenta registrar la instancia en Eureka usando la API disponible
-    de py_eureka_client. Algunas versiones exponen `init_registry_client`,
-    otras solo `init`. Filtramos kwargs por firma para no romper.
-    """
     try:
         import py_eureka_client.eureka_client as pec  # type: ignore
     except Exception as e:  # pragma: no cover
@@ -89,24 +86,19 @@ def _eureka_register_compat(
     try:
         sig = inspect.signature(fn)
         safe_kwargs = {k: v for k, v in full_kwargs.items() if k in sig.parameters}
-        fn(**safe_kwargs)  # levanta heartbeats en background
+        fn(**safe_kwargs)  # heartbeats en background
         return True, f"registrado con {fn.__name__}"
     except Exception as e:
         return False, f"falló {getattr(fn, '__name__', 'init<?>')}: {e}"
 
 
 def _spawn_eureka_registration():
-    """
-    Ejecuta el registro en Eureka en un hilo separado (sin event loop de Uvicorn),
-    con reintentos. Evita 'Cannot run the event loop...' y es seguro para prod.
-    """
     if not (_EUREKA_ENABLED and eureka_client is not None):
         return
 
     logger = logging.getLogger("uvicorn.error")
 
     def _runner():
-        # Pequeña espera para dar tiempo a que levante la app
         time.sleep(0.8)
 
         instance_host = os.getenv("ADVISOR_HOST", "ai-advisor-service")
@@ -158,7 +150,6 @@ def _spawn_eureka_registration():
 
 
 def create_app() -> FastAPI:
-    # Logging
     configure_logging(level="INFO" if settings.ENV.lower() != "prod" else "INFO")
 
     app = FastAPI(
@@ -170,10 +161,6 @@ def create_app() -> FastAPI:
         default_response_class=ORJSONResponse,
     )
 
-    # =============================
-    # CORS: SOLO si NO hay gateway
-    # =============================
-    # Usa BEHIND_GATEWAY=true en docker-compose para producción/desarrollo con gateway.
     BEHIND_GATEWAY = os.getenv("BEHIND_GATEWAY", "true").lower() == "true"
     if not BEHIND_GATEWAY and settings.ENV.lower() != "prod":
         app.add_middleware(
@@ -184,29 +171,22 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
-    # Observabilidad (request-id + access log + métricas)
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(LoggingMiddleware)
 
-    # ===== Startup / Shutdown =====
     @app.on_event("startup")
     async def _startup():
-        # Rate limit (Redis) con fail-open
         init_rate_limiter()
-
-        # Registro Eureka en un hilo (evita conflictos con event loop)
         _spawn_eureka_registration()
 
     @app.on_event("shutdown")
     async def _shutdown():
-        # Cierre de heartbeats si la lib lo expone
         if _EUREKA_ENABLED and eureka_client is not None:
             try:
                 eureka_client.stop()  # type: ignore
             except Exception:
                 pass
 
-    # (Opcional) Forzar charset en /api/ai/*
     @app.middleware("http")
     async def _enforce_utf8_json(request: Request, call_next):
         try:
@@ -239,13 +219,13 @@ def create_app() -> FastAPI:
     app.include_router(emb_debug.router)
     app.include_router(llm_debug.router)
     app.include_router(rag_debug.router)
+    app.include_router(chat_history.router)
+    app.include_router(metrics_router.router)
 
-    # Prometheus
     @app.get("/metrics")
     def metrics():
         return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-    # Errores bonitos
     logger = logging.getLogger("uvicorn.error")
 
     @app.exception_handler(RequestValidationError)
@@ -286,7 +266,6 @@ def create_app() -> FastAPI:
             content={"detail": str(exc.detail)},
         )
 
-    # Debug bajo fricción
     @app.post("/_debug/echo")
     async def debug_echo(request: Request):
         raw = (await request.body()).decode("utf-8", "ignore")

@@ -1,10 +1,9 @@
 package com.tesis.progress_service.service;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.tesis.progress_service.client.CurriculumClient;
 import com.tesis.progress_service.core.ProgressCalculator;
-import com.tesis.progress_service.dto.AttemptRequest;
 import com.tesis.progress_service.dto.AttemptEventRequest;
+import com.tesis.progress_service.dto.AttemptRequest;
 import com.tesis.progress_service.dto.AttemptResponse;
 import com.tesis.progress_service.dto.CheckResultDto;
 import com.tesis.progress_service.dto.SopDto;
@@ -13,6 +12,7 @@ import com.tesis.progress_service.model.Attempt;
 import com.tesis.progress_service.model.Streak;
 import com.tesis.progress_service.model.StudentObjectiveProgress;
 import com.tesis.progress_service.model.enums.AttemptSource;
+import com.tesis.progress_service.observability.AttemptMetricsRecorder;
 import com.tesis.progress_service.repository.AttemptRepository;
 import com.tesis.progress_service.repository.StreakRepository;
 import com.tesis.progress_service.repository.StudentObjectiveProgressRepository;
@@ -23,14 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Mantiene el flujo público (recordAttempt) y agrega recordAttemptEvent para
- * S2S.
- */
 @Service
 @RequiredArgsConstructor
 public class AttemptsService {
@@ -41,8 +36,9 @@ public class AttemptsService {
         private final StreakRepository streakRepository;
         private final ProgressCalculator progressCalculator;
         private final AchievementService achievementService;
+        private final AttemptMetricsRecorder attemptMetrics; // ⬅️ NUEVO
 
-        // === FLUJO PÚBLICO (ya lo tienes) ===
+        // === FLUJO PÚBLICO ===
         @Transactional
         public AttemptResponse recordAttempt(UUID studentId, AttemptRequest req) {
                 CheckResultDto check = curriculumClient.checkAnswer(
@@ -76,6 +72,14 @@ public class AttemptsService {
                                 .build();
 
                 attempt = attemptRepository.save(attempt);
+
+                // === MÉTRICAS ===
+                boolean fromReco = attempt.getSourceRefId() != null;
+                attemptMetrics.recordAttempt(
+                                attempt.getTemplateType(),
+                                attempt.getDifficulty(),
+                                attempt.isCorrect(),
+                                fromReco);
 
                 // SOP
                 StudentObjectiveProgress sop = sopRepository
@@ -134,7 +138,6 @@ public class AttemptsService {
         // === FLUJO INTERNO (assessment → progress) ===
         @Transactional
         public void recordAttemptEvent(UUID studentId, AttemptEventRequest req) {
-                // Mapear AttemptSource robusto
                 AttemptSource src;
                 try {
                         src = (req.getSource() == null) ? AttemptSource.PRACTICE
@@ -143,7 +146,6 @@ public class AttemptsService {
                         src = AttemptSource.PRACTICE;
                 }
 
-                // Construimos un "resultado" sintético (no volvemos a chequear)
                 var checkResult = Map.<String, Object>of(
                                 "from", "assessment",
                                 "correct", req.getCorrect(),
@@ -157,8 +159,8 @@ public class AttemptsService {
                                 .learningObjectiveId(req.getObjectiveId())
                                 .exerciseId(req.getExerciseId())
                                 .source(src)
-                                .answerPayload(null) // no recibimos la respuesta cruda
-                                .checkResult(checkResult) // dejamos traza
+                                .answerPayload(null)
+                                .checkResult(checkResult)
                                 .correct(req.getCorrect())
                                 .score(req.getScore())
                                 .hintsUsed(0)

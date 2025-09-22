@@ -435,6 +435,9 @@ services:
       - DATABASE_URL=postgresql+psycopg://postgres:misan@advisor-db:5432/advisordb
       - REDIS_URL=redis://advisor-redis:6379/0
       - CURRICULUM_BASE_URL=http://curriculum-service:8082
+      - PROGRESS_BASE_URL=http://progress-service:8083
+      - CHAT_PERSISTENCE_ENABLED=true
+      - STRICT_JSON_UTF8=false
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - S2S_JWT_SECRET=${S2S_JWT_SECRET}
       - PUBLIC_JWT_SECRET=${JWT_SECRET}

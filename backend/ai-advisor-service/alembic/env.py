@@ -18,7 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.core.settings import settings
 from app.db.base import Base
 # Importar módulos que contienen los modelos asegura que Alembic detecte las tablas
-from app.models import rag, signals, events, cache  # noqa: F401
+from app.models import rag, signals, events, cache, chat  # noqa: F401
 
 # --- Configuración Alembic ---
 config = context.config

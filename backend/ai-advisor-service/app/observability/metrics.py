@@ -15,7 +15,6 @@ http_request_duration_seconds = Histogram(
     "http_request_duration_seconds",
     "Duración de requests HTTP en segundos",
     ["method", "path", "status"],
-    # Buckets por defecto; puedes ajustar si lo necesitas.
 )
 
 # Métricas de dominio
@@ -33,6 +32,14 @@ advisor_rag_misses_total = Counter(
     "advisor_rag_misses_total", "Consultas RAG sin hit", []
 )
 
+# Chat persistence
+chat_conversations_created_total = Counter(
+    "chat_conversations_created_total", "Conversaciones creadas via API pública", []
+)
+chat_messages_ingested_total = Counter(
+    "chat_messages_ingested_total", "Mensajes agregados a conversaciones", []
+)
+
 # "Info" de versión de modelo usando Gauge etiquetado:
 advisor_model_version_info = Gauge(
     "advisor_model_version_info",
@@ -42,7 +49,6 @@ advisor_model_version_info = Gauge(
 
 def set_model_version(version: str) -> None:
     advisor_model_version_info.labels(version=version).set(1.0)
-
 
 @contextmanager
 def observe_latency(histogram: Histogram):

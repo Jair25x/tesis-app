@@ -5,13 +5,14 @@ import com.tesis.progress_service.dto.AttemptResponse;
 import com.tesis.progress_service.exception.ErrorResponse;
 import com.tesis.progress_service.service.AttemptsService;
 import com.tesis.progress_service.util.SecurityUtils;
+import io.micrometer.core.annotation.Timed;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -35,6 +36,7 @@ public class AttemptController {
       @ApiResponse(responseCode = "403", description = "Sin permisos suficientes", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
   })
   @PreAuthorize("hasAnyRole('STUDENT','TEACHER','ADMIN')")
+  @Timed(value = "progress_attempts_endpoint_seconds", description = "POST /api/progress/attempts latency")
   @PostMapping
   public ResponseEntity<AttemptResponse> submit(@Valid @RequestBody AttemptRequest req) {
     var studentId = SecurityUtils.getCurrentUserIdOrThrow();
