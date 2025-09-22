@@ -1,58 +1,49 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { chatStream } from "../../services/aiService";
-import type { Citation } from "../../types/ai/Chat";
+import type { ChatRequest, ChatSSEEvent } from "../../types/ai/Chat";
 
-export type StartEvent = {
-  citations?: Citation[];
-  // Puedes ampliar si quieres: meta, model, etc.
-  // meta?: { ranking?: Array<unknown> }
-  // model?: string
-};
+export type StartEvent = Extract<ChatSSEEvent, { event: "start" }>;
 
 export type StartPayload = {
   question: string;
   grade?: string;
-  subject?: string;
+  subject?: "math" | "lang";
   objectiveId?: string;
-  /** Nuevos: soportados por el backend */
   studentId?: string;
   studentContext?: Record<string, unknown>;
   bypassLLM?: boolean;
-  // 🔽 Callbacks opcionales
   onStart?: (evt: StartEvent) => void;
   onDeltaText?: (delta: string) => void;
-  onEndEvt?: () => void;
+  /** nuevo: recibes el texto completo generado */
+  onEndEvt?: (
+    evt: Extract<ChatSSEEvent, { event: "end" }>,
+    finalText: string
+  ) => void;
 };
 
-export function useChatStream() {
-  // Estado interno (back-compat con pantallas que leen desde el hook)
-  const [answer, setAnswer] = useState("");
-  const [citations, setCitations] = useState<Citation[]>([]);
+type UseChatStream = {
+  loading: boolean;
+  error: string | null;
+  start: (args: StartPayload) => void;
+  stop: () => void;
+};
+
+export function useChatStream(): UseChatStream {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Control de abort
-  const abortRef = useRef<AbortController | null>(null);
+  const ctrlRef = useRef<AbortController | null>(null);
+  const accRef = useRef<string>(""); // acumulador del texto final
 
-  // Buffer + RAF para no re-render por caracter si NO usan callback onDeltaText
-  const bufferRef = useRef<string>("");
-  const rafRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const loop = () => {
-      if (bufferRef.current.length > 0) {
-        setAnswer((prev) => prev + bufferRef.current);
-        bufferRef.current = "";
-      }
-      rafRef.current = window.requestAnimationFrame(loop);
-    };
-    rafRef.current = window.requestAnimationFrame(loop);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
+  const stop = useCallback(() => {
+    if (ctrlRef.current) {
+      ctrlRef.current.abort();
+      ctrlRef.current = null;
+    }
+    setLoading(false);
   }, []);
 
-  const start = (payload: StartPayload) => {
+  const start = useCallback((args: StartPayload) => {
     const {
       question,
       grade,
@@ -61,72 +52,66 @@ export function useChatStream() {
       studentId,
       studentContext,
       bypassLLM,
-    } = payload;
+      onStart,
+      onDeltaText,
+      onEndEvt,
+    } = args;
 
-    if (!question.trim()) return;
+    const q = (question ?? "").trim();
+    if (!q) return;
 
-    // reset
-    setAnswer("");
-    setCitations([]);
+    if (ctrlRef.current) {
+      ctrlRef.current.abort();
+      ctrlRef.current = null;
+    }
+
     setError(null);
     setLoading(true);
 
-    // cancela anterior
-    abortRef.current?.abort();
     const ac = new AbortController();
-    abortRef.current = ac;
+    ctrlRef.current = ac;
+    accRef.current = ""; // reset acumulador
+
+    const body: ChatRequest = {
+      question: q,
+      grade,
+      subject,
+      objectiveId,
+      studentId,
+      studentContext,
+      stream: true,
+    };
 
     chatStream(
-      {
-        question,
-        grade,
-        subject,
-        objectiveId,
-        studentId, // 👈 propagado
-        studentContext, // 👈 propagado
-        stream: true,
+      body,
+      (evtStart) => {
+        if (ac.signal.aborted) return;
+        onStart?.(evtStart);
       },
-      // onStart
-      (evt) => {
-        // invoca callback del consumer (si existe)
-        if (payload.onStart) payload.onStart(evt);
-        // back-compat: alimenta estado interno
-        if (evt?.citations) setCitations(evt.citations);
-      },
-      // onDelta
       (delta) => {
-        if (payload.onDeltaText) {
-          payload.onDeltaText(delta);
-        } else {
-          // back-compat: alimentar answer interno por buffer
-          bufferRef.current += delta;
+        if (ac.signal.aborted) return;
+        if (delta) {
+          accRef.current += delta;
+          onDeltaText?.(delta);
         }
       },
-      // onEnd
-      () => {
-        // última descarga del buffer a estado interno
-        if (bufferRef.current.length > 0) {
-          setAnswer((prev) => prev + bufferRef.current);
-          bufferRef.current = "";
-        }
-        if (payload.onEndEvt) payload.onEndEvt();
+      (evtEnd) => {
+        if (ac.signal.aborted) return;
+        const finalText = accRef.current;
+        onEndEvt?.(evtEnd, finalText);
         setLoading(false);
+        ctrlRef.current = null;
       },
-      // options
-      { bypassLLM, signal: ac.signal }
-    ).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : "Error en el chat.";
-      // eslint-disable-next-line no-console
-      console.error(err);
+      { bypassLLM: !!bypassLLM, signal: ac.signal }
+    ).catch((e: unknown) => {
+      if (ac.signal.aborted) return;
+      const msg =
+        e instanceof Error ? e.message : "Error en el streaming de IA.";
       setError(msg);
       setLoading(false);
+      ctrlRef.current = null;
     });
-  };
+  }, []);
 
-  const stop = () => {
-    abortRef.current?.abort();
-    setLoading(false);
-  };
-
-  return { answer, citations, loading, error, start, stop };
+  return { loading, error, start, stop };
 }

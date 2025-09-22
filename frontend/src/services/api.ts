@@ -1,4 +1,4 @@
-// services/api.ts
+// src/services/api.ts
 import axios, {
   AxiosError,
   AxiosHeaders,
@@ -14,6 +14,42 @@ const USE_INTERNAL =
 
 // 🔑 clave de storage usada por curriculumService
 const CURR_STORAGE_KEY = "app:curriculumId";
+
+// --- UUID seguro con fallback (para móviles en HTTP/contexts sin Web Crypto) ---
+function safeUUID(): string {
+  // 1) randomUUID si existe
+  try {
+    if (typeof crypto !== "undefined" && (crypto as Crypto)?.randomUUID) {
+      return (crypto as Crypto).randomUUID();
+    }
+  } catch {
+    /* noop */
+  }
+
+  // 2) getRandomValues si existe
+  try {
+    if (typeof crypto !== "undefined" && (crypto as Crypto)?.getRandomValues) {
+      const arr = new Uint8Array(16);
+      (crypto as Crypto).getRandomValues(arr);
+      // RFC 4122 v4-like
+      arr[6] = (arr[6] & 0x0f) | 0x40;
+      arr[8] = (arr[8] & 0x3f) | 0x80;
+      const toHex = (n: number) => n.toString(16).padStart(2, "0");
+      const hex = Array.from(arr, toHex).join("");
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(
+        12,
+        16
+      )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+  } catch {
+    /* noop */
+  }
+
+  // 3) Fallback final (suficiente para request-id correlativo)
+  return `rid-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
 
 // Cliente principal para toda la app
 const api = axios.create({
@@ -67,8 +103,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 
   // Envia cabeceras internas si corresponden
   if (USE_INTERNAL) {
-    if (!headers.get("X-Request-Id"))
-      headers.set("X-Request-Id", crypto.randomUUID());
+    if (!headers.get("X-Request-Id")) headers.set("X-Request-Id", safeUUID());
     if (!headers.get("X-App-Version")) headers.set("X-App-Version", "web@1");
   } else {
     // Aun sin USE_INTERNAL, es útil mandar versión de la app (opcional)
@@ -87,6 +122,17 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 
   // Mejor negociación por defecto
   if (!headers.get("Accept")) headers.set("Accept", "application/json");
+
+  // ⬇⬇⬇ IMPORTANTE: si enviamos JSON, forzar charset utf-8
+  const method = (config.method || "get").toUpperCase();
+  const hasBody = ["POST", "PUT", "PATCH"].includes(method);
+  if (hasBody) {
+    const currentCT = String(headers.get("Content-Type") || "").toLowerCase();
+    const isJson = currentCT.includes("application/json") || currentCT === "";
+    if (isJson && !currentCT.includes("charset=utf-8")) {
+      headers.set("Content-Type", "application/json; charset=utf-8");
+    }
+  }
 
   config.headers = headers;
   return config;

@@ -1,4 +1,3 @@
-// src/pages/Login.tsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { login as loginRequest } from "../services/authService";
@@ -26,16 +25,21 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCredentials({ ...credentials, [e.target.name]: e.target.value });
+    setCredentials((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
-
     try {
-      const data = await loginRequest(credentials);
+      const payload = {
+        username: credentials.username.trim(),
+        password: credentials.password,
+      };
+
+      const data = await loginRequest(payload);
+
       login(
         {
           id: data.id,
@@ -77,18 +81,27 @@ export default function Login() {
         {error && <p className="text-red-400 text-sm text-center">{error}</p>}
         <p className="text-center">Los capibaras aman las matemáticas 🦫</p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <AuthInput
             name="username"
             placeholder="Nombre de usuario"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            inputMode="email"
+            value={credentials.username}
             onChange={handleChange}
+            required
           />
           <div className="space-y-1">
             <AuthInput
               name="password"
               type="password"
               placeholder="Contraseña"
+              autoComplete="current-password"
+              value={credentials.password}
               onChange={handleChange}
+              required
             />
             <div className="text-right">
               <button
@@ -102,6 +115,7 @@ export default function Login() {
               </button>
             </div>
           </div>
+
           <label className="flex items-center text-sm">
             <input
               type="checkbox"
@@ -111,7 +125,10 @@ export default function Login() {
             />
             Recordarme
           </label>
-          <AuthButton>INGRESAR</AuthButton>
+
+          <AuthButton disabled={loading} aria-busy={loading}>
+            {loading ? "Enviando..." : "INGRESAR"}
+          </AuthButton>
         </form>
 
         <AuthSeparator />

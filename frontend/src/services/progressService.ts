@@ -1,4 +1,3 @@
-// src/services/progressService.ts
 import api from "./api";
 import type {
   Overview,
@@ -20,6 +19,15 @@ import type {
   ObjectiveCoverageItem,
   ObjectiveCoverageResponse,
 } from "../types/progress/ProgressTypes";
+
+// --- helpers ---
+function extractUuid(input?: string): string | undefined {
+  if (!input) return undefined;
+  const m = input.match(
+    /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/
+  );
+  return m ? m[0].toLowerCase() : undefined;
+}
 
 // Overview
 export const getOverview = async (signal?: AbortSignal): Promise<Overview> => {
@@ -67,7 +75,24 @@ export const getAchievements = async (
 export const postAttempt = async (
   req: AttemptRequest
 ): Promise<AttemptResponse> => {
-  const dto: AttemptRequestDto = { ...req, source: req.source ?? "PRACTICE" };
+  const dto: AttemptRequestDto = {
+    curriculumId: req.curriculumId,
+    learningObjectiveId: req.learningObjectiveId,
+    exerciseId: req.exerciseId,
+    templateType: req.templateType,
+    difficulty: req.difficulty,
+    answer: req.answer,
+    hintsUsed: req.hintsUsed ?? 0,
+    durationMs: req.durationMs,
+    sessionId: req.sessionId,
+    source: req.source ?? "PRACTICE",
+  };
+
+  // ✅ sanea sourceRefId → UUID o lo omite
+  const clean = extractUuid(req.sourceRefId);
+  if (clean) {
+    dto.sourceRefId = clean;
+  }
 
   const { data } = await api.post<AttemptResponseDto>(
     "/progress/attempts",
@@ -163,7 +188,7 @@ export const getObjectiveStatuses = async (
   return Array.isArray(data) ? data : [];
 };
 
-// 🔥 Cobertura por objetivo
+// Cobertura por objetivo
 export const getObjectiveCoverage = async (
   curriculumId?: string,
   signal?: AbortSignal
@@ -180,7 +205,6 @@ export const getObjectiveCoverage = async (
   return Array.isArray(data) ? data : [];
 };
 
-// 👇 Alias para compatibilidad
 export {
   getMySeries as getStudentDailySeries,
   getOverview as getMyOverview,
