@@ -8,14 +8,16 @@ import type {
 } from "../../types/progress/ProgressTypes";
 import { qk } from "./queryKeys";
 
+const PREFETCH_RECO_ON_ATTEMPT =
+  (import.meta.env.VITE_RECO_PREFETCH_ON_ATTEMPT ?? "true") === "true";
+
 export const useAttemptMutation = () => {
   const qc = useQueryClient();
 
   return useMutation<AttemptResponse, unknown, AttemptRequest>({
     mutationFn: postAttempt,
-    onSuccess: (res, vars) => {
-      // 1) Update optimista: mover el OA a su set correcto según sop.status
-      //    (MASTERED -> COMPLETED; IN_PROGRESS -> IN_PROGRESS; NOT_STARTED -> NOT_STARTED)
+    onSuccess: async (res, vars) => {
+      // 1) Update optimista de estados por objetivo
       const next = res.sop?.status;
       const objectiveId = vars.learningObjectiveId;
       const curriculumId = vars.curriculumId;
@@ -29,12 +31,10 @@ export const useAttemptMutation = () => {
             const inProgressIds = new Set(prev.inProgressIds);
             const notStartedIds = new Set(prev.notStartedIds);
 
-            // quitar de todos
             completedIds.delete(objectiveId);
             inProgressIds.delete(objectiveId);
             notStartedIds.delete(objectiveId);
 
-            // agregar al set destino
             if (next === "MASTERED") {
               completedIds.add(objectiveId);
             } else if (next === "IN_PROGRESS") {
@@ -48,12 +48,12 @@ export const useAttemptMutation = () => {
         );
       }
 
-      // 2) Invalidaciones para consolidar datos (resuelve cobertura, overview, etc.)
+      // 2) Invalidaciones de progresos agregados
       qc.invalidateQueries({ queryKey: qk.overview });
       qc.invalidateQueries({ queryKey: qk.streak });
       qc.invalidateQueries({ queryKey: qk.achievements });
 
-      // Estados y cobertura (todas las variantes cacheadas)
+      // 3) Estados/cobertura (todas las variantes cacheadas)
       qc.invalidateQueries({
         predicate: (q) =>
           Array.isArray(q.queryKey) &&
@@ -62,7 +62,7 @@ export const useAttemptMutation = () => {
             q.queryKey[1] === "objective-coverage"),
       });
 
-      // Series personales
+      // 4) Series personales
       qc.invalidateQueries({
         predicate: (q) =>
           Array.isArray(q.queryKey) &&
@@ -70,6 +70,26 @@ export const useAttemptMutation = () => {
           q.queryKey[1] === "me" &&
           q.queryKey[2] === "series",
       });
+
+      // 5) Recomendaciones: invalida ambos esquemas de clave (legacy + nuevo hook)
+      qc.invalidateQueries({
+        predicate: (q) =>
+          Array.isArray(q.queryKey) &&
+          ((q.queryKey[0] === "ai" && q.queryKey[1] === "reco") ||
+            q.queryKey[0] === "reco"),
+      });
+
+      // 6) (Opcional) Prefetch del set principal con fresh=true para UX instantáneo
+      if (PREFETCH_RECO_ON_ATTEMPT) {
+        const { getRecommendationsMe } = await import(
+          "../../services/aiService"
+        );
+        await qc.prefetchQuery({
+          queryKey: ["reco", "me", 8, "math", "any"], // ajusta a tu panel principal
+          queryFn: () =>
+            getRecommendationsMe({ fresh: true, limit: 8, subject: "math" }),
+        });
+      }
     },
   });
 };

@@ -1,7 +1,7 @@
 // src/layouts/components/StudentMenu.tsx
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "../../utils/cn";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listMySubmissions } from "../../services/assessmentsService";
 import { assessmentsKeys } from "../../hooks/assessments/queryKeys";
@@ -38,11 +38,13 @@ export default function StudentMenu({
   setSidebarOpen,
 }: StudentMenuProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const sectionActive = location.pathname.startsWith("/student");
   const item = ({ isActive }: { isActive: boolean }) =>
     cn(baseItem, isActive && activeItem);
 
   const [lastSubmissionId, setLastSubmissionId] = useState<string | null>(null);
+  const [joinCode, setJoinCode] = useState<string>("");
 
   useEffect(() => {
     const id = localStorage.getItem("assess:lastSubmissionId");
@@ -67,13 +69,34 @@ export default function StudentMenu({
       });
       return page.totalElements ?? 0;
     },
-    // Queremos que refleje cambios al volver al foco
     staleTime: 0,
     refetchOnWindowFocus: true,
   });
 
-  // “No vistos” = servidor − vistos (localStorage)
   const unseen = Math.max(serverSubmitted - getLastSeenSubmittedCount(), 0);
+
+  const onJoin = (e: FormEvent) => {
+    e.preventDefault();
+    const raw = joinCode.trim();
+    if (!raw) return;
+
+    // Normaliza a MAYÚSCULAS y filtra caracteres
+    const code = raw.toUpperCase().replace(/[^A-Z0-9-]/g, "");
+
+    // UUID v4
+    const looksUuid =
+      /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(
+        code
+      );
+
+    setSidebarOpen(false);
+    if (looksUuid) {
+      navigate(`/student/duels/${code}`);
+    } else {
+      // Código corto (p.ej. ABC123)
+      navigate(`/student/duels/room?code=${encodeURIComponent(code)}`);
+    }
+  };
 
   return (
     <div className="relative">
@@ -130,6 +153,7 @@ export default function StudentMenu({
           >
             🏆 Logros
           </NavLink>
+
           <NavLink
             to="/student/ai-advisor"
             className={item}
@@ -137,6 +161,55 @@ export default function StudentMenu({
           >
             🤖 Asistente IA
           </NavLink>
+
+          {/* ====== NUEVA SECCIÓN: Duelos ====== */}
+          <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">
+            <div className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide opacity-60">
+              Duelos
+            </div>
+            <nav className="space-y-1">
+              <NavLink
+                to="/student/duels/new"
+                className={item}
+                onClick={() => setSidebarOpen(false)}
+              >
+                ⚔️ Nuevo duelo
+              </NavLink>
+              <NavLink
+                to="/student/duels/join"
+                className={item}
+                onClick={() => setSidebarOpen(false)}
+              >
+                🔑 Unirme con código
+              </NavLink>
+              {/* Unirme con código (inline, sin página extra) */}
+              <form onSubmit={onJoin} className="px-3 pt-1">
+                <label className="mb-1 block text-[11px] opacity-70">
+                  Unirme con código
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    inputMode="text"
+                    placeholder="matchId o código"
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value)}
+                    className="w-full rounded-md border px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-900"
+                    aria-label="Código de duelo"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs text-white hover:bg-emerald-700"
+                    title="Unirme"
+                  >
+                    Unirme
+                  </button>
+                </div>
+              </form>
+            </nav>
+          </div>
+
+          {/* ====== Evaluaciones ====== */}
           <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">
             <div className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide opacity-60">
               Evaluaciones

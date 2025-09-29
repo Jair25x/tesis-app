@@ -1,4 +1,3 @@
-// src/routes/student.tsx
 import { lazy, Suspense } from "react";
 import { Outlet, Navigate } from "react-router-dom";
 import RoleRoute from "./RoleRoute";
@@ -30,6 +29,10 @@ const StudentHistory = lazy(
   () => import("../pages/student/assessments/History")
 );
 
+// 👇 NUEVO
+const DuelNew = lazy(() => import("../pages/student/duels/DuelNew"));
+const DuelRoom = lazy(() => import("../pages/student/duels/DuelRoom"));
+const DuelJoin = lazy(() => import("../pages/student/duels/DuelJoin"));
 export const studentRoute = {
   path: "student",
   element: (
@@ -39,6 +42,7 @@ export const studentRoute = {
   ),
   children: [
     { index: true, element: <Navigate to="dashboard" replace /> },
+
     {
       path: "dashboard",
       element: (
@@ -143,6 +147,43 @@ export const studentRoute = {
       element: (
         <Suspense fallback={<LoadingScreen />}>
           <StudentHistory />
+        </Suspense>
+      ),
+    },
+
+    // NUEVO: Duelos
+    {
+      path: "duels/new",
+      element: (
+        <Suspense fallback={<LoadingScreen />}>
+          <DuelNew />
+        </Suspense>
+      ),
+    },
+    {
+      // por UUID directo (o también puede ser un código si prefieres)
+      path: "duels/:matchId",
+      element: (
+        <Suspense fallback={<LoadingScreen />}>
+          <DuelRoom />
+        </Suspense>
+      ),
+    },
+    {
+      // join por código con UI propia
+      path: "duels/join",
+      element: (
+        <Suspense fallback={<LoadingScreen />}>
+          <DuelJoin />
+        </Suspense>
+      ),
+    },
+    {
+      // opción “room por código” si navegas con ?code=ABC123
+      path: "duels/room",
+      element: (
+        <Suspense fallback={<LoadingScreen />}>
+          <DuelRoom />
         </Suspense>
       ),
     },

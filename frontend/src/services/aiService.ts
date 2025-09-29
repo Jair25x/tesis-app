@@ -175,23 +175,26 @@ export async function chatStream(
 
 /* ===================== Recomendaciones ===================== */
 
-export async function getMyRecommendations(opts?: {
+/** NUEVO: devuelve payload completo (generatedAt + items). */
+export async function getRecommendationsMe(params?: {
+  fresh?: boolean;
   limit?: number;
   subject?: "math" | "lang";
   objectiveId?: string;
-}): Promise<RecommendationItem[]> {
+}): Promise<RecommendationsResponse> {
   try {
     const { data } = await api.get<RecommendationsResponse>(
       url(`${BASE_PATH}/recommendations/students/me`),
       {
         params: {
-          limit: opts?.limit ?? 8,
-          subject: opts?.subject,
-          objectiveId: opts?.objectiveId,
+          fresh: params?.fresh ? "true" : undefined,
+          limit: params?.limit ?? 8,
+          subject: params?.subject,
+          objectiveId: params?.objectiveId,
         },
       }
     );
-    return data.items ?? [];
+    return data;
   } catch (e) {
     const err = e as AxiosError<{ message?: string }>;
     if (err.response?.status === 429) {
@@ -200,6 +203,22 @@ export async function getMyRecommendations(opts?: {
     const msg = err.response?.data?.message || err.message || "Error de red";
     throw new Error(msg);
   }
+}
+
+/** Wrapper de compatibilidad: devuelve solo `items`. Ahora acepta `fresh`. */
+export async function getMyRecommendations(opts?: {
+  limit?: number;
+  subject?: "math" | "lang";
+  objectiveId?: string;
+  fresh?: boolean;
+}): Promise<RecommendationItem[]> {
+  const res = await getRecommendationsMe({
+    fresh: opts?.fresh,
+    limit: opts?.limit,
+    subject: opts?.subject,
+    objectiveId: opts?.objectiveId,
+  });
+  return res.items ?? [];
 }
 
 export async function getRecommendationsForStudent(
@@ -341,6 +360,17 @@ export async function getLatestConversation(
     { params }
   );
   return convWithMsgsFromApi(data);
+}
+
+export async function postRecoEvent(payload: {
+  event: "OPEN" | "DISMISS" | "HOVER";
+  exerciseId: string;
+  objectiveId?: string;
+  sourceRefId?: string;
+  ts?: string; // ISO
+  difficulty?: "EASY" | "MEDIUM" | "HARD";
+}): Promise<void> {
+  await api.post(url(`/ai/recommendations/events`), payload);
 }
 
 /* -------- Re-export conveniente -------- */

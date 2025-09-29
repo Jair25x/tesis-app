@@ -12,7 +12,6 @@ import {
   getLatestConversation,
 } from "../../../services/aiService";
 
-// 👇 avatar de CapiBOT
 import capiGif from "../../../assets/capibaramini.gif";
 
 const STREAM_DEFAULT = String(import.meta.env.VITE_CHAT_STREAM) === "true";
@@ -24,7 +23,7 @@ type Msg = { role: "user" | "assistant"; text: string };
 function normalizeGrade(raw?: string | null): string | undefined {
   if (!raw) return undefined;
   const m = raw.match(/\d+/);
-  return m ? m[0] : undefined; // "6°" -> "6"
+  return m ? m[0] : undefined;
 }
 function inferSubjectFromCurriculumName(
   name?: string
@@ -34,6 +33,14 @@ function inferSubjectFromCurriculumName(
   if (n.includes("mate")) return "math";
   if (n.includes("leng") || n.includes("comunica")) return "lang";
   return undefined;
+}
+function draftKey(
+  curriculumId?: string | null,
+  conversationId?: string | null
+): string {
+  const c = curriculumId ?? "none";
+  const conv = conversationId ?? "new";
+  return `ai:chat:draft:${c}:${conv}`;
 }
 
 /** Activa bypass sólo si el equipo lo pide por URL o localStorage (no visible a estudiantes). */
@@ -52,7 +59,7 @@ function useDebugBypass(): boolean {
   return bypass;
 }
 
-/** Extrae un id plausible sin usar `any`, tolerando distintas formas de user. */
+/** Extrae un id plausible sin usar `any`. */
 function extractUserIdSafe(source: unknown): string | undefined {
   if (!source || typeof source !== "object") return undefined;
 
@@ -67,17 +74,14 @@ function extractUserIdSafe(source: unknown): string | undefined {
       if (typeof subVal === "string" && subVal.trim().length > 0) return subVal;
     }
   }
-
   if ("id" in (source as Record<string, unknown>)) {
     const idVal = (source as { id?: unknown }).id;
     if (typeof idVal === "string" && idVal.trim().length > 0) return idVal;
   }
-
   if ("sub" in (source as Record<string, unknown>)) {
     const subVal = (source as { sub?: unknown }).sub;
     if (typeof subVal === "string" && subVal.trim().length > 0) return subVal;
   }
-
   return undefined;
 }
 
@@ -91,7 +95,7 @@ export default function AdvisorChat() {
   const useStream = STREAM_DEFAULT;
   const bypassLLM = useDebugBypass();
 
-  // === Contexto del estudiante desde el currículo activo ===
+  // === Contexto ===
   const curriculumId = getCurrentCurriculumId() ?? undefined;
   const { data: curr } = useCurriculumFullQuery(curriculumId ?? "");
   const grade = useMemo(() => normalizeGrade(curr?.grade ?? null), [curr]);
@@ -100,19 +104,18 @@ export default function AdvisorChat() {
     [curr]
   );
 
-  // === StudentId (opcional) desde auth — si no lo tenemos, el BE infiere por token ===
   const auth = useAuth();
   const studentId = extractUserIdSafe(auth);
 
   // === Streaming hook (SSE) ===
   const { loading, error, start, stop } = useChatStream();
 
-  // Refs para control de conversación y deltas
+  // Refs control conversación y deltas
   const conversationIdRef = useRef<string | null>(null);
   const liveIdxRef = useRef<number | null>(null);
-  const assistantBufferRef = useRef<string>(""); // << acumulamos la respuesta completa del assistant
+  const assistantBufferRef = useRef<string>("");
 
-  // Enfocar input cuando termina una respuesta
+  // Focus al terminar
   useEffect(() => {
     if (!loading && inputRef.current) inputRef.current.focus();
   }, [loading]);
@@ -138,7 +141,7 @@ export default function AdvisorChat() {
     if (loading) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [loading]);
 
-  // ✅ FIN DEL STREAM: “congela” la burbuja viva y resetea refs
+  // Fin del stream
   useEffect(() => {
     if (loading) return;
     if (liveIdxRef.current == null) return;
@@ -146,12 +149,10 @@ export default function AdvisorChat() {
     liveIdxRef.current = null;
   }, [loading]);
 
-  // Cleanup al desmontar (evitar streams colgados)
-  useEffect(() => {
-    return () => stop();
-  }, [stop]);
+  // Cleanup
+  useEffect(() => () => stop(), [stop]);
 
-  // 🚀 Auto-cargar última conversación al entrar (si existe)
+  // 🚀 Auto-cargar última conversación + restaurar borrador
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -159,23 +160,51 @@ export default function AdvisorChat() {
         const conv = await getLatestConversation(curriculumId);
         if (cancelled || !conv) return;
         conversationIdRef.current = conv.id;
+
         const items: Msg[] = (conv.messages ?? []).map((m) => ({
           role: m.role,
           text: m.text,
         }));
         setMessages(items);
+
+        // Restaurar borrador del input (sessionStorage)
+        try {
+          const dk = draftKey(curriculumId, conversationIdRef.current);
+          const draft = sessionStorage.getItem(dk);
+          if (draft && draft.length <= MAX_LEN) setQuestion(draft);
+        } catch {
+          /* noop */
+        }
+
         setTimeout(
           () => bottomRef.current?.scrollIntoView({ behavior: "smooth" }),
           0
         );
       } catch {
-        // No hay conversación previa; está bien.
+        // No hay conversación previa → limpia borrador "new"
+        try {
+          const dk = draftKey(curriculumId, null);
+          const draft = sessionStorage.getItem(dk);
+          if (draft && draft.length <= MAX_LEN) setQuestion(draft);
+        } catch {
+          /* noop */
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [curriculumId]);
+
+  // Guardar borrador en sessionStorage (por conversación)
+  useEffect(() => {
+    try {
+      const dk = draftKey(curriculumId, conversationIdRef.current);
+      sessionStorage.setItem(dk, question);
+    } catch {
+      /* noop */
+    }
+  }, [question, curriculumId]);
 
   const handleSend = async () => {
     const q = question.trim();
@@ -188,7 +217,7 @@ export default function AdvisorChat() {
       return;
     }
 
-    // 1) agrega mensaje del estudiante (UI)
+    // UI: agrega mensaje del estudiante
     setMessages((prev) => [...prev, { role: "user", text: q }]);
     setQuestion("");
     setTimeout(
@@ -196,29 +225,34 @@ export default function AdvisorChat() {
       0
     );
 
+    // Limpia borrador de la clave actual
     try {
-      // 2) persiste mensaje del estudiante
+      const dk = draftKey(curriculumId, conversationIdRef.current);
+      sessionStorage.removeItem(dk);
+    } catch {
+      /* noop */
+    }
+
+    try {
+      // Persistencia: crear/append del mensaje del usuario
       if (!conversationIdRef.current) {
-        // Nueva conversación → crea con SOLO el mensaje del usuario
         const conv = await createConversation({
           curriculumId,
           firstMessages: [{ role: "user", text: q }],
         });
         conversationIdRef.current = conv.id;
       } else {
-        // Conversación existente → append del mensaje del usuario
         await appendConversationEvents({
           conversationId: conversationIdRef.current,
           messages: [{ role: "user", text: q }],
         });
       }
     } catch {
-      // No bloqueamos la UX de chat si falla el guardado, pero avisamos.
       showToast.warning("No se pudo guardar el mensaje en el historial.");
     }
 
     if (useStream) {
-      // 3) inserta burbuja viva del asistente y comienza stream
+      // Inserta burbuja viva del asistente y comienza stream
       setMessages((prev) => {
         const draft: Msg = { role: "assistant", text: "" };
         const next = [...prev, draft];
@@ -226,7 +260,7 @@ export default function AdvisorChat() {
         return next;
       });
 
-      assistantBufferRef.current = ""; // reset buffer
+      assistantBufferRef.current = "";
 
       start({
         question: q,
@@ -236,7 +270,7 @@ export default function AdvisorChat() {
         bypassLLM,
         onDeltaText: (delta) => {
           if (!delta) return;
-          assistantBufferRef.current += delta; // acumulamos para persistir al final
+          assistantBufferRef.current += delta;
           setMessages((prev) => {
             const idx = liveIdxRef.current;
             if (idx == null || idx < 0 || idx >= prev.length) return prev;
@@ -249,10 +283,9 @@ export default function AdvisorChat() {
         onEndEvt: async () => {
           const finalText = assistantBufferRef.current.trim();
           assistantBufferRef.current = "";
-
-          if (!finalText) return; // nada que guardar
+          if (!finalText) return;
           const convId = conversationIdRef.current;
-          if (!convId) return; // debería existir
+          if (!convId) return;
 
           try {
             await appendConversationEvents({
@@ -260,7 +293,6 @@ export default function AdvisorChat() {
               messages: [{ role: "assistant", text: finalText }],
             });
           } catch {
-            // No rompemos UX, solo avisamos suave.
             showToast.warning(
               "No se pudo guardar la respuesta en el historial."
             );
@@ -268,7 +300,7 @@ export default function AdvisorChat() {
         },
       });
     } else {
-      // Fallback JSON: pedimos la respuesta completa y la fijamos al historial
+      // Fallback JSON
       try {
         const res = await chatOnce(
           { question: q, grade, subject, studentId, stream: false },
@@ -282,7 +314,6 @@ export default function AdvisorChat() {
           0
         );
 
-        // Persistimos assistant
         const convId = conversationIdRef.current;
         if (convId && txt) {
           await appendConversationEvents({
@@ -312,6 +343,21 @@ export default function AdvisorChat() {
     stop();
   };
 
+  const handleClear = () => {
+    // Inicia una nueva conversación (la anterior queda persistida)
+    try {
+      const dk = draftKey(curriculumId, conversationIdRef.current);
+      sessionStorage.removeItem(dk);
+    } catch {
+      /* noop */
+    }
+    conversationIdRef.current = null;
+    setMessages([]);
+    setQuestion("");
+    showToast.success("Conversación reiniciada.");
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -325,7 +371,6 @@ export default function AdvisorChat() {
     <div className="mx-auto max-w-3xl p-4 md:p-6">
       <h1 className="text-2xl font-bold mb-4">CapiBOT</h1>
 
-      {/* Historial de chat */}
       <div className="rounded-xl border p-4 md:p-5 h-[58vh] overflow-y-auto bg-white/60 dark:bg-gray-900/40">
         {messages.length === 0 && (
           <div className="text-sm text-muted-foreground">
@@ -350,7 +395,6 @@ export default function AdvisorChat() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Caja de entrada */}
       <div className="mt-4 rounded-xl border p-3 md:p-4">
         <label htmlFor="question" className="sr-only">
           Escribe tu pregunta
@@ -384,6 +428,13 @@ export default function AdvisorChat() {
               </button>
             )}
             <button
+              onClick={handleClear}
+              className="rounded-lg px-3 py-1.5 border hover:bg-muted transition"
+              title="Empezar nueva conversación"
+            >
+              Limpiar
+            </button>
+            <button
               onClick={handleSend}
               disabled={(useStream && loading) || !question.trim()}
               className="rounded-lg px-3 py-1.5 border hover:bg-muted transition"
@@ -397,7 +448,6 @@ export default function AdvisorChat() {
   );
 }
 
-/* ===== Burbuja de chat con avatar + Markdown ===== */
 function ChatBubble(props: {
   role: "user" | "assistant";
   text: string;
@@ -419,7 +469,6 @@ function ChatBubble(props: {
           className="w-10 h-10 rounded-full border object-cover"
         />
       )}
-
       <div
         className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow
         ${
