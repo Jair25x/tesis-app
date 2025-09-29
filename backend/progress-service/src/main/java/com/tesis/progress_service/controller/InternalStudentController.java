@@ -13,13 +13,15 @@ import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.lang.Nullable;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Hidden
 @RestController
@@ -43,60 +45,86 @@ public class InternalStudentController {
   }
 
   // ---------------------------------------------------------------------------
-  // 2) Stats por objetivo (mínimo viable y tipado)
+  // 2) Stats por objetivo (enriquecido)
   // ---------------------------------------------------------------------------
   @Operation(summary = "[INTERNAL] Stats por objetivo de un estudiante")
   @PreAuthorize("hasRole('INTERNAL')")
   @GetMapping("/{studentId}/objectives/{objectiveId}/stats")
   public ResponseEntity<ObjectiveStatsResponse> getObjectiveStatsInternal(
       @PathVariable UUID studentId,
-      @PathVariable UUID objectiveId
-  ) {
+      @PathVariable UUID objectiveId) {
     Map<UUID, Integer> solvedMap = solvedDistinctByObjective(studentId, null);
-    int solved = solvedMap.getOrDefault(objectiveId, 0);
     String status = getStatusFor(studentId, objectiveId);
+
+    var enr = computeRecentAndLast(studentId, objectiveId);
 
     ObjectiveStatsResponse out = ObjectiveStatsResponse.builder()
         .objectiveId(objectiveId)
         .status(status)
-        .solvedDistinct(solved)
+        .solvedDistinct(solvedMap.getOrDefault(objectiveId, 0))
+        .attempts7d(enr.attempts7d())
+        .correct7d(enr.correct7d())
+        .winRate7d(enr.winRate7d())
+        .lastAttemptAt(enr.lastAttemptAt())
         .build();
 
     return ResponseEntity.ok(out);
   }
 
   // ---------------------------------------------------------------------------
-  // 3) Batch stats por objetivos (eficiencia para el Advisor)
+  // 3) Batch stats por objetivos (enriquecido)
   // ---------------------------------------------------------------------------
   @Operation(summary = "[INTERNAL] Stats por objetivo (batch)")
   @PreAuthorize("hasRole('INTERNAL')")
   @PostMapping("/{studentId}/objectives/stats:batch")
   public ResponseEntity<List<ObjectiveStatsResponse>> getObjectiveStatsBatch(
       @PathVariable UUID studentId,
-      @Valid @RequestBody ObjectiveStatsBatchRequest req
-  ) {
+      @Valid @RequestBody ObjectiveStatsBatchRequest req) {
     List<UUID> ids = Optional.ofNullable(req.getObjectiveIds()).orElse(List.of());
-    if (ids.isEmpty()) return ResponseEntity.ok(List.of());
+    if (ids.isEmpty())
+      return ResponseEntity.ok(List.of());
 
     Map<UUID, Integer> solvedMap = solvedDistinctByObjective(studentId, null);
     Map<UUID, String> statusById = statusMapFor(studentId);
 
-    List<ObjectiveStatsResponse> out = ids.stream().map(oid ->
-        ObjectiveStatsResponse.builder()
-            .objectiveId(oid)
-            .status(statusById.getOrDefault(oid, "NOT_STARTED"))
-            .solvedDistinct(solvedMap.getOrDefault(oid, 0))
-            .build()
-    ).collect(Collectors.toList());
+    List<ObjectiveStatsResponse> out = new ArrayList<>(ids.size());
+    for (UUID oid : ids) {
+      var enr = computeRecentAndLast(studentId, oid);
+      out.add(ObjectiveStatsResponse.builder()
+          .objectiveId(oid)
+          .status(statusById.getOrDefault(oid, "NOT_STARTED"))
+          .solvedDistinct(solvedMap.getOrDefault(oid, 0))
+          .attempts7d(enr.attempts7d())
+          .correct7d(enr.correct7d())
+          .winRate7d(enr.winRate7d())
+          .lastAttemptAt(enr.lastAttemptAt())
+          .build());
+    }
 
     return ResponseEntity.ok(out);
   }
 
   // =============================== Helpers ===============================
 
+  private record RecentEnriched(int attempts7d, int correct7d, double winRate7d, Instant lastAttemptAt) {
+  }
+
+  private RecentEnriched computeRecentAndLast(UUID studentId, UUID objectiveId) {
+    // Ventana: últimos 7 días (rolling)
+    LocalDateTime to = LocalDateTime.now(ZoneOffset.UTC);
+    LocalDateTime from = to.minusDays(7);
+
+    long attempts = attemptRepository.countAttemptsInRange(studentId, objectiveId, from, to);
+    long corrects = attemptRepository.countCorrectInRange(studentId, objectiveId, from, to);
+    double wr = attempts > 0 ? ((double) corrects) / ((double) attempts) : 0.0;
+
+    LocalDateTime last = attemptRepository.findLastAttemptAt(studentId, objectiveId);
+    Instant lastInst = (last != null) ? last.atOffset(ZoneOffset.UTC).toInstant() : null;
+
+    return new RecentEnriched((int) attempts, (int) corrects, wr, lastInst);
+  }
+
   private Map<UUID, Integer> solvedDistinctByObjective(UUID studentId, @Nullable UUID curriculumId) {
-    // attemptRepository.distinctCorrectByObjective(studentId, curriculumId)
-    // debe devolver rows [objectiveId(UUID), solvedDistinct(Number)]
     List<Object[]> rows = attemptRepository.distinctCorrectByObjective(studentId, curriculumId);
     Map<UUID, Integer> out = new HashMap<>();
     for (Object[] r : rows) {
@@ -108,7 +136,6 @@ public class InternalStudentController {
   }
 
   private String getStatusFor(UUID studentId, UUID objectiveId) {
-    // Si tienes un método repo directo, úsalo; aquí hacemos un pass simple.
     List<StudentObjectiveProgress> sops = sopRepository.findAllByStudentId(studentId);
     for (StudentObjectiveProgress s : sops) {
       if (objectiveId.equals(s.getLearningObjectiveId())) {
@@ -131,7 +158,8 @@ public class InternalStudentController {
   }
 
   private static String mapStatus(ProgressStatus st) {
-    if (st == null) return "IN_PROGRESS";
+    if (st == null)
+      return "IN_PROGRESS";
     return switch (st) {
       case MASTERED -> "COMPLETED";
       case IN_PROGRESS -> "IN_PROGRESS";

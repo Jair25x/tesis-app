@@ -26,6 +26,8 @@ import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
 
+import io.micrometer.core.instrument.Timer;
+
 @Service
 @RequiredArgsConstructor
 public class AttemptsService {
@@ -36,103 +38,116 @@ public class AttemptsService {
         private final StreakRepository streakRepository;
         private final ProgressCalculator progressCalculator;
         private final AchievementService achievementService;
-        private final AttemptMetricsRecorder attemptMetrics; // ⬅️ NUEVO
+        private final AttemptMetricsRecorder attemptMetrics;
 
         // === FLUJO PÚBLICO ===
         @Transactional
         public AttemptResponse recordAttempt(UUID studentId, AttemptRequest req) {
-                CheckResultDto check = curriculumClient.checkAnswer(
-                                req.getExerciseId(),
-                                req.getAnswer());
+                Timer.Sample sample = attemptMetrics.startAttemptTimer();
+                Attempt attempt = null;
+                boolean correct = false;
 
-                boolean correct = check.isCorrect();
-                BigDecimal scoreBD = check.getScore() != null
-                                ? check.getScore()
-                                : (correct ? BigDecimal.ONE : BigDecimal.ZERO);
+                try {
+                        CheckResultDto check = curriculumClient.checkAnswer(
+                                        req.getExerciseId(),
+                                        req.getAnswer());
 
-                Attempt attempt = Attempt.builder()
-                                .studentId(studentId)
-                                .curriculumId(req.getCurriculumId())
-                                .learningObjectiveId(req.getLearningObjectiveId())
-                                .exerciseId(req.getExerciseId())
-                                .templateType(req.getTemplateType())
-                                .difficulty(req.getDifficulty())
-                                .source(req.getSource() != null ? req.getSource() : AttemptSource.PRACTICE)
-                                .sourceRefId(req.getSourceRefId())
-                                .sessionId(req.getSessionId())
-                                .answerPayload(req.getAnswer())
-                                .checkResult(Map.of(
-                                                "correct", correct,
-                                                "score", scoreBD,
-                                                "feedback", check.getFeedback()))
-                                .correct(correct)
-                                .score(scoreBD)
-                                .hintsUsed(req.getHintsUsed() != null ? req.getHintsUsed() : 0)
-                                .durationMs(req.getDurationMs())
-                                .build();
+                        correct = check.isCorrect();
+                        BigDecimal scoreBD = check.getScore() != null
+                                        ? check.getScore()
+                                        : (correct ? BigDecimal.ONE : BigDecimal.ZERO);
 
-                attempt = attemptRepository.save(attempt);
+                        attempt = Attempt.builder()
+                                        .studentId(studentId)
+                                        .curriculumId(req.getCurriculumId())
+                                        .learningObjectiveId(req.getLearningObjectiveId())
+                                        .exerciseId(req.getExerciseId())
+                                        .templateType(req.getTemplateType())
+                                        .difficulty(req.getDifficulty())
+                                        .source(req.getSource() != null ? req.getSource() : AttemptSource.PRACTICE)
+                                        .sourceRefId(req.getSourceRefId())
+                                        .sessionId(req.getSessionId())
+                                        .answerPayload(req.getAnswer())
+                                        .checkResult(Map.of(
+                                                        "correct", correct,
+                                                        "score", scoreBD,
+                                                        "feedback", check.getFeedback()))
+                                        .correct(correct)
+                                        .score(scoreBD)
+                                        .hintsUsed(req.getHintsUsed() != null ? req.getHintsUsed() : 0)
+                                        .durationMs(req.getDurationMs())
+                                        .build();
 
-                // === MÉTRICAS ===
-                boolean fromReco = attempt.getSourceRefId() != null;
-                attemptMetrics.recordAttempt(
-                                attempt.getTemplateType(),
-                                attempt.getDifficulty(),
-                                attempt.isCorrect(),
-                                fromReco);
+                        attempt = attemptRepository.save(attempt);
 
-                // SOP
-                StudentObjectiveProgress sop = sopRepository
-                                .findByStudentIdAndLearningObjectiveId(studentId, req.getLearningObjectiveId())
-                                .orElseGet(() -> StudentObjectiveProgress.builder()
-                                                .studentId(studentId)
-                                                .curriculumId(req.getCurriculumId())
-                                                .learningObjectiveId(req.getLearningObjectiveId())
-                                                .build());
+                        // === MÉTRICAS (counters) ===
+                        boolean fromReco = attempt.getSourceRefId() != null;
+                        attemptMetrics.recordAttempt(
+                                        attempt.getTemplateType(),
+                                        attempt.getDifficulty(),
+                                        attempt.isCorrect(),
+                                        fromReco);
 
-                sop = progressCalculator.applyAttempt(sop, attempt);
-                sopRepository.save(sop);
+                        // SOP
+                        StudentObjectiveProgress sop = sopRepository
+                                        .findByStudentIdAndLearningObjectiveId(studentId, req.getLearningObjectiveId())
+                                        .orElseGet(() -> StudentObjectiveProgress.builder()
+                                                        .studentId(studentId)
+                                                        .curriculumId(req.getCurriculumId())
+                                                        .learningObjectiveId(req.getLearningObjectiveId())
+                                                        .build());
 
-                // Racha
-                Streak streak = streakRepository.findByStudentId(studentId)
-                                .orElseGet(() -> Streak.builder().studentId(studentId).current(0).longest(0).build());
+                        sop = progressCalculator.applyAttempt(sop, attempt);
+                        sopRepository.save(sop);
 
-                streak = progressCalculator.updateStreak(streak, LocalDate.now());
-                streakRepository.save(streak);
+                        // Racha
+                        Streak streak = streakRepository.findByStudentId(studentId)
+                                        .orElseGet(() -> Streak.builder().studentId(studentId).current(0).longest(0)
+                                                        .build());
 
-                // Logros
-                var unlocked = achievementService.evaluateAndGrant(studentId, attempt, sop, streak);
+                        streak = progressCalculator.updateStreak(streak, LocalDate.now());
+                        streakRepository.save(streak);
 
-                BigDecimal acc = (sop.getAttemptsCount() == null || sop.getAttemptsCount() == 0)
-                                ? BigDecimal.ZERO
-                                : new BigDecimal(sop.getCorrectCount() == null ? 0 : sop.getCorrectCount())
-                                                .divide(new BigDecimal(sop.getAttemptsCount()), 3,
-                                                                RoundingMode.HALF_UP);
+                        // Logros
+                        var unlocked = achievementService.evaluateAndGrant(studentId, attempt, sop, streak);
 
-                SopDto sopDto = SopDto.builder()
-                                .learningObjectiveId(sop.getLearningObjectiveId())
-                                .attemptsCount(sop.getAttemptsCount() == null ? 0 : sop.getAttemptsCount())
-                                .correctCount(sop.getCorrectCount() == null ? 0 : sop.getCorrectCount())
-                                .streakCorrect(sop.getStreakCorrect() == null ? 0 : sop.getStreakCorrect())
-                                .accuracy(acc)
-                                .status(sop.getStatus())
-                                .masteryLevel(sop.getMasteryLevel())
-                                .build();
+                        BigDecimal acc = (sop.getAttemptsCount() == null || sop.getAttemptsCount() == 0)
+                                        ? BigDecimal.ZERO
+                                        : new BigDecimal(sop.getCorrectCount() == null ? 0 : sop.getCorrectCount())
+                                                        .divide(new BigDecimal(sop.getAttemptsCount()), 3,
+                                                                        RoundingMode.HALF_UP);
 
-                StreakDto streakDto = StreakDto.builder()
-                                .current(streak.getCurrent() == null ? 0 : streak.getCurrent())
-                                .longest(streak.getLongest() == null ? 0 : streak.getLongest())
-                                .build();
+                        SopDto sopDto = SopDto.builder()
+                                        .learningObjectiveId(sop.getLearningObjectiveId())
+                                        .attemptsCount(sop.getAttemptsCount() == null ? 0 : sop.getAttemptsCount())
+                                        .correctCount(sop.getCorrectCount() == null ? 0 : sop.getCorrectCount())
+                                        .streakCorrect(sop.getStreakCorrect() == null ? 0 : sop.getStreakCorrect())
+                                        .accuracy(acc)
+                                        .status(sop.getStatus())
+                                        .masteryLevel(sop.getMasteryLevel())
+                                        .build();
 
-                return AttemptResponse.builder()
-                                .attemptId(attempt.getId())
-                                .correct(correct)
-                                .score(scoreBD)
-                                .feedback(check.getFeedback())
-                                .sop(sopDto)
-                                .streak(streakDto)
-                                .unlocked(unlocked)
-                                .build();
+                        StreakDto streakDto = StreakDto.builder()
+                                        .current(streak.getCurrent() == null ? 0 : streak.getCurrent())
+                                        .longest(streak.getLongest() == null ? 0 : streak.getLongest())
+                                        .build();
+
+                        return AttemptResponse.builder()
+                                        .attemptId(attempt.getId())
+                                        .correct(correct)
+                                        .score(scoreBD)
+                                        .feedback(check.getFeedback())
+                                        .sop(sopDto)
+                                        .streak(streakDto)
+                                        .unlocked(unlocked)
+                                        .build();
+
+                } finally {
+                        // Timer SIEMPRE se cierra, incluso si hubo excepción
+                        String tpl = (attempt != null) ? attempt.getTemplateType() : (req.getTemplateType());
+                        String dif = (attempt != null) ? attempt.getDifficulty() : (req.getDifficulty());
+                        attemptMetrics.stopAttemptTimer(sample, tpl, dif, correct);
+                }
         }
 
         // === FLUJO INTERNO (assessment → progress) ===

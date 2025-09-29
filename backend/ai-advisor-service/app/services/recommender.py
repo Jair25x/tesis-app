@@ -1,3 +1,4 @@
+# app/services/recommender.py
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -12,7 +13,11 @@ from app.ml.model_registry import classify_level
 from app.models.signals import StudentLevelHistory
 from app.schemas.recommendations import RecommendationItem
 from app.services.clients.curriculum_client import CurriculumClient
-
+from app.services.clients.progress_client import ProgressClient
+from app.observability.metrics import (
+    advisor_progress_batch_seconds,
+    advisor_reason_enrich_total,
+)
 
 # ---------------- util tiempo ----------------
 def _now_utc() -> datetime:
@@ -23,6 +28,26 @@ def _days_since(dt: Optional[datetime]) -> float:
         return 365.0
     delta = _now_utc() - dt
     return max(delta.total_seconds() / 86_400.0, 0.0)
+
+def _parse_iso8601(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        s = str(value).strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+def _fmt_pct(p: float) -> str:
+    # 0.0..1.0 -> "84%" (entero), 1 decimal si aplica
+    if p <= 0:
+        return "0%"
+    if p >= 1:
+        return "100%"
+    num = p * 100.0
+    return f"{num:.0f}%" if abs(num - round(num)) < 0.05 else f"{num:.1f}%"
 
 
 # ---------------- prioridad por objetivo ----------------
@@ -45,18 +70,8 @@ def _difficulty_from_stats(attempts: int, corrects: int) -> str:
         return "MEDIUM"
     return "HARD"
 
-def _reason_from_stats(attempts: int, corrects: int, last_attempt_at: Optional[datetime]) -> str:
-    cr = (corrects / attempts) if attempts > 0 else 0.0
-    if attempts == 0:
-        return "Sin historial suficiente: proponemos iniciar con objetivos base."
-    if cr < 0.5:
-        return "Refuerzo recomendado por bajo índice de aciertos recientes."
-    if _days_since(last_attempt_at) > 7:
-        return "Reactivación espaciada: retomar este objetivo tras varios días."
-    return "Oportunidad de consolidación según tu progreso."
 
-
-# ---------------- ML para RAG (sin cambios) ----------------
+# ---------------- ML para RAG (sin cambios funcionales) ----------------
 def _rag_to_score(distance: Optional[float]) -> float:
     if distance is None:
         return 0.5
@@ -126,16 +141,15 @@ def _choose_difficulty(stats_diff: str, rf_level: Optional[int]) -> str:
         return "EASY"
     if rf_level is None:
         return s
-
     if s == "MEDIUM":
         if rf_level == 1:
             return "MEDIUM"
         if rf_level == 2:
             return "MEDIUM"
-        return "HARD"  # nivel 3: subimos un poco
+        return "HARD"
     # s == "HARD"
     if rf_level == 1:
-        return "MEDIUM"  # bajamos
+        return "MEDIUM"
     if rf_level == 2:
         return "HARD"
     return "HARD"
@@ -147,20 +161,15 @@ def _pick_exercise_candidate_for_objective(
     objective_id: UUID,
     desired_diff: Optional[str]
 ) -> Optional[UUID]:
-    """
-    1) Intenta con difficulty = desired_diff
-    2) Si no hay, intenta sin difficulty (fallback)
-    Devuelve exerciseId o None.
-    """
-    # primer intento: con filtro de dificultad
+    # 1) con dificultad pedida
     try:
         if desired_diff:
             items = client.get_exercises_for_objective(
-                objective_id=str(objective_id),   # <-- asegura str
+                objective_id=str(objective_id),
                 limit=1,
                 random=False,
                 active=True,
-                difficulty=desired_diff,          # EASY|MEDIUM|HARD
+                difficulty=desired_diff,
                 order="desc",
             ) or []
             arr = items if isinstance(items, list) else (items.get("items") or [])
@@ -168,11 +177,10 @@ def _pick_exercise_candidate_for_objective(
                 return UUID(str(arr[0]["exerciseId"]))
     except Exception:
         pass
-
-    # fallback: sin filtro
+    # 2) fallback sin dificultad
     try:
         items = client.get_exercises_for_objective(
-            objective_id=str(objective_id),       # <-- asegura str
+            objective_id=str(objective_id),
             limit=1,
             random=False,
             active=True,
@@ -184,8 +192,57 @@ def _pick_exercise_candidate_for_objective(
             return UUID(str(arr[0]["exerciseId"]))
     except Exception:
         pass
-
     return None
+
+
+# ---------------- builder de reason enriquecido ----------------
+def _build_reason(
+    *,
+    attempts_total: int,
+    corrects_total: int,
+    last_attempt_at: Optional[datetime],
+    desired_diff: str,
+    enriched: Optional[Dict[str, Any]] = None
+) -> str:
+    parts: List[str] = []
+
+    # Preferimos stats de 7 días si vienen de Progress
+    if enriched:
+        try:
+            att7 = int(enriched.get("attempts7d") or 0)
+            cor7 = int(enriched.get("correct7d") or 0)
+            wr7 = float(enriched.get("winRate7d") or 0.0)
+        except Exception:
+            att7, cor7, wr7 = 0, 0, 0.0
+
+        if att7 > 0:
+            parts.append(f"Últimos 7 días: {cor7}/{att7} aciertos ({_fmt_pct(wr7)}).")
+
+        last_str = enriched.get("lastAttemptAt")
+        last = _parse_iso8601(str(last_str)) if last_str else last_attempt_at
+        if last:
+            d = _days_since(last)
+            if d < 0.5:
+                parts.append("Último intento: hoy.")
+            elif d < 1.5:
+                parts.append("Último intento: hace 1 día.")
+            else:
+                parts.append(f"Último intento: hace {int(round(d))} días.")
+
+    # Fallback si no hubo datos enriquecidos o att7 == 0
+    if not parts:
+        if attempts_total <= 0:
+            parts.append("Sin historial reciente: empecemos por la base.")
+        else:
+            rate = (corrects_total / attempts_total) if attempts_total > 0 else 0.0
+            parts.append(f"Histórico: {corrects_total}/{attempts_total} ({_fmt_pct(rate)}).")
+            if rate < 0.5:
+                parts.append("Refuerzo recomendado (baja precisión).")
+            else:
+                parts.append("Oportunidad de consolidación.")
+
+    parts.append(f"Sugerencia: nivel {str(desired_diff).upper()}.")
+    return " ".join(parts)
 
 
 # ---------------- recomendaciones por objetivo ----------------
@@ -194,9 +251,10 @@ def recommend_for_student(
     *,
     student_id: UUID,
     limit: int = 8,
-    subject: Optional[str] = None,       # reservado para futuro
-    objective_id: Optional[UUID] = None, # limita a un objetivo concreto (opcional)
+    subject: Optional[str] = None,       # reservado
+    objective_id: Optional[UUID] = None, # limitar a un OA (opcional)
     curriculum_client: Optional[CurriculumClient] = None,
+    progress_client: Optional[ProgressClient] = None,
 ) -> List[RecommendationItem]:
     params = {"sid": str(student_id)}
     where = "WHERE student_id = :sid"
@@ -214,7 +272,7 @@ def recommend_for_student(
     ).mappings().all()
 
     # nivel RF (global) para modular dificultad
-    level = None
+    level: Optional[int] = None
     try:
         feats = build_diagnostic_features(db, student_id=str(student_id), window_start=None, window_end=None)
         lvl, _pr, _ver = classify_level(feats)
@@ -233,6 +291,23 @@ def recommend_for_student(
 
     candidates.sort(key=lambda x: x[1], reverse=True)
 
+    # Enriquecer top candidatos con Progress (batch) + métricas
+    stats_by_obj: Dict[str, Dict[str, Any]] = {}
+    if progress_client and candidates:
+        top_ids = [str(c[0]) for c in candidates[: max(limit * 3, limit)]]
+        try:
+            with advisor_progress_batch_seconds.time():
+                arr = progress_client.get_objective_stats_batch(str(student_id), top_ids) or []
+            for item in arr:
+                oid = str(item.get("objectiveId"))
+                if oid:
+                    stats_by_obj[oid] = item
+            # hit si logramos poblar algo; miss si vacío
+            advisor_reason_enrich_total.labels(result="hit" if stats_by_obj else "miss").inc()
+        except Exception:
+            advisor_reason_enrich_total.labels(result="error").inc()
+            stats_by_obj = {}
+
     picked: List[RecommendationItem] = []
     client = curriculum_client
     for obj, score, attempts, corrects, last_at in candidates:
@@ -248,15 +323,24 @@ def recommend_for_student(
         if not ex_id:
             continue
 
+        enr = stats_by_obj.get(str(obj))
+        reason = _build_reason(
+            attempts_total=attempts,
+            corrects_total=corrects,
+            last_attempt_at=last_at,
+            desired_diff=desired_diff,
+            enriched=enr,
+        )
+
         picked.append(
             RecommendationItem(
                 objectiveId=obj,
                 exerciseId=ex_id,
                 score=round(float(score), 4),
                 confidence=None,
-                reason=_reason_from_stats(attempts, corrects, last_at),
+                reason=reason,
                 source="HEURISTIC",
-                difficulty=desired_diff,  # <-- lo que mostramos: combinación stats + RF
+                difficulty=desired_diff,
                 citations=[],
             )
         )

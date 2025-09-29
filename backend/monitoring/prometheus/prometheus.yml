@@ -1,0 +1,31 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # FastAPI (AI Advisor)
+  - job_name: "ai-advisor"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ai-advisor-service:8086"]
+
+  # Opcional: microservicios Spring (si exponen /actuator/prometheus)
+  - job_name: "gateway-service"
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["gateway-service:8080"]
+
+  - job_name: "progress-service"
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["progress-service:8083"]
+
+  - job_name: "curriculum-service"
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["curriculum-service:8082"]
+
+  - job_name: "duels-service"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["duels-service:8087"]

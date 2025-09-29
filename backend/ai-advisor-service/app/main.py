@@ -24,7 +24,8 @@ from app.api.routers import curriculum_debug
 from app.api.routers import reco_debug, emb_debug
 from app.api.routers import llm_debug, rag_debug
 from app.api.routers import chat_history
-from app.api.routers import metrics as metrics_router
+# ⛔ evitamos duplicar /metrics quitando el router adicional
+# from app.api.routers import metrics as metrics_router
 
 from app.core.logging import configure_logging
 from app.observability.request_id import RequestIdMiddleware
@@ -68,6 +69,7 @@ def _eureka_register_compat(
     if fn is None:
         return False, "py_eureka_client no expone init_registry_client ni init"
 
+    # ✅ usar los parámetros reales, NO variables locales inexistentes
     full_kwargs = dict(
         eureka_server=eureka_server,
         app_name=app_name,
@@ -152,16 +154,23 @@ def _spawn_eureka_registration():
 def create_app() -> FastAPI:
     configure_logging(level="INFO" if settings.ENV.lower() != "prod" else "INFO")
 
+    BEHIND_GATEWAY = os.getenv("BEHIND_GATEWAY", "true").lower() == "true"
+    PROD = settings.ENV.lower() == "prod"
+    DISABLE_DOCS = os.getenv("DISABLE_DOCS", "false").lower() == "true"
+
+    # En prod (o si DISABLE_DOCS=true) ocultamos docs públicas
+    docs_url = None if (PROD or DISABLE_DOCS) else "/docs"
+    redoc_url = None if (PROD or DISABLE_DOCS) else "/redoc"
+
     app = FastAPI(
         title="AI Advisor Service",
         version="0.1.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url="/openapi.json" if not (PROD or DISABLE_DOCS) else None,
         default_response_class=ORJSONResponse,
     )
 
-    BEHIND_GATEWAY = os.getenv("BEHIND_GATEWAY", "true").lower() == "true"
     if not BEHIND_GATEWAY and settings.ENV.lower() != "prod":
         app.add_middleware(
             CORSMiddleware,
@@ -220,7 +229,8 @@ def create_app() -> FastAPI:
     app.include_router(llm_debug.router)
     app.include_router(rag_debug.router)
     app.include_router(chat_history.router)
-    app.include_router(metrics_router.router)
+    # ⛔ no incluimos metrics_router para evitar duplicar /metrics
+    # app.include_router(metrics_router.router)
 
     @app.get("/metrics")
     def metrics():
@@ -234,6 +244,7 @@ def create_app() -> FastAPI:
             raw = (await request.body()).decode("utf-8", "ignore")
         except Exception:
             raw = "<unavailable>"
+        # Nota: si logueas headers, sanitiza Authorization en tu LoggingMiddleware
         logger.warning("request_validation_error: %s", exc.errors())
         return ORJSONResponse(
             status_code=422,
@@ -266,14 +277,16 @@ def create_app() -> FastAPI:
             content={"detail": str(exc.detail)},
         )
 
-    @app.post("/_debug/echo")
-    async def debug_echo(request: Request):
-        raw = (await request.body()).decode("utf-8", "ignore")
-        try:
-            as_json = await request.json()
-        except Exception:
-            as_json = None
-        return {"headers": dict(request.headers), "raw": raw, "json": as_json}
+    # Endpoint debug solo en no-prod y fuera del gateway
+    if (not PROD) and (not BEHIND_GATEWAY):
+        @app.post("/_debug/echo")
+        async def debug_echo(request: Request):
+            raw = (await request.body()).decode("utf-8", "ignore")
+            try:
+                as_json = await request.json()
+            except Exception:
+                as_json = None
+            return {"headers": dict(request.headers), "raw": raw, "json": as_json}
 
     return app
 

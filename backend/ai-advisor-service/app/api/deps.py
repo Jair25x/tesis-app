@@ -7,6 +7,7 @@ from app.db.session import SessionLocal
 from app.core.settings import settings
 from app.cache.redis_cache import get_redis  # reexport
 from app.services.clients.curriculum_client import CurriculumClient
+from app.services.clients.progress_client import ProgressClient
 from app.services.clients.s2s import mint_internal_jwt
 
 # --- Sesión de DB ---
@@ -26,6 +27,13 @@ def get_curriculum_client() -> CurriculumClient:
     """
     return CurriculumClient(
         base_url=settings.CURRICULUM_BASE_URL,
+        s2s_token_provider=lambda: mint_internal_jwt(roles=("INTERNAL", "ROLE_INTERNAL")),
+        timeout=5.0,
+    )
+
+def get_progress_client() -> ProgressClient:
+    return ProgressClient(
+        base_url=settings.PROGRESS_BASE_URL,
         s2s_token_provider=lambda: mint_internal_jwt(roles=("INTERNAL","ROLE_INTERNAL")),
         timeout=5.0,
     )

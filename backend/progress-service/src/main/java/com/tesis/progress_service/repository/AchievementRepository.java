@@ -16,4 +16,6 @@ public interface AchievementRepository extends JpaRepository<Achievement, UUID> 
   // Útil si tu entidad tiene "active". Si no lo tiene, no lo uses desde el
   // servicio.
   List<Achievement> findByActiveTrue(Sort sort);
+
+  Optional<Achievement> findByCodeAndActiveTrue(String code);
 }

@@ -81,6 +81,7 @@ services:
       - SPRING_PROFILES_ACTIVE=dev
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
       - CONFIG_SERVER_URL=http://config-service:8888
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
       - eureka-server
       - config-service
@@ -142,6 +143,7 @@ services:
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=misan
       - S2S_JWT_SECRET=${S2S_JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
       - eureka-server
       - config-service
@@ -254,10 +256,13 @@ services:
       - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_MANAGEMENT_BASE_URL=http://progress-service:8083
       - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_NAME=admin
       - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_PASSWORD=admin
-      # DB (apunta al servicio progress-db)
+      # DB
       - SPRING_DATASOURCE_URL=jdbc:postgresql://progress-db:5432/progressdb
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=misan
+      # Claves JWT
+      - JWT_SECRET=${JWT_SECRET}
+      - S2S_JWT_SECRET=${S2S_JWT_SECRET}
     depends_on:
       - eureka-server
       - config-service
@@ -374,7 +379,7 @@ services:
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=misan
       # JWT (si validas tokens dentro del servicio además del gateway)
-      - JWT_SECRET=${JWT_SECRET:-N/B9yH7...==}
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
       - eureka-server
       - config-service
@@ -479,6 +484,66 @@ services:
       interval: 15s
       timeout: 5s
       retries: 10
+  duels-db:
+    image: postgres:17.5-alpine3.22
+    container_name: duels-db
+    environment:
+      - POSTGRES_DB=duelsdb
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=misan
+    ports:
+      - "5448:5432" # opcional en host
+    volumes:
+      - duels-db-data:/var/lib/postgresql/data
+    restart: always
+    networks: [tesis-network]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d duelsdb"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  duels-service:
+    build:
+      context: ./duels-service
+      dockerfile: Dockerfile
+    container_name: duels-service
+    ports:
+      - "8087:8087"
+    environment:
+      - PORT=8087
+      - DATABASE_URL=postgresql+psycopg://postgres:misan@duels-db:5432/duelsdb
+      # Pendiente de implementacion
+      - REDIS_URL=
+      # JWT de usuarios (el mismo que el gateway/otros)
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ALGS=HS512,HS384,HS256
+      # Endpoints S2S
+      - CURRICULUM_BASE=http://curriculum-service:8082
+      - PROGRESS_BASE=http://progress-service:8083
+      # S2S JWT (duels -> progress)
+      - S2S_JWT_SECRET=${S2S_JWT_SECRET}
+      - S2S_JWT_ISSUER=duels-service
+      # Eureka (opcional pero recomendado para homogeneidad)
+      - EUREKA_SERVER=http://eureka-server:8761/eureka/
+      - EUREKA_APP_NAME=DUELS-SERVICE
+      - DUELS_HOST=duels-service
+      - HEALTH_URL=http://duels-service:8087/healthz
+      - HOME_URL=http://duels-service:8087/docs
+      - RATE_LIMIT_REDIS_URL=redis://advisor-redis:6379/1
+      - RATE_LIMIT_MATCHES_PER_MIN=10
+    depends_on:
+      - duels-db
+      - advisor-redis
+      - curriculum-service
+      - eureka-server
+    restart: on-failure
+    networks: [tesis-network]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8087/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
   frontend:
     build:
@@ -494,6 +559,31 @@ services:
     depends_on:
       - gateway-service
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: on-failure
+    networks: [tesis-network]
+    depends_on:
+      - ai-advisor-service
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: on-failure
+    networks: [tesis-network]
+    depends_on:
+      - prometheus
+
 # --- Definición de Volúmenes ---
 volumes:
   auth-profile-db-data:
@@ -502,6 +592,7 @@ volumes:
   classroom-db-data:
   assessment-db-data:
   advisor-db-data:
+  duels-db-data:
 # --- Definicion de Redes ---
 networks:
   tesis-network:

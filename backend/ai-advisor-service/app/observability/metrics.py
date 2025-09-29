@@ -1,10 +1,9 @@
-# app/observability/metrics.py
 from __future__ import annotations
 import time
 from contextlib import contextmanager
 from prometheus_client import Counter, Histogram, Gauge
 
-# Métricas HTTP generales
+# ---------------- HTTP ----------------
 http_requests_total = Counter(
     "http_requests_total",
     "Total de requests HTTP",
@@ -17,30 +16,58 @@ http_request_duration_seconds = Histogram(
     ["method", "path", "status"],
 )
 
-# Métricas de dominio
+# ---------------- Dominio: Advisor ----------------
 advisor_reco_latency_seconds = Histogram(
-    "advisor_reco_latency_seconds", "Latencia de generación de recomendaciones", []
+    "advisor_reco_latency_seconds",
+    "Latencia de generación de recomendaciones",
+    []
 )
+
 advisor_chat_latency_seconds = Histogram(
-    "advisor_chat_latency_seconds", "Latencia de respuestas de chat", []
+    "advisor_chat_latency_seconds",
+    "Latencia de respuestas de chat",
+    []
 )
 
 advisor_rag_hits_total = Counter(
-    "advisor_rag_hits_total", "Consultas RAG con hit (docs relevantes encontrados)", []
+    "advisor_rag_hits_total",
+    "Consultas RAG con hit (docs relevantes encontrados)",
+    []
 )
 advisor_rag_misses_total = Counter(
-    "advisor_rag_misses_total", "Consultas RAG sin hit", []
+    "advisor_rag_misses_total",
+    "Consultas RAG sin hit",
+    []
 )
 
-# Chat persistence
-chat_conversations_created_total = Counter(
-    "chat_conversations_created_total", "Conversaciones creadas via API pública", []
-)
-chat_messages_ingested_total = Counter(
-    "chat_messages_ingested_total", "Mensajes agregados a conversaciones", []
+# Latencia del batch al progress-service
+advisor_progress_batch_seconds = Histogram(
+    "advisor_progress_batch_seconds",
+    "Latency of batch stats call to progress-service",
+    buckets=(0.05, 0.1, 0.2, 0.5, 1, 2, 5),
 )
 
-# "Info" de versión de modelo usando Gauge etiquetado:
+# Resultado del enriquecimiento de 'reason'
+advisor_reason_enrich_total = Counter(
+    "advisor_reason_enrich_total",
+    "Resultado del enriquecimiento de 'reason' con stats de Progress",
+    ["result"]  # result in {hit, miss, error}
+)
+
+# CTR / Interacciones con recomendaciones
+advisor_reco_events_total = Counter(
+    "advisor_reco_events_total",
+    "Eventos de interacción con recomendaciones",
+    ["event"]  # OPEN|DISMISS|HOVER
+)
+
+advisor_reco_click_total = Counter(
+    "advisor_reco_click_total",
+    "Clicks (OPEN) en recomendaciones",
+    ["difficulty", "source"]  # p.ej. difficulty=EASY|MEDIUM|HARD|UNK, source=AI_RECO
+)
+
+# "Info" de modelo
 advisor_model_version_info = Gauge(
     "advisor_model_version_info",
     "Versión de modelo en servicio; se fija a 1 para la versión activa",
@@ -52,7 +79,6 @@ def set_model_version(version: str) -> None:
 
 @contextmanager
 def observe_latency(histogram: Histogram):
-    """Context manager para medir y registrar latencias con un Histogram."""
     start = time.perf_counter()
     try:
         yield

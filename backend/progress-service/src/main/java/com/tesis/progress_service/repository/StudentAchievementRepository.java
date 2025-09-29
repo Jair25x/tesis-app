@@ -11,4 +11,6 @@ public interface StudentAchievementRepository extends JpaRepository<StudentAchie
   boolean existsByStudentIdAndAchievement_Id(UUID studentId, UUID achievementId);
 
   List<StudentAchievement> findAllByStudentIdOrderByEarnedAtDesc(UUID studentId);
+
+  boolean existsByStudentIdAndAchievement_Code(UUID studentId, String code);
 }

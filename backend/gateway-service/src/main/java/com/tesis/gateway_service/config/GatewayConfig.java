@@ -22,90 +22,87 @@ public class GatewayConfig {
         public RouteLocator customRouteLocator(RouteLocatorBuilder builder) {
                 return builder.routes()
 
-                                // Ruta para el servicio Eureka Server (generalmente no necesita JWT filter)
+                                // ==============================
+                                // Infra
+                                // ==============================
                                 .route("eureka-server", r -> r
                                                 .path("/eureka/**")
                                                 .uri("lb://EUREKA-SERVER"))
-
-                                // Ruta para el servicio Admin Monitoring (generalmente no necesita JWT filter)
                                 .route("admin-monitoring-service", r -> r
                                                 .path("/admin/**")
                                                 .uri("lb://ADMIN-MONITORING-SERVICE"))
-
-                                // Ruta para el servicio Config Server (generalmente no necesita JWT filter)
                                 .route("config-service", r -> r
                                                 .path("/config/**")
                                                 .uri("lb://CONFIG-SERVICE"))
 
-                                // Auth Service
-                                // Si el frontend envía /api/auth/login y el Auth-Service espera
-                                // /api/auth/login,
-                                // el Gateway debe reenviar la ruta tal cual.
+                                // ==============================
+                                // Auth
+                                // ==============================
                                 .route("auth-service", r -> r
-                                                .path("/api/auth/**") // Coincide con la ruta que envía el frontend (con
-                                                                      // /api)
-                                                .filters(f -> f
-                                                                // No se necesita stripPrefix ni rewritePath si la URL
-                                                                // del frontend
-                                                                // ya coincide con la que espera el microservicio.
-                                                                .filter(jwtFilter)) // Aplica el filtro JWT (maneja
-                                                                                    // rutas abiertas)
+                                                .path("/api/auth/**")
+                                                .filters(f -> f.filter(jwtFilter)) // el filtro libera /api/auth/**
                                                 .uri("lb://AUTH-SERVICE"))
 
-                                // Curriculum Service
-                                // Asumimos que el frontend envía /api/curricula/... y el servicio espera
-                                // /api/curricula/...
-                                // Por lo tanto, el Gateway debe reenviar la ruta tal cual.
+                                // ==============================
+                                // Curriculum / Progress / Classrooms / Assessments / Advisor
+                                // ==============================
                                 .route("curriculum-service", r -> r
-                                                .path("/api/curricula/**") // Coincide con la ruta que envía el frontend
-                                                                           // (con /api)
+                                                .path("/api/curricula/**")
                                                 .filters(f -> f
-                                                                // Se eliminó stripPrefix(1) en la versión anterior, lo
-                                                                // cual es correcto si el servicio espera /api
                                                                 .filter(jwtFilter)
-                                                                .addRequestHeader("X-Internal-Call", "gateway")) // Buen
-                                                                                                                 // filtro
-                                                                                                                 // para
-                                                                                                                 // llamadas
-                                                                                                                 // internas
+                                                                .addRequestHeader("X-Internal-Call", "gateway"))
                                                 .uri("lb://CURRICULUM-SERVICE"))
-
-                                // ... añade más rutas aquí siguiendo el mismo patrón
                                 .route("progress-service", r -> r
                                                 .path("/api/progress/**")
                                                 .filters(f -> f
-                                                                .filter(jwtFilter) // tu filtro valida JWT, libera
-                                                                                   // /api/auth/**, etc.
-                                                                .addRequestHeader("X-Internal-Call", "gateway")
-                                                // Estas 2 cabeceras deben ser puestas por tu JwtGatewayFilter al
-                                                // validar el token:
-                                                // X-Auth-Username y X-Auth-Roles
-                                                )
+                                                                .filter(jwtFilter)
+                                                                .addRequestHeader("X-Internal-Call", "gateway"))
                                                 .uri("lb://PROGRESS-SERVICE"))
-
                                 .route("classroom-service", r -> r
                                                 .path("/api/classrooms/**")
                                                 .filters(f -> f
                                                                 .filter(jwtFilter)
-                                                                .addRequestHeader("X-Internal-Call", "gateway")
-                                                // JwtGatewayFilter debe inyectar: x-user-id (UUID), X-Auth-Username,
-                                                // X-Auth-Roles
-                                                )
+                                                                .addRequestHeader("X-Internal-Call", "gateway"))
                                                 .uri("lb://CLASSROOM-SERVICE"))
-
                                 .route("assessment-service", r -> r
                                                 .path("/api/assessments/**")
                                                 .filters(f -> f
                                                                 .filter(jwtFilter)
                                                                 .addRequestHeader("X-Internal-Call", "gateway"))
                                                 .uri("lb://ASSESSMENT-SERVICE"))
-
-                                // AI Advisor Service (FastAPI) — público para el FE
                                 .route("ai-advisor-service", r -> r
                                                 .path("/api/ai/**")
-                                                .filters(f -> f.filter(jwtFilter)
+                                                .filters(f -> f
+                                                                .filter(jwtFilter)
                                                                 .addRequestHeader("X-Internal-Call", "gateway"))
                                                 .uri("lb://AI-ADVISOR-SERVICE"))
+
+                                // ==============================
+                                // DUELS — WS (antes que la HTTP)
+                                // - sin jwtFilter (el duels-service valida ?token=)
+                                // - rewrite /api/duels/ws -> /ws
+                                // ==============================
+                                .route("duels-service-ws", r -> r
+                                                .path("/api/duels/ws")
+                                                .filters(f -> f
+                                                                .rewritePath("/api/duels/ws", "/ws")
+                                                                .addRequestHeader("X-Internal-Call", "gateway")
+                                                                .removeRequestHeader("Cookie")
+                                                                .removeRequestHeader("Set-Cookie"))
+                                                .uri("lb:ws://DUELS-SERVICE"))
+
+                                // ==============================
+                                // DUELS — HTTP
+                                // ==============================
+                                .route("duels-service-http", r -> r
+                                                .path("/api/duels/**")
+                                                .filters(f -> f
+                                                                .filter(jwtFilter)
+                                                                .addRequestHeader("X-Internal-Call", "gateway")
+                                                                .removeRequestHeader("Cookie")
+                                                                .removeRequestHeader("Set-Cookie"))
+                                                .uri("lb://DUELS-SERVICE"))
+
                                 .build();
         }
 }

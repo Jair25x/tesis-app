@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 public class CurriculumClientImpl implements CurriculumClient {
 
   private final @Qualifier("lbWebClientBuilder") WebClient.Builder webClientBuilder;
+  private final S2SHeaders s2sHeaders; // << INYECTADO
 
   @Value("${clients.curriculum.base-url:http://curriculum-service}")
   private String curriculumBase;
@@ -39,10 +40,10 @@ public class CurriculumClientImpl implements CurriculumClient {
     var body = Map.of("answer", payload == null ? Map.of() : payload);
 
     try {
-      var response = webClientBuilder.build()
+      CheckResultDto response = webClientBuilder.build()
           .post()
           .uri(curriculumBase + "/api/curricula/exercises/{exerciseId}/check", exerciseId)
-          .headers(S2SHeaders::enrich)
+          .headers(s2sHeaders::enrich) // << USA EL BEAN
           .bodyValue(body)
           .retrieve()
           .onStatus(HttpStatusCode::is4xxClientError, resp -> resp.bodyToMono(String.class)
@@ -55,7 +56,6 @@ public class CurriculumClientImpl implements CurriculumClient {
       if (response == null) {
         throw new ExternalServiceException("Respuesta vacía desde curriculum-service /check");
       }
-
       return response;
 
     } catch (WebClientResponseException wce) {
@@ -76,7 +76,9 @@ public class CurriculumClientImpl implements CurriculumClient {
         "No se pudo evaluar el ejercicio " + exerciseId + " en curriculum-service", t);
   }
 
-  private record CheckAnswerResponseLite(boolean correct, Double score, String feedback) {}
+  private record CheckAnswerResponseLite(boolean correct, Double score, String feedback) {
+  }
+
   private CheckResultDto toCheckResultDto(CheckAnswerResponseLite src) {
     return CheckResultDto.builder()
         .correct(src.correct())
@@ -86,16 +88,18 @@ public class CurriculumClientImpl implements CurriculumClient {
   }
 
   // ===== NUEVO: batch conteo de ejercicios por OA =====
+  private record ExerciseCountsRequest(Collection<UUID> ids, Boolean active) {
+  }
 
-  private record ExerciseCountsRequest(Collection<UUID> ids, Boolean active) {}
-  // Esperamos { "counts": { "<uuid>": number, ... } }
-  private record ExerciseCountsResponse(Map<String, Integer> counts) {}
+  private record ExerciseCountsResponse(Map<String, Integer> counts) {
+  }
 
   @Override
   @CircuitBreaker(name = "curriculumClient", fallbackMethod = "countsFallback")
   @Retry(name = "curriculumClient")
   public Map<UUID, Integer> getExerciseCountsForObjectives(Collection<UUID> objectiveIds, boolean active) {
-    if (objectiveIds == null || objectiveIds.isEmpty()) return Collections.emptyMap();
+    if (objectiveIds == null || objectiveIds.isEmpty())
+      return Collections.emptyMap();
 
     ExerciseCountsRequest body = new ExerciseCountsRequest(objectiveIds, active);
 
@@ -103,7 +107,7 @@ public class CurriculumClientImpl implements CurriculumClient {
       ExerciseCountsResponse resp = webClientBuilder.build()
           .post()
           .uri(curriculumBase + "/internal/objectives/exercise-counts")
-          .headers(S2SHeaders::enrich)
+          .headers(s2sHeaders::enrich) // << USA EL BEAN
           .bodyValue(body)
           .retrieve()
           .onStatus(HttpStatusCode::is4xxClientError, r -> r.bodyToMono(String.class)
@@ -112,16 +116,15 @@ public class CurriculumClientImpl implements CurriculumClient {
           .bodyToMono(ExerciseCountsResponse.class)
           .block();
 
-      if (resp == null || resp.counts() == null) return Collections.emptyMap();
+      if (resp == null || resp.counts() == null)
+        return Collections.emptyMap();
 
       return resp.counts().entrySet().stream().collect(Collectors.toMap(
           e -> UUID.fromString(e.getKey()),
-          Map.Entry::getValue
-      ));
+          Map.Entry::getValue));
 
     } catch (WebClientResponseException wce) {
       if (wce.getStatusCode().is4xxClientError()) {
-        // Si el endpoint aún no existe, devolvemos vacío y dejamos log.
         log.warn("Curriculum /internal/objectives/exercise-counts 4xx: {}", wce.getMessage());
         return Collections.emptyMap();
       }

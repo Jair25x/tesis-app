@@ -1,69 +1,76 @@
+# app/services/clients/progress_client.py
 from __future__ import annotations
-from typing import Any, Dict, Optional, Iterable, List
+from typing import Callable, Iterable, List, Optional
+import httpx
 
-from app.core.settings import settings
-from app.cache.redis_cache import cache_get_json, cache_set_json
-from app.services.clients.http_client import HttpClient
-from app.services.clients.s2s import mint_internal_jwt
-
-TTL_SHORT = 60 * 3  # 3 min
 
 class ProgressClient:
     """
-    Cliente liviano al progress-service con caché y batch.
+    Cliente interno (S2S) hacia progress-service.
+    Usa cabeceras X-Internal-* + JWT S2S (INTERNAL, ROLE_INTERNAL).
     """
-    def __init__(self, base_url: Optional[str] = None, timeout: float = 5.0):
-        self.base_url = (base_url or settings.PROGRESS_BASE_URL or "http://progress-service:8083").rstrip("/")
-        self.http = HttpClient(
-            base_url=self.base_url,
-            default_timeout=timeout,
-            headers_provider=lambda: {
-                "Authorization": f"Bearer {mint_internal_jwt(['ROLE_INTERNAL'])}",
-                "Content-Type": "application/json; charset=utf-8",
-                "X-Internal-Call": "advisor",
-            },
-        )
 
-    def get_student_overview(self, student_id: str) -> Dict[str, Any]:
-        ck = f"progress:overview:{student_id}"
-        c = cache_get_json(ck)
-        if c is not None:
-            return c
-        data = self.http.get_json(f"/internal/progress/students/{student_id}/overview") or {}
-        if data:
-            cache_set_json(ck, data, TTL_SHORT)
-        return data
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        s2s_token_provider: Optional[Callable[[], str]] = None,
+        timeout: float = 5.0,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self._s2s = s2s_token_provider
+        self._client = httpx.Client(timeout=timeout)
 
-    def get_objective_stats(self, student_id: str, objective_id: str) -> Dict[str, Any]:
-        ck = f"progress:stats:{student_id}:{objective_id}"
-        c = cache_get_json(ck)
-        if c is not None:
-            return c
-        data = self.http.get_json(f"/internal/progress/students/{student_id}/objectives/{objective_id}/stats") or {}
-        if data:
-            cache_set_json(ck, data, TTL_SHORT)
-        return data
+    # ---------------- headers S2S ----------------
+    def _headers(self) -> dict:
+        """
+        - X-Internal-Call: para fast-path interno
+        - X-Auth-Username / X-Auth-Roles: por compatibilidad
+        - Authorization: Bearer <jwt S2S> firmado con S2S_JWT_SECRET
+        """
+        h = {
+            "X-Internal-Call": "ai-advisor-service",
+            "X-Auth-Username": "ai-advisor-service",
+            "X-Auth-Roles": "ROLE_INTERNAL,INTERNAL",
+        }
+        if self._s2s:
+            try:
+                tok = self._s2s()
+                if tok:
+                    h["Authorization"] = f"Bearer {tok}"
+            except Exception:
+                # No bloquees si no se pudo firmar; el Progress también acepta X-Internal-*
+                pass
+        return h
 
-    def get_objective_stats_batch(self, student_id: str, objective_ids: Iterable[str]) -> List[Dict[str, Any]]:
-        ids = list(objective_ids or [])
+    # ---------------- endpoints usados por el recomendador ----------------
+    def get_objective_stats_batch(
+        self,
+        student_id: str,
+        objective_ids: Iterable[str],
+    ) -> List[dict]:
+        """
+        POST /internal/progress/students/{studentId}/objectives/stats:batch
+        body: { "objectiveIds": [ "uuid", ... ] }
+        return: [ { objectiveId, status, solvedDistinct, attempts7d, correct7d, winRate7d, lastAttemptAt }, ... ]
+        """
+        ids = [str(x) for x in (objective_ids or [])]
         if not ids:
             return []
-        miss: list[str] = []
-        result: list[Dict[str, Any]] = []
-        for oid in ids:
-            ck = f"progress:stats:{student_id}:{oid}"
-            c = cache_get_json(ck)
-            if c is not None:
-                result.append(c)
-            else:
-                miss.append(oid)
-        if miss:
-            data = self.http.post_json(
-                f"/internal/progress/students/{student_id}/objectives/stats:batch",
-                body={"objectiveIds": miss}
-            ) or []
-            for item in data:
-                oid = str(item.get("objectiveId"))
-                cache_set_json(f"progress:stats:{student_id}:{oid}", item, TTL_SHORT)
-            result.extend(data)
-        return result
+
+        url = f"{self.base_url}/internal/progress/students/{student_id}/objectives/stats:batch"
+        resp = self._client.post(url, json={"objectiveIds": ids}, headers=self._headers())
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else []
+
+    def get_objective_stats(
+        self, student_id: str, objective_id: str
+    ) -> Optional[dict]:
+        """
+        GET /internal/progress/students/{studentId}/objectives/{objectiveId}/stats
+        """
+        url = f"{self.base_url}/internal/progress/students/{student_id}/objectives/{objective_id}/stats"
+        resp = self._client.get(url, headers=self._headers())
+        resp.raise_for_status()
+        return resp.json()  # dict
