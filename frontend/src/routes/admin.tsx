@@ -97,7 +97,7 @@ const AdminAdvisorChat = lazy(
 // Explorer (no lazy en tu código, pero puede ser lazy si quieres)
 import ExplorerDashboard from "../pages/admin/explorer/ExplorerDashboard";
 import { ExplorerProvider } from "../pages/admin/explorer/ExplorerProvider";
-
+const DuelReportsAdmin = lazy(() => import("../pages/admin/duels/DuelReportsAdmin"));
 // Catálogo global (lazy)
 const AllCompetencies = lazy(
   () => import("../pages/admin/catalog/AllCompetencies")
@@ -121,6 +121,15 @@ export const adminRoute = {
       element: (
         <Suspense fallback={<LoadingScreen />}>
           <AdminDashboard />
+        </Suspense>
+      ),
+    },
+    // Duelos
+    {
+      path: "duels/reports",
+      element: (
+        <Suspense fallback={<LoadingScreen />}>
+          <DuelReportsAdmin />
         </Suspense>
       ),
     },

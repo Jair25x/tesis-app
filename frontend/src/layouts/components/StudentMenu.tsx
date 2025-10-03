@@ -1,10 +1,12 @@
-// src/layouts/components/StudentMenu.tsx
+// components/layout/StudentMenu.tsx
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "../../utils/cn";
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listMySubmissions } from "../../services/assessmentsService";
 import { assessmentsKeys } from "../../hooks/assessments/queryKeys";
+import { resolveCode } from "../../services/duelsService";
+import { useToastError } from "../../hooks/useToastError";
 
 interface StudentMenuProps {
   studentOpen: boolean;
@@ -24,6 +26,17 @@ function CountPill({ n }: { n: number }) {
       {n}
     </span>
   );
+}
+
+function getAccessToken(): string | null {
+  try {
+    return (
+      localStorage.getItem("accessToken") ||
+      sessionStorage.getItem("accessToken")
+    );
+  } catch {
+    return null;
+  }
 }
 
 function getLastSeenSubmittedCount(): number {
@@ -46,6 +59,8 @@ export default function StudentMenu({
   const [lastSubmissionId, setLastSubmissionId] = useState<string | null>(null);
   const [joinCode, setJoinCode] = useState<string>("");
 
+  const toastError = useToastError(); // solo toast (sin estado inline aquí)
+
   useEffect(() => {
     const id = localStorage.getItem("assess:lastSubmissionId");
     setLastSubmissionId(id);
@@ -58,7 +73,7 @@ export default function StudentMenu({
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Pendientes del BE = SUBMITTED (size=1 para obtener totalElements rápido)
+  // Pendientes del BE = SUBMITTED (size=1 para totalElements rápido)
   const { data: serverSubmitted = 0 } = useQuery({
     queryKey: assessmentsKeys.mySubmissionsCount("SUBMITTED"),
     queryFn: async () => {
@@ -75,10 +90,16 @@ export default function StudentMenu({
 
   const unseen = Math.max(serverSubmitted - getLastSeenSubmittedCount(), 0);
 
-  const onJoin = (e: FormEvent) => {
+  const onJoin = async (e: FormEvent) => {
     e.preventDefault();
     const raw = joinCode.trim();
     if (!raw) return;
+
+    const token = getAccessToken();
+    if (!token) {
+      toastError("No hay sesión activa.");
+      return;
+    }
 
     // Normaliza a MAYÚSCULAS y filtra caracteres
     const code = raw.toUpperCase().replace(/[^A-Z0-9-]/g, "");
@@ -90,11 +111,15 @@ export default function StudentMenu({
       );
 
     setSidebarOpen(false);
-    if (looksUuid) {
-      navigate(`/student/duels/${code}`);
-    } else {
-      // Código corto (p.ej. ABC123)
-      navigate(`/student/duels/room?code=${encodeURIComponent(code)}`);
+    try {
+      if (looksUuid) {
+        navigate(`/student/duels/${code}`);
+      } else {
+        await resolveCode(code, token); // valida antes de navegar
+        navigate(`/student/duels/room?code=${encodeURIComponent(code)}`);
+      }
+    } catch (err) {
+      toastError(err, "Código no encontrado.");
     }
   };
 
@@ -162,12 +187,19 @@ export default function StudentMenu({
             🤖 Asistente IA
           </NavLink>
 
-          {/* ====== NUEVA SECCIÓN: Duelos ====== */}
+          {/* ====== Duelos ====== */}
           <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">
             <div className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide opacity-60">
-              Duelos
+              Duelos Matematicos
             </div>
             <nav className="space-y-1">
+              <NavLink
+                to="/student/duels/hub"
+                className={item}
+                onClick={() => setSidebarOpen(false)}
+              >
+                🏰 Hub de duelos
+              </NavLink>
               <NavLink
                 to="/student/duels/new"
                 className={item}
@@ -176,13 +208,21 @@ export default function StudentMenu({
                 ⚔️ Nuevo duelo
               </NavLink>
               <NavLink
+                to="/student/duels/new/advanced"
+                className={item}
+                onClick={() => setSidebarOpen(false)}
+              >
+                🧩 Avanzado (por rondas)
+              </NavLink>
+              <NavLink
                 to="/student/duels/join"
                 className={item}
                 onClick={() => setSidebarOpen(false)}
               >
                 🔑 Unirme con código
               </NavLink>
-              {/* Unirme con código (inline, sin página extra) */}
+
+              {/* Unirme con código (inline, validando antes de navegar) */}
               <form onSubmit={onJoin} className="px-3 pt-1">
                 <label className="mb-1 block text-[11px] opacity-70">
                   Unirme con código
@@ -191,9 +231,13 @@ export default function StudentMenu({
                   <input
                     type="text"
                     inputMode="text"
-                    placeholder="matchId o código"
+                    placeholder="código corto o UUID"
                     value={joinCode}
-                    onChange={(e) => setJoinCode(e.target.value)}
+                    onChange={(e) =>
+                      setJoinCode(
+                        e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, "")
+                      )
+                    }
                     className="w-full rounded-md border px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-900"
                     aria-label="Código de duelo"
                   />

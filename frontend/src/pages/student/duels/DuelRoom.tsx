@@ -1,11 +1,22 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../context/useAuth";
 import { useDuelWs } from "../../../hooks/duels/useDuelWs";
-import type { ServerMsg, DuelExercise } from "../../../types/duels/duels";
+import type {
+  ServerMsg,
+  DuelExercise,
+  PlayerInfo,
+} from "../../../types/duels/duels";
 import DuelExerciseRenderer from "../../../components/student/duels/DuelExerciseRenderer";
 import { getExerciseForExam } from "../../../services/exerciseService";
 import { getMatch } from "../../../services/duelsService";
+import type { TemplateType } from "../../../types/exercise/TemplateSchemaResponse";
 
 /* === Helpers === */
 function getAccessToken(): string | null {
@@ -24,15 +35,33 @@ type WsOpts =
   | { token: string; matchId: string; code?: undefined }
   | { token: string; matchId?: undefined; code: string };
 
-/** Mensaje "state" con extras opcionales del backend */
+/** Type guard: ejercicio “completo” (ya trae templateType/params) */
+function isCompleteExercise(ex: DuelExercise): ex is DuelExercise & {
+  templateType: TemplateType;
+  params: Record<string, unknown>;
+} {
+  return (
+    typeof ex.templateType === "string" &&
+    typeof ex.params === "object" &&
+    ex.params !== null
+  );
+}
+
+/** Extra de estado para lobby */
 type StateExtras = {
   code?: string;
   ready?: number;
+  readyIds?: string[];
   players?: number;
+  playersInfo?: PlayerInfo[];
   maxPlayers?: number;
 };
+
 type ServerStateMsgWithExtras = Extract<ServerMsg, { type: "state" }> &
   StateExtras;
+type ServerFinalMsgWithExtras = Extract<ServerMsg, { type: "final" }> & {
+  playersInfo?: PlayerInfo[];
+};
 
 const DuelRoom: React.FC = () => {
   const { matchId: matchIdParam = "" } = useParams<{ matchId: string }>();
@@ -46,30 +75,43 @@ const DuelRoom: React.FC = () => {
     "WAITING" | "COUNTDOWN" | "ROUND" | "RESULTS"
   >("WAITING");
   const [round, setRound] = useState<number>(0);
+  const [qIndex, setQIndex] = useState<number>(1);
+  const [qTotal, setQTotal] = useState<number>(1);
+
   const [exercise, setExercise] = useState<DuelExercise | null>(null);
   const [exerciseHtml, setExerciseHtml] = useState<string | null>(null);
+
   const [score, setScore] = useState<Record<string, number>>({});
   const [finalWinner, setFinalWinner] = useState<string | null>(null);
   const [finalByRound, setFinalByRound] = useState<
     Array<{ round: number; winnerId: string | null }>
   >([]);
+
   const [countdown, setCountdown] = useState<number>(0);
   const [sent, setSent] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingExerciseMeta, setLoadingExerciseMeta] = useState(false);
+  const [exerciseLoadErr, setExerciseLoadErr] = useState<string | null>(null);
 
   // Lobby: métricas opcionales del backend
   const [readyCount, setReadyCount] = useState<number | undefined>(undefined);
+  const [readyIds, setReadyIds] = useState<Set<string>>(new Set());
   const [playersCount, setPlayersCount] = useState<number | undefined>(
     undefined
   );
   const [maxPlayers, setMaxPlayers] = useState<number | undefined>(undefined);
+
+  // Nombres de jugadores
+  const [playersMap, setPlayersMap] = useState<Record<string, string>>({}); // id -> name
 
   // Tiempo por pregunta (si el backend manda deadline millis)
   const deadlineRef = useRef<number | null>(null);
   const totalTimeMsRef = useRef<number>(0);
   const [timeLeftMs, setTimeLeftMs] = useState<number>(0);
   const timerRef = useRef<number | null>(null);
+
+  // Envío “en curso” (ref para usar dentro de setInterval)
+  const sentRef = useRef<boolean>(false);
 
   // UI: estado "yo estoy listo"
   const [iAmReady, setIAmReady] = useState<boolean>(false);
@@ -82,25 +124,33 @@ const DuelRoom: React.FC = () => {
   const token = getAccessToken() || "";
 
   // Habilitar WS solo si hay login + token + (match o código) y no estamos en RESULTS
-  const wsEnabled =
-    isAuthenticated &&
-    !!token &&
-    (Boolean(shortCode) || Boolean(matchIdParam)) &&
-    status !== "RESULTS";
+  const wsEnabled = useMemo(
+    () =>
+      isAuthenticated &&
+      !!token &&
+      (Boolean(shortCode) || Boolean(matchIdParam)) &&
+      status !== "RESULTS",
+    [isAuthenticated, token, shortCode, matchIdParam, status]
+  );
 
-  const wsOpts: WsOpts =
-    shortCode != null
-      ? { code: shortCode, token }
-      : matchIdParam
-      ? { matchId: matchIdParam, token }
-      : { matchId: "", token };
+  // ⚠️ MEMO: que no cambie la identidad en cada render
+  const wsOpts: WsOpts = useMemo(() => {
+    if (shortCode != null) return { code: shortCode, token };
+    if (matchIdParam) return { matchId: matchIdParam, token };
+    return { matchId: "", token };
+  }, [shortCode, matchIdParam, token]);
 
   const { connected, lastMsg, send } = useDuelWs(wsOpts, wsEnabled);
 
-  // medición local de duración por ronda (para enviar durationMs)
+  // medición local de duración por (sub)pregunta
   const t0Ref = useRef<number>(0);
   const now = () =>
     typeof performance !== "undefined" ? performance.now() : Date.now();
+
+  // Mantener sentRef sincronizado
+  useEffect(() => {
+    sentRef.current = sent;
+  }, [sent]);
 
   // Validaciones de sesión/token
   useEffect(() => {
@@ -122,7 +172,7 @@ const DuelRoom: React.FC = () => {
         const m = await getMatch(matchIdParam, token);
         if (m?.shortCode) setShortCode(m.shortCode);
       } catch {
-        return;
+        /* empty */
       }
     };
     void run();
@@ -138,139 +188,194 @@ const DuelRoom: React.FC = () => {
     };
   }, []);
 
+  const mergePlayersInfo = (list?: PlayerInfo[]) => {
+    if (!list || list.length === 0) return;
+    setPlayersMap((prev) => {
+      const next = { ...prev };
+      for (const p of list) {
+        if (p && typeof p.id === "string") {
+          const nm = (p.name || "").trim();
+          if (nm) next[p.id] = nm;
+          else next[p.id] ||= `Jugador ${p.id.slice(0, 4)}`;
+        }
+      }
+      return next;
+    });
+  };
+
+  // Retry de meta del ejercicio
+  const retryExerciseMeta = useCallback(() => {
+    if (!exercise?.id) return;
+    setExerciseLoadErr(null);
+    setLoadingExerciseMeta(true);
+    getExerciseForExam(exercise.id)
+      .then((meta) => {
+        setExercise({
+          id: exercise.id,
+          templateType: meta.templateType,
+          params: meta.parameters ?? {},
+        });
+        setExerciseHtml(meta.statementRendered ?? null);
+      })
+      .catch(() => {
+        setExerciseLoadErr("No se pudo cargar el enunciado del ejercicio.");
+      })
+      .finally(() => setLoadingExerciseMeta(false));
+  }, [exercise?.id]);
+
   // Manejo de mensajes del WS
   useEffect(() => {
-    const msg = lastMsg;
-    if (!msg) return;
+    if (!lastMsg) return;
 
-    const handle = async (m: ServerMsg) => {
-      switch (m.type) {
-        case "state": {
-          setStatus(m.status);
-          if (typeof m.round === "number") setRound(m.round);
+    const m = lastMsg;
+    switch (m.type) {
+      case "state": {
+        const st = m as ServerStateMsgWithExtras;
+        setStatus(st.status);
+        if (typeof st.round === "number") setRound(st.round);
 
-          // extras opcionales enviados por el BE
-          const st = m as ServerStateMsgWithExtras;
-          if (typeof st.code === "string" && !shortCode) setShortCode(st.code);
-          setReadyCount(st.ready);
-          setPlayersCount(st.players);
-          setMaxPlayers(st.maxPlayers);
-          break;
+        if (typeof st.code === "string" && !shortCode) setShortCode(st.code);
+        setReadyCount(typeof st.ready === "number" ? st.ready : undefined);
+        setPlayersCount(
+          typeof st.players === "number" ? st.players : undefined
+        );
+        setMaxPlayers(
+          typeof st.maxPlayers === "number" ? st.maxPlayers : undefined
+        );
+
+        if (Array.isArray(st.readyIds)) setReadyIds(new Set(st.readyIds));
+        if (Array.isArray(st.playersInfo)) mergePlayersInfo(st.playersInfo);
+        break;
+      }
+      case "countdown": {
+        setStatus("COUNTDOWN");
+        setCountdown(m.sec);
+        // reset UI flags
+        setIAmReady(false);
+        setSent(false);
+        // limpia banner de tiempo si veníamos de round
+        deadlineRef.current = null;
+        if (timerRef.current != null) {
+          window.clearInterval(timerRef.current);
+          timerRef.current = null;
         }
-        case "countdown": {
-          setStatus("COUNTDOWN");
-          setCountdown(m.sec);
-          // reset UI flags
-          setIAmReady(false);
-          setSent(false);
-          // limpia banner de tiempo si veníamos de round
+        setTimeLeftMs(0);
+        break;
+      }
+      case "round_start": {
+        setStatus("ROUND");
+        setRound(m.round);
+        setSent(false); // permite auto-submit si no respondo
+        setIAmReady(false);
+        setQIndex(m.qIndex ?? 1);
+        setQTotal(m.qTotal ?? 1);
+        t0Ref.current = now();
+
+        // Banner de tiempo por pregunta (si el backend manda deadline en ms epoch)
+        if (typeof m.deadline === "number" && m.deadline > Date.now()) {
+          const deadlineMs = m.deadline;
+          deadlineRef.current = deadlineMs;
+          const total = deadlineMs - Date.now();
+          totalTimeMsRef.current = total > 0 ? total : 0;
+          setTimeLeftMs(totalTimeMsRef.current);
+
+          if (timerRef.current != null) window.clearInterval(timerRef.current);
+          // Intervalo de 250ms: al llegar a 0, auto-envía si no envié
+          timerRef.current = window.setInterval(() => {
+            const rest = (deadlineRef.current ?? 0) - Date.now();
+            setTimeLeftMs(Math.max(0, rest));
+
+            if (rest <= 0) {
+              if (timerRef.current != null) {
+                window.clearInterval(timerRef.current);
+                timerRef.current = null;
+              }
+              // Auto-submit si NO envié
+              if (!sentRef.current) {
+                const t1 = now();
+                const durationMs = Math.max(0, Math.round(t1 - t0Ref.current));
+                send({ type: "answer", round, answer: {}, durationMs });
+                setSent(true);
+              }
+            }
+          }, 250);
+        } else {
+          // Sin deadline → desactiva banner
           deadlineRef.current = null;
+          totalTimeMsRef.current = 0;
           if (timerRef.current != null) {
             window.clearInterval(timerRef.current);
             timerRef.current = null;
           }
-          break;
+          setTimeLeftMs(0);
         }
-        case "round_start": {
-          setStatus("ROUND");
-          setRound(m.round);
-          setSent(false);
-          setIAmReady(false);
-          t0Ref.current = now();
 
-          // Banner de tiempo por pregunta (si el backend manda deadline en ms epoch)
-          if (typeof m.deadline === "number" && m.deadline > Date.now()) {
-            deadlineRef.current = m.deadline;
-            const total = m.deadline - Date.now();
-            totalTimeMsRef.current = total > 0 ? total : 0;
-            setTimeLeftMs(totalTimeMsRef.current);
-
-            if (timerRef.current != null)
-              window.clearInterval(timerRef.current);
-            timerRef.current = window.setInterval(() => {
-              const rest = (deadlineRef.current ?? 0) - Date.now();
-              setTimeLeftMs(Math.max(0, rest));
-              if (rest <= 0 && timerRef.current != null) {
-                window.clearInterval(timerRef.current);
-                timerRef.current = null;
-              }
-            }, 250);
-          } else {
-            deadlineRef.current = null;
-            totalTimeMsRef.current = 0;
-            if (timerRef.current != null) {
-              window.clearInterval(timerRef.current);
-              timerRef.current = null;
-            }
-            setTimeLeftMs(0);
-          }
-
-          const ex = m.exercise;
-          const hasTpl =
-            Object.prototype.hasOwnProperty.call(ex, "templateType") &&
-            Object.prototype.hasOwnProperty.call(ex, "params");
-
-          if (!hasTpl) {
-            setLoadingExerciseMeta(true);
-            try {
-              const meta = await getExerciseForExam(ex.id);
+        // Cargar meta del ejercicio
+        setExerciseLoadErr(null);
+        const ex = m.exercise;
+        if (isCompleteExercise(ex)) {
+          setExercise(ex);
+          setExerciseHtml(null);
+        } else {
+          setLoadingExerciseMeta(true);
+          getExerciseForExam(ex.id)
+            .then((meta) => {
               setExercise({
                 id: ex.id,
                 templateType: meta.templateType,
                 params: meta.parameters ?? {},
               });
               setExerciseHtml(meta.statementRendered ?? null);
-            } catch {
-              setExercise({ id: ex.id } as DuelExercise);
+            })
+            .catch(() => {
+              setExercise({ id: ex.id });
               setExerciseHtml(null);
-            } finally {
-              setLoadingExerciseMeta(false);
-            }
-          } else {
-            setExercise(ex);
-            setExerciseHtml(null);
-          }
-          break;
+              setExerciseLoadErr(
+                "No se pudo cargar el enunciado del ejercicio."
+              );
+            })
+            .finally(() => setLoadingExerciseMeta(false));
         }
-        case "round_end": {
-          setSent(true);
-          setScore(m.score);
-          // apagar banner de tiempo
-          deadlineRef.current = null;
-          if (timerRef.current != null) {
-            window.clearInterval(timerRef.current);
-            timerRef.current = null;
-          }
-          setTimeLeftMs(0);
-          break;
-        }
-        case "final": {
-          setStatus("RESULTS");
-          setFinalWinner(m.winnerId ?? null);
-          const mapped = (m.byRound || []).map((r) => ({
-            round: r.round,
-            winnerId: r.winnerId,
-          }));
-          setFinalByRound(mapped);
-          setScore(m.score);
-          // limpia timer por si acaso
-          deadlineRef.current = null;
-          if (timerRef.current != null) {
-            window.clearInterval(timerRef.current);
-            timerRef.current = null;
-          }
-          setTimeLeftMs(0);
-          break;
-        }
-        case "error": {
-          setError(m.message);
-          break;
-        }
+        break;
       }
-    };
-
-    void handle(msg);
-  }, [lastMsg, shortCode]);
+      case "round_end": {
+        setSent(true);
+        setScore(m.score);
+        // apagar banner de tiempo
+        deadlineRef.current = null;
+        if (timerRef.current != null) {
+          window.clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        setTimeLeftMs(0);
+        break;
+      }
+      case "final": {
+        const fm = m as ServerFinalMsgWithExtras;
+        setStatus("RESULTS");
+        setFinalWinner(fm.winnerId ?? null);
+        const mapped = (fm.byRound || []).map((r) => ({
+          round: r.round,
+          winnerId: r.winnerId,
+        }));
+        setFinalByRound(mapped);
+        setScore(fm.score);
+        if (Array.isArray(fm.playersInfo)) mergePlayersInfo(fm.playersInfo);
+        // limpia timer por si acaso
+        deadlineRef.current = null;
+        if (timerRef.current != null) {
+          window.clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        setTimeLeftMs(0);
+        break;
+      }
+      case "error": {
+        setError(m.message);
+        break;
+      }
+    }
+  }, [lastMsg, shortCode, round, send]);
 
   const onReady = () => {
     if (iAmReady) return;
@@ -294,6 +399,12 @@ const DuelRoom: React.FC = () => {
       .sort((a, b) => b.points - a.points);
   }, [score]);
 
+  const displayName = useCallback(
+    (id: string) =>
+      id === myId ? "Tú" : playersMap[id] || `${id.slice(0, 8)}…`,
+    [myId, playersMap]
+  );
+
   const meScore = useMemo(() => (myId ? score[myId] ?? 0 : 0), [score, myId]);
   const oppScore = useMemo(() => {
     // compat 1v1 (para el chip de cabecera)
@@ -306,11 +417,11 @@ const DuelRoom: React.FC = () => {
   const submissionKey = useMemo(
     () =>
       exercise
-        ? `duel:${shortCode || matchIdParam || "code"}:r${round}:ex:${
-            exercise.id
-          }`
+        ? `duel:${
+            shortCode || matchIdParam || "code"
+          }:r${round}:q${qIndex}:ex:${exercise.id}`
         : `duel:pending`,
-    [shortCode, matchIdParam, round, exercise]
+    [shortCode, matchIdParam, round, qIndex, exercise]
   );
 
   const matchLabel = shortCode
@@ -318,39 +429,6 @@ const DuelRoom: React.FC = () => {
     : matchIdParam
     ? `Match: ${matchIdParam}`
     : "";
-
-  const shareLink =
-    shortCode != null
-      ? `${window.location.origin}/student/duels/join?code=${encodeURIComponent(
-          shortCode
-        )}`
-      : null;
-
-  const copyShare = async () => {
-    if (!shareLink) return;
-    try {
-      await navigator.clipboard.writeText(shareLink);
-    } catch {
-      return;
-    }
-  };
-
-  const nativeShare = async () => {
-    if (!shareLink) return;
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: "Únete a mi duelo",
-          text: "Entra con este enlace:",
-          url: shareLink,
-        });
-      } else {
-        await copyShare();
-      }
-    } catch {
-      return;
-    }
-  };
 
   // === Banner tiempo por pregunta ===
   const fmtTime = (ms: number) => {
@@ -365,6 +443,15 @@ const DuelRoom: React.FC = () => {
     const used = totalTimeMsRef.current - timeLeftMs;
     return Math.min(100, Math.max(0, (used / totalTimeMsRef.current) * 100));
   }, [timeLeftMs]);
+
+  // Lista de conectados para el lobby (con "listo" ✔)
+  const lobbyPlayers = useMemo(() => {
+    return Object.entries(playersMap).map(([id, name]) => ({
+      id,
+      name: id === myId ? "Tú" : name || `${id.slice(0, 8)}…`,
+      ready: readyIds.has(id),
+    }));
+  }, [playersMap, readyIds, myId]);
 
   return (
     <div className="mx-auto max-w-3xl p-4">
@@ -402,7 +489,7 @@ const DuelRoom: React.FC = () => {
         </div>
       )}
 
-      {/* Scoreboard N jugadores (en cualquier fase excepto waiting vacío) */}
+      {/* Scoreboard N jugadores */}
       {Object.keys(score).length > 0 && (
         <section className="mb-3">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
@@ -422,8 +509,8 @@ const DuelRoom: React.FC = () => {
                   </span>
                   <span className="text-lg font-bold">{e.points}</span>
                 </div>
-                <div className="mt-1 truncate text-xs opacity-70">
-                  {e.id === myId ? "Tú" : `${e.id.slice(0, 8)}…`}
+                <div className="mt-1 truncate text-xs opacity-80">
+                  {displayName(e.id)}
                 </div>
               </div>
             ))}
@@ -436,16 +523,44 @@ const DuelRoom: React.FC = () => {
           <div className="mb-2 text-base">Esperando jugadores…</div>
           {(playersCount || readyCount || maxPlayers) && (
             <div className="mb-2 text-xs sm:text-sm opacity-80">
-              Conectados: <b>{playersCount ?? "?"}</b>
+              Conectados:{" "}
+              <b>{playersCount ?? Object.keys(playersMap).length}</b>
               {typeof maxPlayers === "number" ? (
                 <>
                   {" "}
                   / <b>{maxPlayers}</b>
                 </>
               ) : null}
-              {" · "}
-              Listos: <b>{readyCount ?? 0}</b>
+              {" · "} Listos: <b>{readyCount ?? readyIds.size}</b>
             </div>
+          )}
+
+          {/* Lista de conectados con estado listo */}
+          {lobbyPlayers.length > 0 && (
+            <ul className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {lobbyPlayers.map((p) => (
+                <li
+                  key={p.id}
+                  className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm dark:border-gray-700 ${
+                    p.id === myId
+                      ? "bg-emerald-50 dark:bg-emerald-900/10"
+                      : "bg-white dark:bg-gray-800"
+                  }`}
+                >
+                  <span className="truncate">{p.name}</span>
+                  <span
+                    className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs ${
+                      p.ready
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-gray-100 text-gray-600"
+                    }`}
+                    title={p.ready ? "Listo" : "No listo"}
+                  >
+                    {p.ready ? "✔ Listo" : "Pendiente"}
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
 
           <p className="mb-3 text-sm opacity-80">
@@ -464,19 +579,61 @@ const DuelRoom: React.FC = () => {
                   <input
                     readOnly
                     className="w-full rounded border px-2 py-2 text-xs sm:text-sm dark:border-gray-700 dark:bg-gray-900"
-                    value={shareLink ?? ""}
+                    value={
+                      shortCode
+                        ? `${
+                            window.location.origin
+                          }/student/duels/join?code=${encodeURIComponent(
+                            shortCode
+                          )}`
+                        : ""
+                    }
                     aria-label="Enlace para compartir"
                   />
                   <div className="flex gap-2">
                     <button
                       className="rounded bg-gray-800 px-3 py-2 text-xs text-white hover:bg-black"
-                      onClick={copyShare}
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(
+                            `${
+                              window.location.origin
+                            }/student/duels/join?code=${encodeURIComponent(
+                              shortCode ?? ""
+                            )}`
+                          );
+                        } catch {
+                          /* empty */
+                        }
+                      }}
                     >
                       Copiar
                     </button>
                     <button
                       className="rounded bg-indigo-600 px-3 py-2 text-xs text-white hover:bg-indigo-700"
-                      onClick={nativeShare}
+                      onClick={async () => {
+                        const link = shortCode
+                          ? `${
+                              window.location.origin
+                            }/student/duels/join?code=${encodeURIComponent(
+                              shortCode
+                            )}`
+                          : null;
+                        if (!link) return;
+                        try {
+                          if (navigator.share) {
+                            await navigator.share({
+                              title: "Únete a mi duelo",
+                              text: "Entra con este enlace:",
+                              url: link,
+                            });
+                          } else {
+                            await navigator.clipboard.writeText(link);
+                          }
+                        } catch {
+                          /* empty */
+                        }
+                      }}
                     >
                       Compartir
                     </button>
@@ -526,16 +683,41 @@ const DuelRoom: React.FC = () => {
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
+
+              {/* Indicador: respuesta enviada, esperando al resto */}
+              {sent && timeLeftMs > 0 && (
+                <div className="mt-2 text-xs sm:text-sm text-emerald-700 dark:text-emerald-300">
+                  Respuesta enviada — esperando al resto…
+                </div>
+              )}
             </div>
           )}
 
-          <div className="text-sm opacity-70">Ronda {round}</div>
+          <div className="text-sm opacity-70">
+            Ronda {round}
+            {qTotal > 1 ? ` — Pregunta ${qIndex}/${qTotal}` : null}
+          </div>
+
           {loadingExerciseMeta ||
           !exercise?.id ||
           !exercise.templateType ||
           !exercise.params ? (
             <div className="rounded-md border bg-white p-4 text-sm opacity-80 dark:border-gray-700 dark:bg-gray-800">
-              Cargando ejercicio…
+              {exerciseLoadErr ? (
+                <div>
+                  <div className="mb-2 text-rose-700 dark:text-rose-300">
+                    {exerciseLoadErr}
+                  </div>
+                  <button
+                    className="rounded bg-rose-600 px-3 py-1.5 text-white hover:bg-rose-700 text-xs"
+                    onClick={retryExerciseMeta}
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              ) : (
+                "Cargando ejercicio…"
+              )}
             </div>
           ) : (
             <DuelExerciseRenderer
@@ -556,7 +738,7 @@ const DuelRoom: React.FC = () => {
             {finalWinner
               ? finalWinner === myId
                 ? "¡Ganaste! 🏆"
-                : "Ganó tu oponente"
+                : `${displayName(finalWinner)} ganó`
               : "¡Empate!"}
           </div>
 
@@ -579,9 +761,7 @@ const DuelRoom: React.FC = () => {
                         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border text-xs font-semibold dark:border-gray-600">
                           {idx + 1}
                         </span>
-                        <span className="truncate">
-                          {e.id === myId ? "Tú" : `${e.id.slice(0, 8)}…`}
-                        </span>
+                        <span className="truncate">{displayName(e.id)}</span>
                       </div>
                       <span className="text-lg font-bold">{e.points}</span>
                     </div>
@@ -598,7 +778,7 @@ const DuelRoom: React.FC = () => {
                 {r.winnerId
                   ? r.winnerId === myId
                     ? "tú"
-                    : "oponente"
+                    : displayName(r.winnerId)
                   : "empate"}
               </div>
             ))}
@@ -606,7 +786,7 @@ const DuelRoom: React.FC = () => {
         </div>
       )}
 
-      {!connected && wsEnabled && (
+      {!connected && wsEnabled && status !== "RESULTS" && (
         <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
           Reconectando con el servidor… Si tarda, revisa tu conexión o recarga
           la página.

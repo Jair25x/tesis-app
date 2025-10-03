@@ -29,10 +29,15 @@ const StudentHistory = lazy(
   () => import("../pages/student/assessments/History")
 );
 
-// 👇 NUEVO
+// Duelos
+const DuelHub = lazy(() => import("../pages/student/duels/DuelHub"));
 const DuelNew = lazy(() => import("../pages/student/duels/DuelNew"));
+const DuelNewAdvanced = lazy(
+  () => import("../pages/student/duels/DuelNewAdvanced")
+);
 const DuelRoom = lazy(() => import("../pages/student/duels/DuelRoom"));
 const DuelJoin = lazy(() => import("../pages/student/duels/DuelJoin"));
+
 export const studentRoute = {
   path: "student",
   element: (
@@ -117,7 +122,10 @@ export const studentRoute = {
     },
 
     // Assessments
-    { path: "assessments", element: <Navigate to="available" replace /> },
+    {
+      path: "assessments",
+      element: <Navigate to="assessments/available" replace />,
+    },
     {
       path: "assessments/available",
       element: (
@@ -151,7 +159,16 @@ export const studentRoute = {
       ),
     },
 
-    // NUEVO: Duelos
+    // Duelos
+    { path: "duels", element: <Navigate to="duels/hub" replace /> },
+    {
+      path: "duels/hub",
+      element: (
+        <Suspense fallback={<LoadingScreen />}>
+          <DuelHub />
+        </Suspense>
+      ),
+    },
     {
       path: "duels/new",
       element: (
@@ -161,7 +178,15 @@ export const studentRoute = {
       ),
     },
     {
-      // por UUID directo (o también puede ser un código si prefieres)
+      path: "duels/new/advanced",
+      element: (
+        <Suspense fallback={<LoadingScreen />}>
+          <DuelNewAdvanced />
+        </Suspense>
+      ),
+    },
+    {
+      // por UUID directo
       path: "duels/:matchId",
       element: (
         <Suspense fallback={<LoadingScreen />}>
@@ -170,7 +195,7 @@ export const studentRoute = {
       ),
     },
     {
-      // join por código con UI propia
+      // página de unión por código
       path: "duels/join",
       element: (
         <Suspense fallback={<LoadingScreen />}>
@@ -179,7 +204,7 @@ export const studentRoute = {
       ),
     },
     {
-      // opción “room por código” si navegas con ?code=ABC123
+      // sala por código (query ?code=ABC123)
       path: "duels/room",
       element: (
         <Suspense fallback={<LoadingScreen />}>

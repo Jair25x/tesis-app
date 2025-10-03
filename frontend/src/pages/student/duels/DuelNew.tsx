@@ -1,8 +1,11 @@
-// src/pages/student/duels/DuelNew.tsx  (o tu ruta actual)
+// pages/student/duels/DuelNew.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { CreateMatchReq, Difficulty } from "../../../types/duels/duels";
-import { createMatch } from "../../../services/duelsService";
+import {
+  createMatch,
+  getObjectiveAvailability,
+} from "../../../services/duelsService";
 import { useAuth } from "../../../context/useAuth";
 import {
   ensureActiveCurriculum,
@@ -18,6 +21,7 @@ import type {
   ExerciseLeaf,
 } from "../../../types/curriculum/CurriculumFullResponse";
 import type { CurriculumResponse } from "../../../types/curriculum/Curriculum";
+import { useToastError } from "../../../hooks/useToastError";
 
 function getAccessToken(): string | null {
   try {
@@ -38,11 +42,75 @@ const difficultyOptions: { label: string; value: Difficulty }[] = [
   { label: "Difícil", value: "HARD" },
 ];
 
+const DEFAULT_QPR = 3;
+const QPR_MIN = 1;
+const QPR_MAX = 10;
+
+/** —— Type guards para evitar any —— */
+type MaybeActiveFlags = {
+  active?: boolean;
+  isActive?: boolean;
+};
+function hasActiveFlags(
+  ex: ExerciseLeaf
+): ex is ExerciseLeaf & MaybeActiveFlags {
+  return "active" in ex || "isActive" in ex;
+}
+function isActiveExercise(ex: ExerciseLeaf): boolean {
+  if (hasActiveFlags(ex)) {
+    if (typeof ex.active === "boolean") return ex.active;
+    if (typeof ex.isActive === "boolean") return ex.isActive;
+  }
+  return true;
+}
+
+// Mapea UI (EASY|MEDIUM|HARD) -> BD (BASIC|INTERMEDIATE|ADVANCED) para el fallback local
+function exerciseMatchesDifficulty(
+  ex: ExerciseLeaf,
+  d: Difficulty | ""
+): boolean {
+  if (!d) return true;
+  const exDiff = String(ex.difficulty ?? "").toUpperCase(); // BASIC|INTERMEDIATE|ADVANCED
+  const mapUiToDb: Record<Difficulty, "BASIC" | "INTERMEDIATE" | "ADVANCED"> = {
+    EASY: "BASIC",
+    MEDIUM: "INTERMEDIATE",
+    HARD: "ADVANCED",
+  };
+  return exDiff === mapUiToDb[d];
+}
+
+function availableExercises(
+  oa: LearningObjectiveNode | undefined,
+  difficulty: Difficulty | ""
+): ExerciseLeaf[] {
+  if (!oa?.exercises || oa.exercises.length === 0) return [];
+  return oa.exercises.filter(
+    (ex) => isActiveExercise(ex) && exerciseMatchesDifficulty(ex, difficulty)
+  );
+}
+
+// Encuentra el primer OA con ejercicios (filtrando por dificultad si aplica)
+function pickFirstObjectiveWithExercises(
+  full: CurriculumFullResponse | null,
+  difficulty: Difficulty | ""
+): { id: string; count: number } | null {
+  if (!full) return null;
+  for (const comp of full.competencies ?? []) {
+    for (const std of comp.standards ?? []) {
+      for (const oa of std.learningObjectives ?? []) {
+        const count = availableExercises(oa, difficulty).length;
+        if (count > 0) return { id: oa.id, count };
+      }
+    }
+  }
+  return null;
+}
+
 const DuelNew: React.FC = () => {
   const nav = useNavigate();
   const { isAuthenticated } = useAuth();
 
-  // Picks
+  // Datos base
   const [curricula, setCurricula] = useState<CurriculumResponse[]>([]);
   const [curriculumId, setCurriculumId] = useState<string>("");
 
@@ -51,23 +119,28 @@ const DuelNew: React.FC = () => {
   const [standardId, setStandardId] = useState<string>("");
   const [objectiveId, setObjectiveId] = useState<string>("");
 
-  const [exerciseSel, setExerciseSel] = useState<Set<string>>(new Set());
-
-  // Parámetros del duelo
-  const [bestOf, setBestOf] = useState<1 | 3 | 5>(1);
-  const [difficulty, setDifficulty] = useState<Difficulty | "">("");
-  const [maxPlayers, setMaxPlayers] = useState<number>(2); // NUEVO
-
   // Estado UI
   const [busy, setBusy] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+const [/* error */, setError] = useState<string | null>(null);
   const [loadingFull, setLoadingFull] = useState<boolean>(false);
 
-  // Bootstrap: currículo por defecto + lista de activos
+  // Duelo rápido (wizard)
+  const [quickOpen, setQuickOpen] = useState<boolean>(true);
+  const [quickDifficulty, setQuickDifficulty] = useState<Difficulty | "">("");
+  const [quickQPR, setQuickQPR] = useState<number>(DEFAULT_QPR);
+
+  // Disponibilidad (server + fallback local)
+  const [serverAvailable, setServerAvailable] = useState<number | null>(null);
+  const [serverSource, setServerSource] = useState<"server" | "sample" | null>(
+    null
+  );
+
+  const toastError = useToastError(setError);
+
+  // ===== Bootstrap: currículo por defecto + lista de activos =====
   useEffect(() => {
     let canceled = false;
     const ctrl = new AbortController();
-
     const boot = async () => {
       try {
         const ensured = await ensureActiveCurriculum(ctrl.signal);
@@ -76,7 +149,7 @@ const DuelNew: React.FC = () => {
         const list = await getActiveCurricula();
         if (!canceled) setCurricula(list);
       } catch {
-        // noop
+        /* noop */
       }
     };
     void boot();
@@ -87,7 +160,7 @@ const DuelNew: React.FC = () => {
     };
   }, []);
 
-  // Cargar estructura completa al cambiar de currículo
+  // ===== Cargar estructura completa al cambiar de currículo =====
   useEffect(() => {
     if (!curriculumId) {
       setFull(null);
@@ -98,10 +171,11 @@ const DuelNew: React.FC = () => {
     let canceled = false;
     const ctrl = new AbortController();
     setLoadingFull(true);
+
+    // Reset picks
     setCompetencyId("");
     setStandardId("");
     setObjectiveId("");
-    setExerciseSel(new Set());
 
     getCurriculumFull(curriculumId, ctrl.signal)
       .then((tree) => {
@@ -120,7 +194,7 @@ const DuelNew: React.FC = () => {
     };
   }, [curriculumId]);
 
-  // Opciones derivadas
+  // ===== Derivados =====
   const competencies = useMemo<CompetencyNode[]>(
     () => full?.competencies ?? [],
     [full]
@@ -136,342 +210,351 @@ const DuelNew: React.FC = () => {
     return s?.learningObjectives ?? [];
   }, [standards, standardId]);
 
-  const exercises = useMemo<ExerciseLeaf[]>(() => {
-    const o = objectives.find((x) => x.id === objectiveId);
-    return o?.exercises ?? [];
-  }, [objectives, objectiveId]);
+  const selectedObjective = useMemo(
+    () => objectives.find((x) => x.id === objectiveId),
+    [objectives, objectiveId]
+  );
 
-  // Helpers UI
+  const localAvailableCount = useMemo(
+    () => availableExercises(selectedObjective, quickDifficulty).length,
+    [selectedObjective, quickDifficulty]
+  );
+
+  // Disponibilidad final que usaremos (server si llegó, si no local)
+  const effectiveAvailable = serverAvailable ?? localAvailableCount;
+
+  // ===== Server availability fetch =====
+  useEffect(() => {
+    setServerAvailable(null);
+    setServerSource(null);
+
+    if (!objectiveId) return;
+    if (!isAuthenticated) return;
+    const token = getAccessToken();
+    if (!token) return;
+
+    let mounted = true;
+    (async () => {
+      try {
+        const resp = await getObjectiveAvailability(objectiveId, token, {
+          difficulty: quickDifficulty || undefined,
+          minRequired: QPR_MIN,
+          maxAllowed: QPR_MAX,
+        });
+        if (!mounted) return;
+        const safe =
+          Number.isFinite(resp.available) && resp.available >= 0
+            ? resp.available
+            : 0;
+        setServerAvailable(safe);
+        setServerSource(resp.source);
+      } catch {
+        // Silencioso: fallback local (ya cubierto por effectiveAvailable)
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [objectiveId, quickDifficulty, isAuthenticated]);
+
+  // Sugerir OA inicial si no se ha elegido (según dificultad seleccionada)
+  useEffect(() => {
+    if (!objectiveId && full) {
+      const pick = pickFirstObjectiveWithExercises(full, quickDifficulty);
+      if (pick?.id) setObjectiveId(pick.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [full, quickDifficulty]);
+
+  // Ajustar QPR si supera los disponibles
+  useEffect(() => {
+    if (effectiveAvailable > 0 && quickQPR > effectiveAvailable) {
+      setQuickQPR(Math.max(QPR_MIN, Math.min(QPR_MAX, effectiveAvailable)));
+    }
+  }, [effectiveAvailable, quickQPR]);
+
+  // ===== helpers =====
   const fmtNode = (n: IdName) => (n.code ? `${n.code} — ${n.name}` : n.name);
 
-  const toggleExercise = (id: string) => {
-    setExerciseSel((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  // ===== Crear duelo rápido =====
+  const buildQuickReq = (chosenObjectiveId: string): CreateMatchReq => ({
+    curriculumId,
+    bestOf: 1,
+    questionsPerRound: Math.max(QPR_MIN, Math.min(QPR_MAX, quickQPR)),
+    maxPlayers: 2,
+    isPublic: true,
+    mode: "bestOf",
+    objectiveId: chosenObjectiveId,
+    ...(quickDifficulty ? { difficulty: quickDifficulty } : {}),
+  });
 
-  const selectAllExercises = () =>
-    setExerciseSel(new Set(exercises.map((e) => e.id)));
-  const clearAllExercises = () => setExerciseSel(new Set());
-
-  const canSubmit = useMemo(() => {
-    return !!curriculumId && (!!objectiveId || exerciseSel.size > 0);
-  }, [curriculumId, objectiveId, exerciseSel.size]);
-
-  // Acción crear duelo
-  const submit = async () => {
+  const submitQuick = async () => {
     setError(null);
-    if (!isAuthenticated) {
-      setError("No hay sesión activa. Inicia sesión.");
-      return;
-    }
+    if (!isAuthenticated)
+      return toastError("No hay sesión activa. Inicia sesión.");
     const token = getAccessToken();
-    if (!token) {
-      setError("No se encontró el token de acceso.");
-      return;
-    }
-    if (!curriculumId) {
-      setError("Elige un currículo.");
-      return;
-    }
-    if (!objectiveId && exerciseSel.size === 0) {
-      setError("Elige un objetivo o ejercicios específicos.");
-      return;
+    if (!token) return toastError("No se encontró el token de acceso.");
+    if (!curriculumId) return toastError("Elige un currículo.");
+    if (!objectiveId) return toastError("Elige un objetivo.");
+
+    if (effectiveAvailable < quickQPR) {
+      return toastError(
+        `Este objetivo no tiene suficientes ejercicios activos${
+          quickDifficulty ? ` (${quickDifficulty.toLowerCase()})` : ""
+        }. Disponibles: ${effectiveAvailable}.`
+      );
     }
 
     try {
       setBusy(true);
-      const req: CreateMatchReq = { curriculumId, bestOf };
-      if (difficulty) req.difficulty = difficulty;
-      if (objectiveId) req.objectiveId = objectiveId;
-      if (exerciseSel.size > 0) req.exerciseIds = Array.from(exerciseSel);
-      // NUEVO: solo enviamos si > 2 (backward compatible)
-      if (Number.isFinite(maxPlayers) && maxPlayers > 2)
-        req.maxPlayers = Math.min(8, Math.max(2, maxPlayers));
-
+      const req = buildQuickReq(objectiveId);
       const resp = await createMatch(req, token);
       nav(`/student/duels/room?code=${encodeURIComponent(resp.shortCode)}`);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "No se pudo crear el duelo.";
-      setError(msg);
+      toastError(e, "No se pudo crear el duelo rápido.");
     } finally {
       setBusy(false);
     }
   };
 
+  // === UI (sólo modo rápido) ===
   return (
     <div className="mx-auto max-w-3xl p-4">
       <h1 className="mb-1 text-2xl font-bold">Nuevo duelo</h1>
       <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
-        Elige tu ruta (currículo &rarr; objetivo). Puedes filtrar por dificultad
-        o elegir ejercicios específicos.
+        Crea un duelo <strong>rápido</strong>: 1 ronda · preguntas aleatorias ·
+        máx. 2 jugadores.
       </p>
 
-      {/* Currículo */}
-      <section className="mb-4 rounded-xl border p-4 dark:border-gray-700">
-        <label className="mb-1 block text-sm font-medium">Currículo</label>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <select
-            className="w-full rounded-md border px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-            value={curriculumId}
-            onChange={(e) => setCurriculumId(e.target.value)}
-          >
-            <option value="">Selecciona…</option>
-            {curricula.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.grade})
-              </option>
-            ))}
-          </select>
-
-          <div className="flex items-center gap-2">
+      <div className="mb-5 rounded-2xl border bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-base font-semibold">⚡ Duelo rápido</div>
             <div className="text-xs opacity-70">
-              {loadingFull
-                ? "Cargando estructura…"
-                : full
-                ? "Estructura lista"
-                : curriculumId
-                ? "No se pudo cargar"
-                : ""}
+              Selecciona currículo, objetivo, dificultad (opcional) y preguntas
+              por ronda.
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* Cascada Comp → Std → OA */}
-      <section className="mb-4 grid gap-3 md:grid-cols-3">
-        <div className="rounded-xl border p-4 dark:border-gray-700">
-          <div className="mb-1 text-sm font-medium">Competencia</div>
-          <select
-            className="w-full rounded-md border px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-            value={competencyId}
-            onChange={(e) => {
-              setCompetencyId(e.target.value);
-              setStandardId("");
-              setObjectiveId("");
-              setExerciseSel(new Set());
-            }}
-            disabled={!full}
+          <button
+            type="button"
+            onClick={() => setQuickOpen((p) => !p)}
+            className="rounded-md border px-3 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700/40"
           >
-            <option value="">Selecciona…</option>
-            {competencies.map((n) => (
-              <option key={n.id} value={n.id}>
-                {fmtNode({ id: n.id, name: n.name, code: n.code })}
-              </option>
-            ))}
-          </select>
+            {quickOpen ? "Ocultar" : "Mostrar"}
+          </button>
         </div>
 
-        <div className="rounded-xl border p-4 dark:border-gray-700">
-          <div className="mb-1 text-sm font-medium">Estándar</div>
-          <select
-            className="w-full rounded-md border px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-            value={standardId}
-            onChange={(e) => {
-              setStandardId(e.target.value);
-              setObjectiveId("");
-              setExerciseSel(new Set());
-            }}
-            disabled={!competencyId}
-          >
-            <option value="">Selecciona…</option>
-            {standards.map((n) => (
-              <option key={n.id} value={n.id}>
-                {fmtNode({ id: n.id, name: n.name, code: n.code })}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="rounded-xl border p-4 dark:border-gray-700">
-          <div className="mb-1 text-sm font-medium">Objetivo</div>
-          <select
-            className="w-full rounded-md border px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-            value={objectiveId}
-            onChange={(e) => {
-              setObjectiveId(e.target.value);
-              setExerciseSel(new Set());
-            }}
-            disabled={!standardId}
-          >
-            <option value="">Selecciona…</option>
-            {objectives.map((n) => (
-              <option key={n.id} value={n.id}>
-                {fmtNode({ id: n.id, name: n.name, code: n.code })}
-              </option>
-            ))}
-          </select>
-        </div>
-      </section>
-
-      {/* Dificultad + Best of + Max players */}
-      <section className="mb-4 grid gap-3 md:grid-cols-3">
-        <div className="rounded-xl border p-4 dark:border-gray-700">
-          <div className="mb-2 text-sm font-medium">Dificultad (opcional)</div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setDifficulty("")}
-              className={`rounded-md border px-3 py-1.5 text-sm dark:border-gray-700 ${
-                difficulty === ""
-                  ? "bg-emerald-600 text-white"
-                  : "hover:bg-gray-100 dark:hover:bg-gray-800"
-              }`}
-            >
-              Cualquiera
-            </button>
-            {difficultyOptions.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setDifficulty(opt.value)}
-                className={`rounded-md border px-3 py-1.5 text-sm dark:border-gray-700 ${
-                  difficulty === opt.value
-                    ? "bg-emerald-600 text-white"
-                    : "hover:bg-gray-100 dark:hover:bg-gray-800"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-xl border p-4 dark:border-gray-700">
-          <div className="mb-2 text-sm font-medium">Al mejor de…</div>
-          <div className="flex gap-2">
-            {[1, 3, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setBestOf(n as 1 | 3 | 5)}
-                className={`rounded-md border px-3 py-1.5 text-sm dark:border-gray-700 ${
-                  bestOf === n
-                    ? "bg-indigo-600 text-white"
-                    : "hover:bg-gray-100 dark:hover:bg-gray-800"
-                }`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-xl border p-4 dark:border-gray-700">
-          <div className="mb-2 text-sm font-medium">Jugadores máximos</div>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={2}
-              max={8}
-              value={maxPlayers}
-              onChange={(e) => {
-                const v = Number(e.target.value) || 2;
-                setMaxPlayers(Math.max(2, Math.min(8, v)));
-              }}
-              className="w-24 rounded-md border px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900"
-            />
-            <span className="text-xs opacity-70">2–8</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Ejercicios específicos */}
-      <section className="mb-4 rounded-xl border p-4 dark:border-gray-700">
-        <div className="mb-1 text-sm font-semibold">
-          (Opcional) Elegir ejercicios específicos
-        </div>
-        <p className="mb-3 text-xs opacity-75">
-          Si seleccionas alguno, el duelo usará exactamente esos ítems. Si no
-          seleccionas, se elegirá aleatoriamente dentro del objetivo.
-        </p>
-
-        {!objectiveId && (
-          <div className="text-sm opacity-70">
-            Selecciona un objetivo para ver sus ejercicios.
-          </div>
-        )}
-
-        {objectiveId && exercises.length === 0 && (
-          <div className="text-sm opacity-70">
-            Este objetivo aún no tiene ejercicios.
-          </div>
-        )}
-
-        {objectiveId && exercises.length > 0 && (
-          <>
-            <div className="mb-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="rounded-md border px-3 py-1.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-                onClick={selectAllExercises}
-              >
-                Seleccionar todos
-              </button>
-              <button
-                type="button"
-                className="rounded-md border px-3 py-1.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-                onClick={clearAllExercises}
-              >
-                Limpiar
-              </button>
-              <div className="text-xs opacity-70">
-                Elegidos: {exerciseSel.size} / {exercises.length}
+        {quickOpen && (
+          <div className="mt-4 space-y-4">
+            {/* 1) Currículo */}
+            <section className="rounded-xl border p-3 dark:border-gray-700">
+              <div className="mb-1 text-xs font-medium uppercase opacity-70">
+                1) Currículo
               </div>
-            </div>
+              <select
+                className="w-full rounded-md border px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+                value={curriculumId}
+                onChange={(e) => setCurriculumId(e.target.value)}
+              >
+                <option value="">Selecciona…</option>
+                {curricula.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.grade})
+                  </option>
+                ))}
+              </select>
+              <div className="mt-1 text-[11px] opacity-70">
+                {loadingFull
+                  ? "Cargando estructura…"
+                  : full
+                  ? "Estructura lista"
+                  : curriculumId
+                  ? "No se pudo cargar"
+                  : ""}
+              </div>
+            </section>
 
-            <div className="grid gap-2 md:grid-cols-2">
-              {exercises.map((ex) => (
-                <label
-                  key={ex.id}
-                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm dark:border-gray-700 ${
-                    exerciseSel.has(ex.id)
-                      ? "ring-2 ring-emerald-500"
-                      : "hover:bg-gray-50 dark:hover:bg-gray-800/50"
+            {/* 2) Competencia */}
+            <section className="rounded-xl border p-3 dark:border-gray-700">
+              <div className="mb-1 text-xs font-medium uppercase opacity-70">
+                2) Competencia
+              </div>
+              <select
+                className="w-full rounded-md border px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+                value={competencyId}
+                onChange={(e) => {
+                  setCompetencyId(e.target.value);
+                  setStandardId("");
+                  setObjectiveId("");
+                }}
+                disabled={!full}
+              >
+                <option value="">Selecciona…</option>
+                {competencies.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {fmtNode({ id: n.id, name: n.name, code: n.code })}
+                  </option>
+                ))}
+              </select>
+            </section>
+
+            {/* 3) Estándar */}
+            <section className="rounded-xl border p-3 dark:border-gray-700">
+              <div className="mb-1 text-xs font-medium uppercase opacity-70">
+                3) Estándar
+              </div>
+              <select
+                className="w-full rounded-md border px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+                value={standardId}
+                onChange={(e) => {
+                  setStandardId(e.target.value);
+                  setObjectiveId("");
+                }}
+                disabled={!competencyId}
+              >
+                <option value="">Selecciona…</option>
+                {standards.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {fmtNode({ id: n.id, name: n.name, code: n.code })}
+                  </option>
+                ))}
+              </select>
+            </section>
+
+            {/* 4) Objetivo */}
+            <section className="rounded-xl border p-3 dark:border-gray-700">
+              <div className="mb-1 text-xs font-medium uppercase opacity-70">
+                4) Objetivo
+              </div>
+              <select
+                className="w-full rounded-md border px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+                value={objectiveId}
+                onChange={(e) => setObjectiveId(e.target.value)}
+                disabled={!standardId}
+              >
+                <option value="">Selecciona…</option>
+                {objectives.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {fmtNode({ id: n.id, name: n.name, code: n.code })}
+                  </option>
+                ))}
+              </select>
+
+              {/* Indicador de disponibles (server si hay, o local) */}
+              <div className="mt-2 text-xs">
+                {objectiveId ? (
+                  effectiveAvailable > 0 ? (
+                    <span className="text-emerald-600">
+                      Ejercicios activos disponibles
+                      {quickDifficulty
+                        ? ` (${quickDifficulty.toLowerCase()})`
+                        : ""}
+                      : <strong>{effectiveAvailable}</strong>
+                      {serverSource ? ` · fuente: ${serverSource}` : ""}
+                    </span>
+                  ) : (
+                    <span className="text-amber-600">
+                      No hay ejercicios activos
+                      {quickDifficulty
+                        ? ` (${quickDifficulty.toLowerCase()})`
+                        : ""}{" "}
+                      para este objetivo. Prueba otra dificultad u otro
+                      objetivo.
+                    </span>
+                  )
+                ) : (
+                  <span className="opacity-70">
+                    Selecciona un objetivo para ver disponibilidad.
+                  </span>
+                )}
+              </div>
+            </section>
+
+            {/* 5) Dificultad */}
+            <section className="rounded-xl border p-3 dark:border-gray-700">
+              <div className="mb-2 text-xs font-medium uppercase opacity-70">
+                5) Dificultad (opcional)
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuickDifficulty("")}
+                  className={`rounded-md border px-3 py-1.5 text-sm dark:border-gray-700 ${
+                    quickDifficulty === ""
+                      ? "bg-emerald-600 text-white"
+                      : "hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={exerciseSel.has(ex.id)}
-                    onChange={() => toggleExercise(ex.id)}
-                  />
-                  <div>
-                    <div className="font-medium">
-                      {ex.templateType ?? ex.type ?? "Ejercicio"}{" "}
-                      <span className="uppercase opacity-80">
-                        · {ex.difficulty}
-                      </span>
-                    </div>
-                    <div className="line-clamp-2 opacity-80">
-                      {ex.statement}
-                    </div>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </>
+                  Cualquiera
+                </button>
+                {difficultyOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setQuickDifficulty(opt.value)}
+                    className={`rounded-md border px-3 py-1.5 text-sm dark:border-gray-700 ${
+                      quickDifficulty === opt.value
+                        ? "bg-emerald-600 text-white"
+                        : "hover:bg-gray-100 dark:hover:bg-gray-800"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {/* 6) Preguntas por ronda */}
+            <section className="rounded-xl border p-3 dark:border-gray-700">
+              <div className="mb-2 text-xs font-medium uppercase opacity-70">
+                6) Preguntas por ronda
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={QPR_MIN}
+                  max={QPR_MAX}
+                  value={quickQPR}
+                  onChange={(e) => {
+                    const v = Number(e.target.value) || QPR_MIN;
+                    setQuickQPR(Math.max(QPR_MIN, Math.min(QPR_MAX, v)));
+                  }}
+                  className="w-24 rounded-md border px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900"
+                />
+                <span className="text-xs opacity-70">
+                  Disponibles ahora: {effectiveAvailable}
+                </span>
+              </div>
+
+              {objectiveId && effectiveAvailable < quickQPR && (
+                <div className="mt-2 text-xs text-amber-600">
+                  No hay suficientes ejercicios activos para {quickQPR}{" "}
+                  preguntas. Reduce el número, cambia la dificultad o el
+                  objetivo.
+                </div>
+              )}
+
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={submitQuick}
+                  disabled={
+                    busy ||
+                    !curriculumId ||
+                    !objectiveId ||
+                    effectiveAvailable <
+                      Math.max(QPR_MIN, Math.min(QPR_MAX, quickQPR))
+                  }
+                  className="inline-flex h-11 items-center justify-center rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busy ? "Creando…" : "Iniciar duelo"}
+                </button>
+              </div>
+            </section>
+          </div>
         )}
-      </section>
-
-      {/* Errores */}
-      {error && (
-        <div className="mb-3 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-200">
-          {error}
-        </div>
-      )}
-
-      {/* Acción */}
-      <button
-        onClick={submit}
-        disabled={!canSubmit || busy}
-        className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-      >
-        {busy ? "Creando…" : "Crear duelo"}
-      </button>
+      </div>
     </div>
   );
 };

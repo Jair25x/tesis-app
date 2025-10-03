@@ -1,4 +1,10 @@
-import type { CreateMatchReq, CreateMatchResp } from "../types/duels/duels";
+// services/duelsService.ts
+import type {
+  CreateMatchReq,
+  CreateMatchResp,
+  Difficulty,
+  ObjectiveAvailabilityResp,
+} from "../types/duels/duels";
 
 const BASE = "/api/duels";
 
@@ -10,7 +16,6 @@ async function json<T>(r: Response): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-/** Crear match: devuelve { matchId, shortCode } */
 export async function createMatch(req: CreateMatchReq, token: string) {
   const r = await fetch(`${BASE}/matches`, {
     method: "POST",
@@ -23,7 +28,6 @@ export async function createMatch(req: CreateMatchReq, token: string) {
   return json<CreateMatchResp>(r);
 }
 
-/** NUEVO: obtener detalles del match (incluye shortCode) */
 export async function getMatch(matchId: string, token: string) {
   const r = await fetch(`${BASE}/matches/${encodeURIComponent(matchId)}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -36,7 +40,6 @@ export async function getMatch(matchId: string, token: string) {
   }>(r);
 }
 
-/** (NUEVO) Listar partidas públicas en WAITING */
 export async function listOpenMatches(token: string, curriculumId?: string) {
   const url = new URL(`${location.origin}${BASE}/open`);
   if (curriculumId) url.searchParams.set("curriculumId", curriculumId);
@@ -50,18 +53,90 @@ export async function listOpenMatches(token: string, curriculumId?: string) {
       bestOf: number;
       createdAt: string;
       createdBy?: string;
+      maxPlayers: number;
     }>
   >(r);
 }
 
-/** (NUEVO) Resolver código corto → matchId */
+/**
+ * Valida un código corto y devuelve el matchId.
+ * - 404 => "Código no encontrado"
+ * - otros errores => "No se pudo validar el código" (con detalle)
+ */
 export async function resolveCode(code: string, token: string) {
-  const r = await fetch(`${BASE}/resolve/${encodeURIComponent(code)}`, {
+  const res = await fetch(`${BASE}/resolve/${encodeURIComponent(code)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  return json<{ matchId: string }>(r);
+  if (res.status === 404) {
+    throw new Error("Código no encontrado");
+  }
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(
+      `No se pudo validar el código: ${res.status} ${res.statusText} ${txt}`
+    );
+  }
+  return (await res.json()) as { matchId: string };
 }
 
-/* ⚠️ El endpoint /matches/:id/join no se usa en el backend nuevo.
-   El “join” ocurre al abrir el WS con matchId o code.
-*/
+// Alias opcional
+export const resolveShortCode = resolveCode;
+
+/** Resumen de mis duelos (wins/losses/rating) */
+export async function getMyDuelSummary(token: string) {
+  const r = await fetch(`${BASE}/me/summary`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return json<{
+    played: number;
+    wins: number;
+    losses: number;
+    rating: number;
+    lastPlayedAt?: string | null;
+  }>(r);
+}
+
+/** Historial de mis duelos */
+export async function getMyDuelHistory(token: string, limit = 20) {
+  const url = new URL(`${location.origin}${BASE}/me/history`);
+  url.searchParams.set("limit", String(limit));
+  const r = await fetch(url.toString().replace(location.origin, ""), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return json<
+    Array<{
+      matchId: string;
+      finishedAt?: string | null;
+      bestOf: number;
+      winnerId?: string | null;
+      shortCode?: string | null;
+    }>
+  >(r);
+}
+
+/** NUEVO: disponibilidad por objetivo (server-side) */
+export async function getObjectiveAvailability(
+  objectiveId: string,
+  token: string,
+  opts?: {
+    difficulty?: Difficulty;
+    minRequired?: number; // default BE = 1
+    maxAllowed?: number; // default BE = 10
+  }
+) {
+  const url = new URL(
+    `${location.origin}${BASE}/objectives/${encodeURIComponent(
+      objectiveId
+    )}/availability`
+  );
+  if (opts?.difficulty) url.searchParams.set("difficulty", opts.difficulty);
+  if (opts?.minRequired != null)
+    url.searchParams.set("min_required", String(opts.minRequired));
+  if (opts?.maxAllowed != null)
+    url.searchParams.set("max_allowed", String(opts.maxAllowed));
+
+  const r = await fetch(url.toString().replace(location.origin, ""), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return json<ObjectiveAvailabilityResp>(r);
+}

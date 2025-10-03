@@ -38,6 +38,7 @@ const TemplatesList = lazy(
 const AssignmentForm = lazy(
   () => import("../pages/admin/assessments/AssignmentForm")
 );
+const DuelReports = lazy(() => import("../pages/teacher/duels/DuelReports")); // ✅ nuevo
 
 export const teacherRoute = {
   path: "teacher",
@@ -154,6 +155,16 @@ export const teacherRoute = {
       element: (
         <Suspense fallback={<LoadingScreen />}>
           <TemplateForm />
+        </Suspense>
+      ),
+    },
+
+    // ✅ Nuevo: reportes de duelos
+    {
+      path: "duels/reports",
+      element: (
+        <Suspense fallback={<LoadingScreen />}>
+          <DuelReports />
         </Suspense>
       ),
     },

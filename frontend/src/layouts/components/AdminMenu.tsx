@@ -1,4 +1,3 @@
-// src/layouts/components/AdminMenu.tsx
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "../../utils/cn";
 import { useId, type KeyboardEvent } from "react";
@@ -78,6 +77,18 @@ export default function AdminMenu({
           <ItemLink to="/admin" end onNavigate={closeSidebar}>
             📊 Dashboard
           </ItemLink>
+
+          {/* Duelos */}
+          <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">
+            <div className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide opacity-60">
+              Duelos
+            </div>
+            <nav className="space-y-1">
+              <ItemLink to="/admin/duels/reports" onNavigate={closeSidebar}>
+                ⚔️ Reportes de duelos
+              </ItemLink>
+            </nav>
+          </div>
 
           {/* Contenido curricular */}
           <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">

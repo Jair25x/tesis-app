@@ -1,3 +1,4 @@
+// src/layouts/components/TeacherMenu.tsx
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "../../utils/cn";
 
@@ -60,6 +61,13 @@ export default function TeacherMenu({
             onClick={() => setSidebarOpen(false)}
           >
             🤖 Recomendaciones (IA)
+          </NavLink>
+          <NavLink
+            to="/teacher/duels/reports"
+            className={item}
+            onClick={() => setSidebarOpen(false)}
+          >
+            ⚔️ Reportes de duelos
           </NavLink>
 
           {/* ——— Evaluaciones: Plantillas ——— */}

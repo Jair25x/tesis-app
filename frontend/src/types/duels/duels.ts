@@ -1,24 +1,36 @@
-// src/types/duels/duels.ts
+// types/duels/duels.ts
 import type { TemplateType } from "../exercise/TemplateSchemaResponse";
 
 export type DuelState = "WAITING" | "COUNTDOWN" | "ROUND" | "RESULTS";
 export type Difficulty = "EASY" | "MEDIUM" | "HARD";
 export type DuelMode = "bestOf" | "timePerQuestion" | "firstToAll";
 
+export type RoundPlan = {
+  questions: number;
+  difficulty?: Difficulty;
+  exerciseIds?: string[];
+};
+
 export interface CreateMatchReq {
   curriculumId: string;
-  bestOf?: 1 | 3 | 5;
-  difficulty?: Difficulty;
+  opponentId?: string;
+  bestOf?: number; // en UI usarás 1 | 3 | 5, pero el backend acepta hasta 9
   objectiveId?: string;
-  random?: boolean;
+  difficulty?: Difficulty;
   exerciseIds?: string[];
   isPublic?: boolean;
 
-  // Para futuro (el backend aún mantiene 1v1):
+  // Multijugador / modos
   maxPlayers?: number;
   mode?: DuelMode;
   questionTimeSec?: number;
   winTarget?: number;
+
+  // Simple (uniforme)
+  questionsPerRound?: number;
+
+  // Avanzado
+  rounds?: RoundPlan[];
 }
 
 export interface CreateMatchResp {
@@ -30,8 +42,13 @@ export interface DuelExercise {
   id: string;
   objectiveId?: string | null;
   templateType?: TemplateType;
-  params?: unknown;
+  params?: Record<string, unknown>;
   statementHtml?: string | null;
+}
+
+export interface PlayerInfo {
+  id: string;
+  name: string;
 }
 
 export type ServerMsg =
@@ -40,9 +57,11 @@ export type ServerMsg =
       status: DuelState;
       round?: number;
       code?: string;
-      ready?: number; // NUEVO
-      players?: number; // NUEVO
-      maxPlayers?: number; // NUEVO
+      ready?: number;
+      readyIds?: string[];
+      players?: number;
+      playersInfo?: PlayerInfo[];
+      maxPlayers?: number;
     }
   | { type: "countdown"; sec: number }
   | {
@@ -50,13 +69,12 @@ export type ServerMsg =
       round: number;
       exercise: DuelExercise;
       deadline?: number;
+      qIndex?: number; // 1-based
+      qTotal?: number;
     }
   | {
       type: "round_end";
       round: number;
-      correct?: boolean;
-      timeMs?: number;
-      winnerStudentId?: string | null;
       score: Record<string, number>;
     }
   | {
@@ -66,9 +84,8 @@ export type ServerMsg =
       byRound: Array<{
         round: number;
         winnerId: string | null;
-        exerciseId?: string;
-        result?: Record<string, { correct: boolean; timeMs: number | null }>;
       }>;
+      playersInfo?: PlayerInfo[];
     }
   | { type: "error"; message: string };
 
@@ -80,3 +97,13 @@ export type ClientMsg =
       answer: Record<string, unknown>;
       durationMs: number;
     };
+
+/** NUEVO: disponibilidad por objetivo (duels-service) */
+export interface ObjectiveAvailabilityResp {
+  objectiveId: string;
+  difficulty?: Difficulty | null;
+  available: number;
+  minRequired: number;
+  maxAllowed: number;
+  source: "server" | "sample";
+}
