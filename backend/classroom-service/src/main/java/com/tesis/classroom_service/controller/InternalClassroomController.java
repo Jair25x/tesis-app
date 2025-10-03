@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -32,84 +33,83 @@ public class InternalClassroomController {
   private final ClassroomRepository classroomRepository;
   private final ClassroomMemberRepository memberRepository;
 
-  private boolean hasInternalRole() {
-    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+  private static boolean hasRoleInternal() {
+    var auth = org.springframework.security.core.context.SecurityContextHolder
+        .getContext().getAuthentication();
     if (auth == null)
       return false;
-    return auth.getAuthorities().stream().anyMatch(a -> "ROLE_INTERNAL".equalsIgnoreCase(a.getAuthority()));
+    return auth.getAuthorities().stream()
+        .anyMatch(a -> "ROLE_INTERNAL".equalsIgnoreCase(a.getAuthority()));
   }
 
-  // Mis aulas (IDs) — soporta suplantación controlada vía X-Act-As-User
-  @Operation(summary = "Mis aulas (IDs) — uso interno/batch")
-  @PreAuthorize("hasAnyRole('INTERNAL','STUDENT','TEACHER','ADMIN')")
+  /*
+   * ======================
+   * ENDPOINTS S2S (STRICT)
+   * ======================
+   */
+
+  /** Devuelve aulas (IDs) del docente indicado por X-Act-As-User. Solo S2S. */
+  @Operation(summary = "Mis aulas (IDs) — uso interno S2S con suplantación segura")
+  @PreAuthorize("hasRole('INTERNAL')")
   @GetMapping("/mine")
-  public ResponseEntity<List<UUID>> myClassrooms(
-      @RequestHeader(value = "X-Act-As-User", required = false) String actAs) {
+  public ResponseEntity<List<UUID>> myClassroomsActingAs(
+      @RequestHeader(value = "X-Act-As-User", required = true) String actAs) {
 
-    UUID principal = SecurityUtils.getCurrentUserIdOrThrow();
-    UUID effectiveUser = principal;
-
-    // Solo INTERNAL puede usar suplantación
-    if (actAs != null && !actAs.isBlank() && hasInternalRole()) {
-      try {
-        effectiveUser = UUID.fromString(actAs);
-      } catch (Exception ignored) {
-        // si viene mal formado, seguimos con el principal
-      }
+    if (!hasRoleInternal()) {
+      throw new ForbiddenException("Se requiere rol INTERNAL");
+    }
+    if (!StringUtils.hasText(actAs)) {
+      return ResponseEntity.badRequest().build();
     }
 
-    // Owner de aulas
-    List<UUID> owned = classroomRepository.findIdsByOwnerUuid(effectiveUser);
-    // Miembro (cualquier rol) en aulas
-    List<UUID> memberOf = memberRepository.findClassroomIdsByUserUuid(effectiveUser);
+    final UUID teacherId;
+    try {
+      teacherId = UUID.fromString(actAs);
+    } catch (Exception e) {
+      return ResponseEntity.badRequest().build();
+    }
 
-    // Unir y devolver distintos en orden determinista (owner primero)
-    LinkedHashSet<UUID> all = new LinkedHashSet<>(owned);
-    all.addAll(memberOf);
+    // Propietario
+    List<UUID> owned = classroomRepository.findIdsByOwnerUuid(teacherId);
+    // Miembro de (cualquier rol)
+    List<UUID> memberOf = memberRepository.findClassroomIdsByUserUuid(teacherId);
 
-    return ResponseEntity.ok(new ArrayList<>(all));
+    LinkedHashSet<UUID> out = new LinkedHashSet<>(owned);
+    out.addAll(memberOf);
+    return ResponseEntity.ok(new ArrayList<>(out));
   }
 
-  // IDs de estudiantes del aula (sin paginar) — uso interno
-  @Operation(summary = "IDs de estudiantes del aula (sin paginar) — uso interno")
-  @PreAuthorize("hasAnyRole('TEACHER','ADMIN','INTERNAL')")
+  /** IDs de estudiantes del aula. Solo S2S. */
+  @Operation(summary = "IDs de estudiantes del aula — uso interno S2S")
+  @PreAuthorize("hasRole('INTERNAL')")
   @GetMapping("/{classroomId}/students/ids")
-  public ResponseEntity<List<UUID>> studentIds(@PathVariable UUID classroomId) {
-    UUID requester = SecurityUtils.getCurrentUserIdOrThrow();
+  public ResponseEntity<List<UUID>> studentIdsInternal(@PathVariable UUID classroomId) {
+    if (!hasRoleInternal()) {
+      throw new ForbiddenException("Se requiere rol INTERNAL");
+    }
     Classroom c = classroomRepository.findById(classroomId)
         .orElseThrow(() -> new NotFoundException("Aula no encontrada"));
 
-    boolean isInternal = hasInternalRole();
-    boolean isOwner = c.getOwnerUuid().equals(requester);
-    boolean isCoTeacher = memberRepository.existsByClassroomIdAndUserUuidAndRole(c.getId(), requester,
-        MemberRole.CO_TEACHER);
+    var list = memberRepository
+        .findAllByClassroomIdAndRole(c.getId(), MemberRole.STUDENT)
+        .stream().map(ClassroomMember::getUserUuid)
+        .toList();
 
-    if (!(isInternal || isOwner || isCoTeacher || SecurityUtils.isAdmin())) {
-      throw new ForbiddenException("No autorizado");
-    }
-
-    var list = memberRepository.findAllByClassroomIdAndRole(classroomId, MemberRole.STUDENT)
-        .stream().map(ClassroomMember::getUserUuid).toList();
     return ResponseEntity.ok(list);
   }
 
-  // ¿Es miembro del aula? — uso interno (200/404)
-  @Operation(summary = "¿Es miembro del aula? — uso interno")
-  @PreAuthorize("hasAnyRole('TEACHER','ADMIN','INTERNAL')")
+  /** ¿Es miembro del aula? (200/404). Solo S2S. */
+  @Operation(summary = "¿Es miembro del aula? — uso interno S2S")
+  @PreAuthorize("hasRole('INTERNAL')")
   @GetMapping("/{classroomId}/members/{userId}/exists")
-  public ResponseEntity<Void> isMember(@PathVariable UUID classroomId, @PathVariable UUID userId) {
-    UUID requester = SecurityUtils.getCurrentUserIdOrThrow();
+  public ResponseEntity<Void> isMemberInternal(
+      @PathVariable UUID classroomId,
+      @PathVariable UUID userId) {
+    if (!hasRoleInternal()) {
+      throw new ForbiddenException("Se requiere rol INTERNAL");
+    }
     Classroom c = classroomRepository.findById(classroomId)
         .orElseThrow(() -> new NotFoundException("Aula no encontrada"));
-
-    boolean isInternal = hasInternalRole();
-    boolean isOwner = c.getOwnerUuid().equals(requester);
-    boolean isCoTeacher = memberRepository.existsByClassroomIdAndUserUuidAndRole(c.getId(), requester,
-        MemberRole.CO_TEACHER);
-
-    if (!(isInternal || isOwner || isCoTeacher || SecurityUtils.isAdmin())) {
-      throw new ForbiddenException("No autorizado");
-    }
 
     boolean exists = c.getOwnerUuid().equals(userId)
         || memberRepository.existsByClassroomIdAndUserUuid(classroomId, userId);
@@ -117,7 +117,11 @@ public class InternalClassroomController {
     return exists ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
   }
 
-  // ===== NUEVO: lookup de nombres =====
+  /*
+   * =====================================================
+   * LOOKUP batch (pueden usarlo otros servicios/paneles)
+   * =====================================================
+   */
 
   /** GET /lookup?ids=uuid&ids=uuid... */
   @Operation(summary = "Lookup de aulas por ID (id, name) — GET batch")
@@ -144,13 +148,11 @@ public class InternalClassroomController {
     Map<UUID, String> byId = rows.stream()
         .collect(Collectors.toMap(ClassroomIdNameView::getId, ClassroomIdNameView::getName));
 
-    // devolver en el mismo orden pedido y sólo existentes
     List<ClassroomBasicDto> out = new ArrayList<>();
     for (UUID id : dedup) {
       String nm = byId.get(id);
-      if (nm != null) {
+      if (nm != null)
         out.add(new ClassroomBasicDto(id, nm));
-      }
     }
     return out;
   }

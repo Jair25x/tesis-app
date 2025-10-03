@@ -28,8 +28,7 @@ public class InternalObjectiveController {
 
   public InternalObjectiveController(
       ExerciseRepository exerciseRepository,
-      LearningObjectiveRepository learningObjectiveRepository
-  ) {
+      LearningObjectiveRepository learningObjectiveRepository) {
     this.exerciseRepository = exerciseRepository;
     this.learningObjectiveRepository = learningObjectiveRepository;
   }
@@ -71,49 +70,56 @@ public class InternalObjectiveController {
     return ResponseEntity.ok(Map.of("items", items));
   }
 
-  // ---------------- Batch: conteo de ejercicios por objetivo ----------------
+  // ---------------- Batch: conteo de ejercicios por objetivo (con difficulty)
+  // ----------------
 
   @Operation(summary = "Conteo de ejercicios por objetivo (batch) — uso interno")
   @PreAuthorize("hasRole('INTERNAL')")
   @PostMapping("/exercise-counts")
   public ResponseEntity<ObjectiveExerciseCountsResponse> exerciseCounts(
-      @RequestBody ObjectiveExerciseCountsRequest request
-  ) {
+      @RequestBody ObjectiveExerciseCountsRequest request) {
     if (request == null || request.getIds() == null || request.getIds().isEmpty()) {
       return ResponseEntity.ok(ObjectiveExerciseCountsResponse.builder().counts(Map.of()).build());
     }
-    // true por defecto, para alinear con lo que quiere ver el alumno en producción
-    Boolean active = request.getActive() == null ? Boolean.TRUE : request.getActive();
 
-    List<Object[]> rows = exerciseRepository.countByObjectiveIds(request.getIds(), active);
+    // active=true por defecto (lo que ves en alumno)
+    Boolean active = request.getActive() == null ? Boolean.TRUE : request.getActive();
+    // difficulty opcional (BASIC|INTERMEDIATE|ADVANCED)
+    String difficulty = normalizeDbDifficulty(request.getDifficulty());
+
+    List<Object[]> rows = exerciseRepository.countByObjectiveIdsWithFilters(request.getIds(), active, difficulty);
     Map<String, Integer> counts = new LinkedHashMap<>();
+
     for (Object[] r : rows) {
       UUID oid = (UUID) r[0];
       int total = (r[1] instanceof Number) ? ((Number) r[1]).intValue() : Integer.parseInt(String.valueOf(r[1]));
       counts.put(oid.toString(), total);
     }
+
+    // Garantiza salida para todos los IDs (aunque no haya filas)
+    for (UUID id : request.getIds()) {
+      counts.putIfAbsent(id.toString(), 0);
+    }
+
     return ResponseEntity.ok(ObjectiveExerciseCountsResponse.builder().counts(counts).build());
   }
 
-  // ---------------- Siguiente objetivo por grado (fallback incluido) ----------------
+  // ---------------- Siguiente objetivo por grado (igual que ya tenías)
+  // ----------------
 
   @Operation(summary = "Devuelve el siguiente objetivo programático para grade (orden por code), con fallback si no hay datos")
   @PreAuthorize("hasRole('INTERNAL')")
   @GetMapping("/next")
   public ResponseEntity<Map<String, Object>> nextObjective(
       @RequestParam String grade,
-      @RequestParam(required = false) String subject, // opcional: hoy sin uso
-      @RequestParam(required = false) UUID after // opcional: devolver el siguiente a éste
-  ) {
+      @RequestParam(required = false) String subject,
+      @RequestParam(required = false) UUID after) {
     String g = normalizeGrade(grade);
     if (g == null) {
       return ResponseEntity.badRequest().body(Map.of("error", "grade inválido"));
     }
 
-    // 1) Intento por grade normalizado
     List<LearningObjective> ordered = learningObjectiveRepository.findOrderedByGradeNormalized(g);
-
-    // 2) Fallback: si no hay LOs para ese grade, tomar el más reciente global (no bloquea flujo)
     if (ordered.isEmpty()) {
       List<LearningObjective> recent = learningObjectiveRepository.findRecent(1);
       if (recent.isEmpty()) {
@@ -126,19 +132,22 @@ public class InternalObjectiveController {
       payload.put("code", target.getCode());
       payload.put("title", target.getName());
       payload.put("grade", g);
-      if (subject != null) payload.put("subject", subject);
+      if (subject != null)
+        payload.put("subject", subject);
       payload.put("fallback", true);
       return ResponseEntity.ok(payload);
     }
 
-    // 3) Secuencia ordenada por grade
     LearningObjective target;
     if (after == null) {
       target = ordered.get(0);
     } else {
       int idx = -1;
       for (int i = 0; i < ordered.size(); i++) {
-        if (ordered.get(i).getId().equals(after)) { idx = i; break; }
+        if (ordered.get(i).getId().equals(after)) {
+          idx = i;
+          break;
+        }
       }
       target = (idx >= 0 && idx + 1 < ordered.size()) ? ordered.get(idx + 1) : null;
     }
@@ -153,20 +162,36 @@ public class InternalObjectiveController {
     payload.put("code", target.getCode());
     payload.put("title", target.getName());
     payload.put("grade", g);
-    if (subject != null) payload.put("subject", subject);
+    if (subject != null)
+      payload.put("subject", subject);
     return ResponseEntity.ok(payload);
   }
 
   // ===== helpers =====
 
   private String normalizeGrade(String g) {
-    if (g == null) return null;
+    if (g == null)
+      return null;
     String digits = g.trim().replaceAll("[^0-9]", "");
     return digits.isEmpty() ? null : digits;
   }
 
   private String mapDifficultyToDb(String in) {
-    if (in == null || in.isBlank()) return null;
+    if (in == null || in.isBlank())
+      return null;
+    String x = in.trim().toUpperCase(Locale.ROOT);
+    return switch (x) {
+      case "EASY" -> "BASIC";
+      case "MEDIUM" -> "INTERMEDIATE";
+      case "HARD" -> "ADVANCED";
+      case "BASIC", "INTERMEDIATE", "ADVANCED" -> x;
+      default -> null;
+    };
+  }
+
+  private String normalizeDbDifficulty(String in) {
+    if (in == null || in.isBlank())
+      return null;
     String x = in.trim().toUpperCase(Locale.ROOT);
     return switch (x) {
       case "EASY" -> "BASIC";
@@ -178,7 +203,8 @@ public class InternalObjectiveController {
   }
 
   private String mapDifficultyToAdvisor(Exercise.Difficulty d) {
-    if (d == null) return null;
+    if (d == null)
+      return null;
     return switch (d) {
       case BASIC -> "EASY";
       case INTERMEDIATE -> "MEDIUM";
@@ -187,7 +213,8 @@ public class InternalObjectiveController {
   }
 
   private String deriveTitle(String statement) {
-    if (statement == null) return null;
+    if (statement == null)
+      return null;
     String oneLine = statement.replaceAll("\\s+", " ").trim();
     return oneLine.length() <= 140 ? oneLine : (oneLine.substring(0, 137) + "…");
   }

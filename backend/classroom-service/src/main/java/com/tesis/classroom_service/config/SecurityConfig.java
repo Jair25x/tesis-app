@@ -52,6 +52,8 @@ public class SecurityConfig {
         .authorizeHttpRequests(auth -> auth
             .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
             .requestMatchers("/actuator/**").permitAll()
+            // ⬇️ Endpoints internos protegidos por rol
+            .requestMatchers("/internal/**").hasRole("INTERNAL")
             .anyRequest().authenticated())
         .exceptionHandling(ex -> ex
             .authenticationEntryPoint((req, res, e) -> write401(res, e.getMessage()))
@@ -71,6 +73,8 @@ public class SecurityConfig {
             .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").denyAll()
             .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
             .requestMatchers("/actuator/**").denyAll()
+            // ⬇️ Endpoints internos protegidos por rol
+            .requestMatchers("/internal/**").hasRole("INTERNAL")
             .anyRequest().authenticated())
         .exceptionHandling(ex -> ex
             .authenticationEntryPoint((req, res, e) -> write401(res, e.getMessage()))

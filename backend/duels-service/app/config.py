@@ -22,10 +22,10 @@ JWT_ALGS = [a.strip() for a in (os.getenv("JWT_ALGS", "HS512,HS384,HS256") or ""
 # Bases S2S
 CURRICULUM_BASE = os.getenv("CURRICULUM_BASE", "http://curriculum-service:8082")
 PROGRESS_BASE   = os.getenv("PROGRESS_BASE",   "http://progress-service:8083")
-
+CLASSROOM_BASE = os.getenv("CLASSROOM_BASE", "http://classroom-service:8084")
 # S2S JWT (duels -> progress)
 S2S_JWT_SECRET = os.getenv("S2S_JWT_SECRET", "changeme-internal")
-S2S_JWT_ISSUER = os.getenv("S2S_JWT_ISSUER", "duels-service")
+S2S_JWT_ISSUER = os.getenv("S2S_JWT_ISSUER", "ai-advisor-service")
 
 # Eureka (opcional)
 EUREKA_SERVER   = os.getenv("EUREKA_SERVER", "")

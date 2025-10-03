@@ -321,6 +321,7 @@ services:
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=misan
       - S2S_JWT_SECRET=${S2S_JWT_SECRET}
+      - JWT_SECRET_KEY=${JWT_SECRET}
     depends_on:
       - eureka-server
       - config-service
@@ -521,9 +522,10 @@ services:
       # Endpoints S2S
       - CURRICULUM_BASE=http://curriculum-service:8082
       - PROGRESS_BASE=http://progress-service:8083
+      - CLASSROOM_BASE=http://classroom-service:8084
       # S2S JWT (duels -> progress)
       - S2S_JWT_SECRET=${S2S_JWT_SECRET}
-      - S2S_JWT_ISSUER=duels-service
+      - S2S_JWT_ISSUER=ai-advisor-service
       # Eureka (opcional pero recomendado para homogeneidad)
       - EUREKA_SERVER=http://eureka-server:8761/eureka/
       - EUREKA_APP_NAME=DUELS-SERVICE
@@ -532,6 +534,7 @@ services:
       - HOME_URL=http://duels-service:8087/docs
       - RATE_LIMIT_REDIS_URL=redis://advisor-redis:6379/1
       - RATE_LIMIT_MATCHES_PER_MIN=10
+      - DUELS_OPEN_MAX_AGE_H=24
     depends_on:
       - duels-db
       - advisor-redis

@@ -99,7 +99,7 @@ def decode_jwt_token(authorization: Optional[str]) -> Tuple[str, List[str]]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token: {e}")
 
 # =======================
-# FastAPI dependency
+# FastAPI dependencies
 # =======================
 async def current_user(
     # Si vienes a través del gateway, ya tendrás estas cabeceras:
@@ -110,10 +110,7 @@ async def current_user(
 ) -> str:
     """
     Devuelve el userId del alumno como string.
-    Acepta:
-    - Cabeceras del gateway (x-user-id y X-Auth-Roles)
-    - O Authorization: Bearer <JWT> directamente
-    Exige rol STUDENT si hay información de roles.
+    Exige rol STUDENT (acepta USER como alternativa laxa).
     """
     # 1) Camino preferido: gateway inyecta el userId
     if x_user_id:
@@ -126,6 +123,30 @@ async def current_user(
     # 2) Fallback: token directo
     sub, roles = decode_jwt_token(authorization)
     if "ROLE_STUDENT" not in roles and "ROLE_USER" not in roles:
-        # Mantén la misma semántica que tenías: exige STUDENT; aceptamos USER como alternativa laxa
         raise HTTPException(status_code=403, detail="Requires student role")
     return sub
+
+# === NUEVO: actor genérico (docente/admin) + validador de roles ===
+async def current_actor(
+    authorization: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_auth_roles: Optional[str] = Header(None, alias="X-Auth-Roles"),
+) -> Tuple[str, List[str]]:
+    """
+    Devuelve (userId, roles[]) sin exigir STUDENT.
+    Útil para endpoints de reportes (ROLE_TEACHER / ROLE_ADMIN).
+    """
+    if x_user_id:
+        return x_user_id, _parse_roles(x_auth_roles)
+    sub, roles = decode_jwt_token(authorization)
+    return sub, roles
+
+def require_roles(roles: List[str], required: List[str]) -> None:
+    """
+    Lanza 403 si 'roles' no contiene al menos uno de 'required'.
+    Acepta forma con o sin 'ROLE_'.
+    """
+    ups = {r.upper() if r.upper().startswith("ROLE_") else f"ROLE_{r.upper()}" for r in roles}
+    needs = {r.upper() if r.upper().startswith("ROLE_") else f"ROLE_{r.upper()}" for r in required}
+    if ups.isdisjoint(needs):
+        raise HTTPException(status_code=403, detail="Requires role: " + " or ".join(required))

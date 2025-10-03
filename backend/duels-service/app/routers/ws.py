@@ -1,9 +1,8 @@
-# app/routers/ws.py
 from __future__ import annotations
 import os, base64, logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketState
 import jwt
 from sqlalchemy.orm import Session
@@ -58,16 +57,33 @@ def _extract_token(headers: Dict[str, Any], query_params: Dict[str, Any]) -> Opt
     return None
 
 
-def _parse_user_id(token: str) -> Optional[str]:
+def _parse_user(token: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Devuelve (user_id, username_mostrable).
+    Busca varios claims comunes para nombre: username, preferred_username, name,
+    o compone given_name + family_name. Si no hay, devuelve None para username.
+    """
     if not token or not JWT_KEY_BYTES:
-        return None
+        return None, None
     try:
         claims = jwt.decode(token, key=JWT_KEY_BYTES, algorithms=JWT_ALGS, options={"verify_aud": False})
         uid = claims.get("userId") or claims.get("sub")
-        return str(uid) if uid else None
+        # Orden de preferencia de nombre
+        uname = (
+            claims.get("username")
+            or claims.get("preferred_username")
+            or claims.get("name")
+            or None
+        )
+        if not uname:
+            g = (claims.get("given_name") or "").strip()
+            f = (claims.get("family_name") or "").strip()
+            if g or f:
+                uname = f"{g} {f}".strip()
+        return (str(uid) if uid else None, str(uname) if uname else None)
     except Exception as e:
         log.warning("JWT decode error: %s", e)
-        return None
+        return None, None
 
 
 def _resolve_match_id_and_code(ws: WebSocket) -> tuple[Optional[str], Optional[str]]:
@@ -109,7 +125,7 @@ async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         token = _extract_token(websocket.headers, dict(websocket.query_params))
-        user_id = _parse_user_id(token) if token else None
+        user_id, username = _parse_user(token) if token else (None, None)
         if not user_id:
             await _safe_send_json(websocket, {"type": "error", "message": "unauthorized"})
             await _safe_close(websocket, 1008)
@@ -130,17 +146,14 @@ async def ws_endpoint(websocket: WebSocket):
             {"type": "state", "status": "WAITING", "round": 0, "code": code_norm},
         )
 
-        log.info("WS enter lobby matchId=%s user=%s", match_id, user_id)
+        log.info("WS enter lobby matchId=%s user=%s name=%s", match_id, user_id, username or "-")
         # Dentro de ws_lobby se gestionan ready X/Y, round loop, keepalive pings y cierre final.
-        await ws_lobby(websocket, user_id)
+        await ws_lobby(websocket, user_id=user_id, user_name=username)
         # IMPORTANTE: no enviar nada más aquí; ws_lobby podría haber cerrado el socket.
 
         return
-
-    except WebSocketDisconnect:
-        log.info("WS client disconnected")
-        return
     except Exception as e:
+        # WebSocketDisconnect también cae aquí en Starlette pero nos vale el handler genérico
         log.exception("WS fatal error: %s", e)
         await _safe_send_json(websocket, {"type": "error", "message": "internal"})
         await _safe_close(websocket, 1011)

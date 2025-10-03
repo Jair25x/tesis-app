@@ -12,7 +12,7 @@ from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .routers import http as http_router, ws as ws_router
-
+from .routers import reports
 # =========================
 #  App base
 # =========================
@@ -39,6 +39,7 @@ app.add_middleware(
 # =========================
 app.include_router(http_router.router)
 app.include_router(ws_router.router)
+app.include_router(reports.router)
 
 # =========================
 #  Health & Metrics

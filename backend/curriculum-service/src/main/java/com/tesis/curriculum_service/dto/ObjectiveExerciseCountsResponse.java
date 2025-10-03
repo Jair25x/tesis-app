@@ -11,5 +11,6 @@ import java.util.Map;
 @AllArgsConstructor
 @Builder
 public class ObjectiveExerciseCountsResponse {
-  private Map<String, Integer> counts; // keys como String (UUID string)
+  // keys = objectiveId como String (UUID)
+  private Map<String, Integer> counts;
 }

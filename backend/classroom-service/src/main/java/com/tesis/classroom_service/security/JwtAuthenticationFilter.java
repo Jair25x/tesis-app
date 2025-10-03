@@ -1,4 +1,3 @@
-// src/main/java/com/tesis/classroom_service/security/JwtAuthenticationFilter.java
 package com.tesis.classroom_service.security;
 
 import io.jsonwebtoken.Claims;
@@ -23,6 +22,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import javax.crypto.SecretKey;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -32,21 +32,46 @@ import java.util.stream.Collectors;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
   private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
-  private final JwtProperties jwtProperties;
 
-  private volatile SecretKey cachedKey;
+  private final JwtProperties jwtProperties; // jwt.secret-key (público)
+  private final S2SJwtProperties s2sJwtProperties; // s2s.jwt.secret (interno)
 
-  private SecretKey signingKey() {
-    SecretKey local = cachedKey;
-    if (local == null) {
-      synchronized (this) {
-        if (cachedKey == null) {
-          cachedKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.getSecretKey()));
-        }
-        local = cachedKey;
+  // cache de claves candidatas (público + s2s), en Base64 o texto
+  private volatile List<SecretKey> cachedKeys;
+
+  private List<SecretKey> signingKeys() {
+    List<SecretKey> local = cachedKeys;
+    if (local != null)
+      return local;
+    synchronized (this) {
+      if (cachedKeys == null) {
+        List<SecretKey> keys = new ArrayList<>();
+        addKeyCandidates(keys, jwtProperties.getSecretKey(), "jwt.secret-key");
+        addKeyCandidates(keys, s2sJwtProperties.getSecret(), "s2s.jwt.secret");
+        cachedKeys = keys;
       }
+      local = cachedKeys;
     }
     return local;
+  }
+
+  private void addKeyCandidates(List<SecretKey> out, String secret, String name) {
+    if (!StringUtils.hasText(secret))
+      return;
+    // 1) intenta Base64
+    try {
+      byte[] b64 = Decoders.BASE64.decode(secret);
+      if (b64.length >= 32)
+        out.add(Keys.hmacShaKeyFor(b64));
+    } catch (Exception ignore) {
+      /* no era base64 */ }
+    // 2) texto plano
+    byte[] raw = secret.getBytes(StandardCharsets.UTF_8);
+    if (raw.length >= 32) {
+      out.add(Keys.hmacShaKeyFor(raw));
+    } else {
+      log.warn("La clave '{}' parece corta (<32 bytes). Usa al menos 256 bits o Base64.", name);
+    }
   }
 
   @Override
@@ -58,67 +83,76 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       return;
     }
 
-    // 1) Confía en llamadas internas desde el Gateway
+    // 1) Confianza por cabeceras internas (si enrutas vía gateway con headers
+    // firmados)
     String internal = req.getHeader("X-Internal-Call");
     if (StringUtils.hasText(internal)) {
-      String idHeader = headerOrNull(req, "x-user-id"); // UUID
-      String userHeader = headerOrNull(req, "X-Auth-Username"); // también UUID
-      String rolesHdr = headerOrNull(req, "X-Auth-Roles"); // CSV: ROLE_...
+      String principal = headerOrNull(req, "x-user-id");
+      if (!StringUtils.hasText(principal))
+        principal = headerOrNull(req, "X-Auth-Username");
+      String rolesHdr = headerOrNull(req, "X-Auth-Roles");
 
-      String principal = StringUtils.hasText(idHeader) ? idHeader : userHeader;
-
-      if (StringUtils.hasText(principal) && StringUtils.hasText(rolesHdr) && isUuid(principal)) {
+      if (StringUtils.hasText(principal) && StringUtils.hasText(rolesHdr)) {
         var authorities = Arrays.stream(rolesHdr.split(","))
             .map(String::trim)
             .filter(s -> !s.isEmpty())
             .map(this::normalizeRole)
             .map(SimpleGrantedAuthority::new)
             .collect(Collectors.toList());
-        var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
-        SecurityContextHolder.getContext().setAuthentication(auth);
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken(principal, null, authorities));
         log.debug("⚡ classroom-service: auth interna principal={} roles={}", principal, rolesHdr);
       }
       chain.doFilter(req, res);
       return;
     }
 
-    // 2) Fallback: validar JWT directo
+    // 2) JWT Bearer (acepta público o S2S)
     String bearer = req.getHeader(HttpHeaders.AUTHORIZATION);
     if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
       String token = bearer.substring(7);
-      try {
-        Claims claims = Jwts.parser()
-            .verifyWith(signingKey())
-            .build()
-            .parseSignedClaims(token)
-            .getPayload();
+      Claims claims = parseWithAnyKey(token);
+      if (claims != null) {
+        Collection<String> roles = extractRoles(claims.get("roles"));
+        if (roles.isEmpty()) {
+          roles = extractRoles(claims.get("authorities"));
+        }
+        boolean isInternal = roles.stream().anyMatch(r -> r.equals("INTERNAL") || r.equals("ROLE_INTERNAL"));
 
         String principal = claims.get("userId", String.class);
         if (!StringUtils.hasText(principal))
           principal = claims.getSubject();
 
-        if (!isUuid(principal)) {
-          log.warn("JWT sin principal UUID (userId/sub): {}", principal);
+        // para tokens públicos exigimos UUID; para S2S puede ser cualquier sub/iss
+        if (!isInternal && !isUuid(principal)) {
+          log.warn("JWT sin principal UUID para token público (userId/sub={}): se ignora auth", principal);
           chain.doFilter(req, res);
           return;
         }
 
-        Collection<String> rawRoles = extractRoles(claims.get("roles"));
-        var authorities = rawRoles.stream()
+        var authorities = roles.stream()
             .map(this::normalizeRole)
             .map(SimpleGrantedAuthority::new)
-            .toList();
-
-        var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
-        SecurityContextHolder.getContext().setAuthentication(auth);
-        log.debug("🔐 classroom-service: auth por JWT principal={} roles={}", principal, rawRoles);
-
-      } catch (Exception ex) {
-        log.warn("classroom-service: JWT inválido: {}", ex.getMessage());
+            .collect(Collectors.toList());
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken(principal, null, authorities));
+        log.debug("🔐 classroom-service: auth por JWT principal={} roles={}", principal, roles);
+      } else {
+        log.warn("classroom-service: JWT inválido (ningún secreto coincidió)");
       }
     }
 
     chain.doFilter(req, res);
+  }
+
+  private Claims parseWithAnyKey(String token) {
+    for (SecretKey k : signingKeys()) {
+      try {
+        return Jwts.parser().verifyWith(k).build().parseSignedClaims(token).getPayload();
+      } catch (Exception ignore) {
+        /* intenta siguiente */ }
+    }
+    return null;
   }
 
   private String headerOrNull(HttpServletRequest req, String name) {
@@ -139,7 +173,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     if (r == null)
       return "";
     String rr = r.trim();
-    return rr.startsWith("ROLE_") ? rr : "ROLE_" + rr.toUpperCase();
+    return rr.startsWith("ROLE_") ? rr : "ROLE_" + rr.toUpperCase(Locale.ROOT);
   }
 
   @SuppressWarnings("unchecked")
