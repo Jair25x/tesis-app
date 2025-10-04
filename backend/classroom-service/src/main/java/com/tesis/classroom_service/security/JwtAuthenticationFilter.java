@@ -36,13 +36,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
   private final JwtProperties jwtProperties; // jwt.secret-key (público)
   private final S2SJwtProperties s2sJwtProperties; // s2s.jwt.secret (interno)
 
-  // cache de claves candidatas (público + s2s), en Base64 o texto
+  // Cache de claves candidatas (público + s2s), en Base64 o texto
   private volatile List<SecretKey> cachedKeys;
 
   private List<SecretKey> signingKeys() {
     List<SecretKey> local = cachedKeys;
     if (local != null)
       return local;
+
     synchronized (this) {
       if (cachedKeys == null) {
         List<SecretKey> keys = new ArrayList<>();
@@ -61,8 +62,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     // 1) intenta Base64
     try {
       byte[] b64 = Decoders.BASE64.decode(secret);
-      if (b64.length >= 32)
+      if (b64.length >= 32) {
         out.add(Keys.hmacShaKeyFor(b64));
+      }
     } catch (Exception ignore) {
       /* no era base64 */ }
     // 2) texto plano
@@ -78,13 +80,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
   protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
       throws ServletException, IOException {
 
+    // Preflight CORS
     if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
       chain.doFilter(req, res);
       return;
     }
 
-    // 1) Confianza por cabeceras internas (si enrutas vía gateway con headers
-    // firmados)
+    // 1) Bypass interno por cabeceras firmadas (si usas gateway agregando headers)
     String internal = req.getHeader("X-Internal-Call");
     if (StringUtils.hasText(internal)) {
       String principal = headerOrNull(req, "x-user-id");
@@ -107,7 +109,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       return;
     }
 
-    // 2) JWT Bearer (acepta público o S2S)
+    // 2) JWT Bearer (acepta público o S2S; INTERNAL puede no ser UUID)
     String bearer = req.getHeader(HttpHeaders.AUTHORIZATION);
     if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
       String token = bearer.substring(7);
@@ -115,6 +117,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       if (claims != null) {
         Collection<String> roles = extractRoles(claims.get("roles"));
         if (roles.isEmpty()) {
+          // algunos emisores usan "authorities"
           roles = extractRoles(claims.get("authorities"));
         }
         boolean isInternal = roles.stream().anyMatch(r -> r.equals("INTERNAL") || r.equals("ROLE_INTERNAL"));
@@ -123,7 +126,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (!StringUtils.hasText(principal))
           principal = claims.getSubject();
 
-        // para tokens públicos exigimos UUID; para S2S puede ser cualquier sub/iss
         if (!isInternal && !isUuid(principal)) {
           log.warn("JWT sin principal UUID para token público (userId/sub={}): se ignora auth", principal);
           chain.doFilter(req, res);
@@ -150,7 +152,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       try {
         return Jwts.parser().verifyWith(k).build().parseSignedClaims(token).getPayload();
       } catch (Exception ignore) {
-        /* intenta siguiente */ }
+        /* intenta con la siguiente clave */ }
     }
     return null;
   }
