@@ -41,7 +41,7 @@ public class JwtTokenProvider {
     private static final MacAlgorithm USER_ALG = Jwts.SIG.HS512;
 
     // ======== JWT S2S ========
-    @Value("${auth.s2s.secret}")
+    @Value("${auth.s2s.secret:${s2s.jwt.secret:${S2S_JWT_SECRET:}}}")
     private String s2sSecret; // String plano (no base64)
     @Value("${auth.s2s.issuer:auth-service}")
     private String s2sIssuer;

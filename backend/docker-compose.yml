@@ -381,6 +381,7 @@ services:
       - SPRING_DATASOURCE_PASSWORD=misan
       # JWT (si validas tokens dentro del servicio además del gateway)
       - JWT_SECRET=${JWT_SECRET}
+      - S2S_JWT_SECRET=${S2S_JWT_SECRET}
     depends_on:
       - eureka-server
       - config-service

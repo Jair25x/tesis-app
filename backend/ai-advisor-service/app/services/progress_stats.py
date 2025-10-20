@@ -1,6 +1,6 @@
+# app/services/progress_stats.py
 import json, logging, requests, os
-from datetime import timedelta
-from app.core.settings import settings
+from app.services.clients.s2s import mint_internal_jwt
 
 logger = logging.getLogger(__name__)
 PROGRESS_BASE = os.getenv("PROGRESS_BASE_URL", "http://progress-service:8083")
@@ -18,9 +18,14 @@ def get_stats_cached(rdb, student_id, objective_id, ttl=120):
             pass
 
     url = f"{PROGRESS_BASE}/internal/progress/students/{student_id}/objectives/{objective_id}/stats"
+    headers = {
+        "Authorization": f"Bearer {mint_internal_jwt()}",
+        "X-Internal-Call": "ai-advisor-service",
+        "X-Auth-Username": "ai-advisor-service",
+        "X-Auth-Roles": "ROLE_INTERNAL",
+    }
     try:
-        # si usas S2S JWT, añade headers Authorization aquí
-        resp = requests.get(url, timeout=2.0)
+        resp = requests.get(url, headers=headers, timeout=2.0)
         resp.raise_for_status()
         data = resp.json() or {}
         if rdb:

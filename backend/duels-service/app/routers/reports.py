@@ -81,7 +81,6 @@ def _profiles_lookup(uids: Iterable[str]) -> Dict[str, str]:
     if not requests:
         return {}
 
-    # dedup y filtra los que ya estén en caché
     need: List[str] = []
     out: Dict[str, str] = {}
     for uid in set(uids):
@@ -96,17 +95,18 @@ def _profiles_lookup(uids: Iterable[str]) -> Dict[str, str]:
         return out
 
     try:
-        # Auth interno vía headers (tu auth-service tiene InternalCallFilter o similar)
+        # ✅ Bearer S2S + marcas internas
+        from ..clients.s2s import mint_internal_jwt
         headers = {
-            "X-Internal-Call": "1",
-            "X-Auth-Roles": "INTERNAL",
-            "X-User-Id": "duels-service",
+            "Authorization": f"Bearer {mint_internal_jwt()}",
+            "X-Internal-Call": "duels-service",
+            "X-Auth-Roles": "ROLE_INTERNAL",
+            "X-Auth-Username": "duels-service",
         }
         params = {"ids": ",".join(need)}
         resp = requests.get(f"{_AUTH_BASE}/profiles", headers=headers, params=params, timeout=3.0)
         resp.raise_for_status()
         data = resp.json() or []
-        # Esperado: lista de objetos con { id, displayName, avatarUrl? }
         for it in data:
             uid = str(it.get("id") or it.get("userId") or "")
             name = str(it.get("displayName") or it.get("fullName") or "").strip()
@@ -116,7 +116,6 @@ def _profiles_lookup(uids: Iterable[str]) -> Dict[str, str]:
                     _PROFILES_CACHE[uid] = name
                 else:
                     out.setdefault(uid, "")
-        # recorta caché si hace falta
         if len(_PROFILES_CACHE) > _MAX_CACHE:
             _PROFILES_CACHE.clear()
     except Exception as e:

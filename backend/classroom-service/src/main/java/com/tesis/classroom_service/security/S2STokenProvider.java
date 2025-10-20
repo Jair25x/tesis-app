@@ -1,4 +1,3 @@
-// classroom-service: src/main/java/com/tesis/classroom_service/security/S2STokenProvider.java
 package com.tesis.classroom_service.security;
 
 import io.jsonwebtoken.Jwts;
@@ -14,8 +13,9 @@ import java.util.Date;
 @Component
 public class S2STokenProvider {
 
-  @Value("${s2s.secret}")
+  @Value("${s2s.secret:${s2s.jwt.secret:${S2S_JWT_SECRET:}}}")
   private String secret;
+
   @Value("${s2s.issuer:classroom-service}")
   private String issuer;
   @Value("${s2s.audience:internal}")

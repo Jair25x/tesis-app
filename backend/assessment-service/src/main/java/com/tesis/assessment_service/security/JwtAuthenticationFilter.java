@@ -22,14 +22,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import javax.crypto.SecretKey;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * Estrategia igual a progress-service:
- * 1) Si viene X-Internal-Call desde el gateway, confía en headers X-Auth-*.
- * 2) Si no, valida Bearer JWT localmente (tests / llamadas directas).
- */
 @Component
 @Profile("!test")
 @RequiredArgsConstructor
@@ -37,20 +33,43 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
   private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
-  private final JwtProperties jwtProperties;
-  private volatile SecretKey cachedKey;
+  private final JwtProperties jwtProperties; // jwt.secret-key (público)
+  private final S2SJwtProperties s2sJwtProperties; // s2s.jwt.secret (interno)
 
-  private SecretKey signingKey() {
-    SecretKey local = cachedKey;
-    if (local == null) {
-      synchronized (this) {
-        if (cachedKey == null) {
-          cachedKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.getSecretKey()));
-        }
-        local = cachedKey;
+  private volatile List<SecretKey> cachedKeys;
+
+  private List<SecretKey> signingKeys() {
+    List<SecretKey> local = cachedKeys;
+    if (local != null)
+      return local;
+    synchronized (this) {
+      if (cachedKeys == null) {
+        List<SecretKey> keys = new ArrayList<>();
+        addKey(keys, jwtProperties.getSecretKey(), "jwt.secret-key");
+        addKey(keys, s2sJwtProperties.getSecret(), "s2s.jwt.secret");
+        cachedKeys = keys;
       }
+      local = cachedKeys;
     }
     return local;
+  }
+
+  private void addKey(List<SecretKey> out, String secret, String name) {
+    if (!StringUtils.hasText(secret))
+      return;
+    // 1) intenta Base64
+    try {
+      byte[] b64 = Decoders.BASE64.decode(secret);
+      if (b64.length >= 32)
+        out.add(Keys.hmacShaKeyFor(b64));
+    } catch (Exception ignore) {
+    }
+    // 2) texto plano
+    byte[] raw = secret.getBytes(StandardCharsets.UTF_8);
+    if (raw.length >= 32)
+      out.add(Keys.hmacShaKeyFor(raw));
+    else
+      log.warn("La clave '{}' parece corta (<32 bytes). Usa al menos 256 bits o Base64.", name);
   }
 
   @Override
@@ -77,44 +96,59 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             .map(SimpleGrantedAuthority::new)
             .collect(Collectors.toList());
 
-        var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
-        SecurityContextHolder.getContext().setAuthentication(auth);
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken(principal, null, authorities));
         log.debug("assessment-service: auth interna principal={} roles={}", principal, rolesHdr);
       }
       chain.doFilter(req, res);
       return;
     }
 
-    // 2) Bearer local (fallback)
+    // 2) Bearer (público o S2S)
     String bearer = req.getHeader(HttpHeaders.AUTHORIZATION);
     if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
       String token = bearer.substring(7);
-      try {
-        Claims claims = Jwts.parser()
-            .verifyWith(signingKey())
-            .build()
-            .parseSignedClaims(token)
-            .getPayload();
+      Claims claims = parseWithAnyKey(token);
+      if (claims != null) {
+        Collection<String> roles = extractRoles(claims.get("roles"));
+        if (roles.isEmpty())
+          roles = extractRoles(claims.get("authorities"));
+        boolean isInternal = roles.stream().anyMatch(r -> r.equals("INTERNAL") || r.equals("ROLE_INTERNAL"));
 
         String principal = claims.get("userId", String.class);
         if (!StringUtils.hasText(principal))
           principal = claims.getSubject();
 
-        Collection<String> rawRoles = extractRoles(claims.get("roles"));
-        var authorities = rawRoles.stream()
+        if (!isInternal && !isUuid(principal)) {
+          log.warn("JWT sin principal UUID para token público (userId/sub={}): se ignora auth", principal);
+          chain.doFilter(req, res);
+          return;
+        }
+
+        var authorities = roles.stream()
             .map(this::normalizeRole)
             .map(SimpleGrantedAuthority::new)
             .collect(Collectors.toList());
 
-        var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
-        SecurityContextHolder.getContext().setAuthentication(auth);
-        log.debug("assessment-service: auth por JWT principal={} roles={}", principal, rawRoles);
-      } catch (Exception ex) {
-        log.warn("assessment-service: JWT inválido: {}", ex.getMessage());
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken(principal, null, authorities));
+        log.debug("🔐 assessment-service: auth por JWT principal={} roles={}", principal, roles);
+      } else {
+        log.warn("assessment-service: JWT inválido (ningún secreto coincidió)");
       }
     }
 
     chain.doFilter(req, res);
+  }
+
+  private Claims parseWithAnyKey(String token) {
+    for (SecretKey k : signingKeys()) {
+      try {
+        return Jwts.parser().verifyWith(k).build().parseSignedClaims(token).getPayload();
+      } catch (Exception ignore) {
+      }
+    }
+    return null;
   }
 
   private String headerOrNull(HttpServletRequest req, String name) {
@@ -122,11 +156,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     return (v != null && !v.isBlank()) ? v : null;
   }
 
+  private boolean isUuid(String s) {
+    try {
+      UUID.fromString(s);
+      return true;
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
   private String normalizeRole(String r) {
     if (r == null)
       return "";
     String rr = r.trim();
-    return rr.startsWith("ROLE_") ? rr : "ROLE_" + rr.toUpperCase();
+    return rr.startsWith("ROLE_") ? rr : "ROLE_" + rr.toUpperCase(Locale.ROOT);
   }
 
   @SuppressWarnings("unchecked")

@@ -1,8 +1,10 @@
 package com.tesis.assessment_service.config;
 
+import com.tesis.assessment_service.security.S2SJwtSigner;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.*;
@@ -15,10 +17,16 @@ import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Configuration
+@RequiredArgsConstructor
 public class WebClientConfig {
+
+  private final S2SJwtSigner s2sJwtSigner;
 
   @Value("${clients.classroom.base-url}")
   private String classroomBaseUrl;
@@ -28,32 +36,26 @@ public class WebClientConfig {
   private String progressBaseUrl;
 
   // S2S classroom
-  @Value("${clients.classroom.s2s.user-id:00000000-0000-0000-0000-000000000000}")
+  @Value("${clients.classroom.s2s.user-id:assessment-service}")
   private String classroomS2SUserId;
-  @Value("${clients.classroom.s2s.roles:INTERNAL}")
+  @Value("${clients.classroom.s2s.roles:ROLE_INTERNAL}")
   private String classroomS2SRoles;
 
   // S2S curriculum
-  @Value("${clients.curriculum.s2s.user-id:00000000-0000-0000-0000-000000000000}")
+  @Value("${clients.curriculum.s2s.user-id:assessment-service}")
   private String curriculumS2SUserId;
-  @Value("${clients.curriculum.s2s.roles:INTERNAL}")
+  @Value("${clients.curriculum.s2s.roles:ROLE_INTERNAL}")
   private String curriculumS2SRoles;
 
   // S2S progress
-  @Value("${clients.progress.s2s.user-id:00000000-0000-0000-0000-000000000000}")
+  @Value("${clients.progress.s2s.user-id:assessment-service}")
   private String progressS2SUserId;
-  @Value("${clients.progress.s2s.roles:INTERNAL}")
+  @Value("${clients.progress.s2s.roles:ROLE_INTERNAL}")
   private String progressS2SRoles;
 
-  // S2S advisor
+  // Externo (advisor): suele requerir propagar JWT del usuario
   @Value("${clients.advisor.base-url}")
   private String advisorBaseUrl;
-
-  @Value("${clients.advisor.s2s.user-id:00000000-0000-0000-0000-000000000000}")
-  private String advisorS2SUserId;
-
-  @Value("${clients.advisor.s2s.roles:INTERNAL}")
-  private String advisorS2SRoles;
 
   @Value("${assessment.http.timeout-ms:2000}")
   private int timeoutMs;
@@ -74,10 +76,23 @@ public class WebClientConfig {
         .build();
   }
 
-  /**
-   * Útil para servicios externos (advisor) o cuando sí quieres pasar el JWT del
-   * usuario.
-   */
+  private ExchangeFilterFunction mapErrors() {
+    return ExchangeFilterFunction.ofResponseProcessor(resp -> {
+      if (resp.statusCode().is4xxClientError() || resp.statusCode().is5xxServerError()) {
+        return resp.createException().flatMap(ex -> Mono
+            .error(new org.springframework.web.server.ResponseStatusException(resp.statusCode(), ex.getMessage(), ex)));
+      }
+      return Mono.just(resp);
+    });
+  }
+
+  private void copyIfPresent(jakarta.servlet.http.HttpServletRequest http, ClientRequest.Builder rb, String name) {
+    var v = http.getHeader(name);
+    if (StringUtils.hasText(v))
+      rb.header(name, v);
+  }
+
+  /** Propaga Authorization del usuario (para servicios externos como advisor). */
   private ExchangeFilterFunction forwardAuth() {
     return (request, next) -> {
       ClientRequest.Builder rb = ClientRequest.from(request);
@@ -96,56 +111,36 @@ public class WebClientConfig {
     };
   }
 
-  /**
-   * Mapea 4xx/5xx a ResponseStatusException (no usar cuando quieras inspeccionar
-   * status “tal cual”).
-   */
-  private ExchangeFilterFunction mapErrors() {
-    return ExchangeFilterFunction.ofResponseProcessor(resp -> {
-      if (resp.statusCode().is4xxClientError() || resp.statusCode().is5xxServerError()) {
-        return resp.createException().flatMap(ex -> Mono
-            .error(new org.springframework.web.server.ResponseStatusException(resp.statusCode(), ex.getMessage(), ex)));
-      }
-      return Mono.just(resp);
-    });
-  }
-
-  private void copyIfPresent(jakarta.servlet.http.HttpServletRequest http, ClientRequest.Builder rb, String name) {
-    var v = http.getHeader(name);
-    if (StringUtils.hasText(v))
-      rb.header(name, v);
-  }
-
-  // ---- S2S headers helpers
-
-  private ExchangeFilterFunction s2sHeaders(String userId, String rolesCsv) {
-    return (request, next) -> {
-      ClientRequest.Builder rb = ClientRequest.from(request)
-          .header("X-Internal-Call", "true")
-          .header("X-Auth-Roles", normalizeRolesCsv(rolesCsv))
-          .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
-      if (StringUtils.hasText(userId)) {
-        rb.header("x-user-id", userId);
-        rb.header("X-Auth-Username", userId);
-      }
-      return next.exchange(rb.build());
-    };
-  }
+  // ---- S2S helpers (Bearer + headers internos) ----
 
   private String normalizeRolesCsv(String csv) {
     if (!StringUtils.hasText(csv))
-      return "INTERNAL";
-    String[] parts = csv.split(",");
-    StringBuilder out = new StringBuilder();
-    for (String p : parts) {
-      String t = p.trim();
-      if (!t.isEmpty()) {
-        if (out.length() > 0)
-          out.append(',');
-        out.append(t);
+      return "ROLE_INTERNAL";
+    return Arrays.stream(csv.split(","))
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .map(r -> r.startsWith("ROLE_") ? r : "ROLE_" + r.toUpperCase(Locale.ROOT))
+        .collect(Collectors.joining(","));
+  }
+
+  /** Adjunta Authorization: Bearer <S2S>, X-Internal-* y Content-Type. */
+  private ExchangeFilterFunction s2sAuth(String userId, String rolesCsv) {
+    final String normalizedRoles = normalizeRolesCsv(rolesCsv);
+    final String xUser = StringUtils.hasText(userId) ? userId : "assessment-service";
+
+    return (request, next) -> {
+      String token = s2sJwtSigner.buildToken(); // usa S2S_JWT_SECRET; ttl por defecto
+      ClientRequest.Builder rb = ClientRequest.from(request)
+          .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+          .header("X-Internal-Call", "assessment-service")
+          .header("X-Auth-Username", xUser)
+          .header("X-Auth-Roles", normalizedRoles)
+          .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+      if (StringUtils.hasText(userId)) {
+        rb.header("x-user-id", userId);
       }
-    }
-    return out.length() == 0 ? "INTERNAL" : out.toString();
+      return next.exchange(rb.build());
+    };
   }
 
   // ---------------------
@@ -159,7 +154,8 @@ public class WebClientConfig {
         .clientConnector(connector())
         .exchangeStrategies(strategies())
         .baseUrl(classroomBaseUrl)
-        .filter(s2sHeaders(classroomS2SUserId, classroomS2SRoles)) // S2S
+        .filter(s2sAuth(classroomS2SUserId, classroomS2SRoles))
+        .filter(mapErrors())
         .build();
   }
 
@@ -170,7 +166,7 @@ public class WebClientConfig {
         .clientConnector(connector())
         .exchangeStrategies(strategies())
         .baseUrl(curriculumBaseUrl)
-        .filter(s2sHeaders(curriculumS2SUserId, curriculumS2SRoles)) // S2S
+        .filter(s2sAuth(curriculumS2SUserId, curriculumS2SRoles))
         .filter(mapErrors())
         .build();
   }
@@ -182,11 +178,12 @@ public class WebClientConfig {
         .clientConnector(connector())
         .exchangeStrategies(strategies())
         .baseUrl(progressBaseUrl)
-        .filter(s2sHeaders(progressS2SUserId, progressS2SRoles)) // S2S
+        .filter(s2sAuth(progressS2SUserId, progressS2SRoles))
         .filter(mapErrors())
         .build();
   }
 
+  /** Cliente externo (propaga el JWT del usuario). */
   @Bean
   @Qualifier("advisorWebClient")
   public WebClient advisorWebClient() {
@@ -194,7 +191,7 @@ public class WebClientConfig {
         .clientConnector(connector())
         .exchangeStrategies(strategies())
         .baseUrl(advisorBaseUrl)
-        .filter(s2sHeaders(advisorS2SUserId, advisorS2SRoles))
+        .filter(forwardAuth())
         .filter(mapErrors())
         .build();
   }
