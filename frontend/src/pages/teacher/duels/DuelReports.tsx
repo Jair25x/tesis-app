@@ -3,7 +3,12 @@ import {
   useTeacherDuelOverview,
   useTeacherDuelMatches,
 } from "../../../hooks/duels/useDuelReports";
-import type { GroupBy, TimeRange } from "../../../types/duels/reports";
+import type {
+  GroupBy,
+  TimeRange,
+  TeacherDuelOverview,
+  TeacherMatchesResp,
+} from "../../../types/duels/reports";
 import DuelKpiCards from "../../../components/teacher/duels/DuelKpiCards";
 import DuelTimeline from "../../../components/teacher/duels/DuelTimeline";
 import DuelTopPlayers from "../../../components/teacher/duels/DuelTopPlayers";
@@ -11,12 +16,38 @@ import DuelMatchesTable from "../../../components/teacher/duels/DuelMatchesTable
 import DuelStudentPanel from "../../../components/teacher/duels/DuelStudentPanel";
 import ClassroomStudentPicker from "../../../components/teacher/duels/ClassroomStudentPicker";
 import { useToastError } from "../../../hooks/useToastError";
+import { useMembersDirectory } from "../../../hooks/classroom/useMembersDirectory";
 
 function isoDaysAgo(n: number) {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return d.toISOString();
 }
+
+// --------- Type guard para payloads envueltos como { data: T } ----------
+function hasData<T>(x: unknown): x is { data: T } {
+  return (
+    typeof x === "object" &&
+    x !== null &&
+    "data" in (x as Record<string, unknown>)
+  );
+}
+
+// --------- Defaults tipados (sin any) ----------
+const EMPTY_OVERVIEW: TeacherDuelOverview = {
+  range: { from: "", to: "", curriculumId: undefined },
+  totals: { matches: 0, rounds: 0, answers: 0, players: 0 },
+  performance: { winRate: 0, avgRoundTimeSec: 0, correctRate: 0 },
+  timeline: [],
+  topPlayers: [],
+};
+
+const EMPTY_MATCHES: TeacherMatchesResp = {
+  total: 0,
+  limit: 5, // mostramos 5 por página
+  offset: 0,
+  items: [],
+};
 
 export default function DuelReports() {
   const [groupBy, setGroupBy] = useState<GroupBy>("day");
@@ -32,13 +63,17 @@ export default function DuelReports() {
     [days]
   );
 
-  // ⬇️ ya soportan classroomId (según tus hooks actualizados)
   const overview = useTeacherDuelOverview(
     range,
     groupBy,
     classroomId ?? undefined
   );
-  const matches = useTeacherDuelMatches(range, 20, classroomId ?? undefined);
+
+  // ⬇️ Pide 5 elementos por página
+  const matches = useTeacherDuelMatches(range, 5, classroomId ?? undefined);
+
+  // Nombres del aula (directorio público que ya tienes)
+  const { byId: membersById } = useMembersDirectory(classroomId ?? undefined);
 
   const toastError = useToastError();
 
@@ -50,23 +85,72 @@ export default function DuelReports() {
     if (matches.error) toastError(matches.error);
   }, [matches.error, toastError]);
 
-  const onPrev = () =>
-    matches.setOffset(
-      Math.max(0, (matches.data?.offset ?? 0) - (matches.data?.limit ?? 20))
-    );
-  const onNext = () => {
-    const off = matches.data?.offset ?? 0;
-    const lim = matches.data?.limit ?? 20;
-    const tot = matches.data?.total ?? 0;
-    if (off + lim < tot) matches.setOffset(off + lim);
-  };
-
   const loading =
     overview.status === "loading" ||
     matches.status === "loading" ||
     (overview.status === "idle" && !overview.data);
 
-  const o = overview.data;
+  // ================== OVERVIEW seguro ==================
+  const hasOverview = overview.status === "success" && !!overview.data;
+
+  const rawOverviewUnknown: unknown = overview.data ?? null;
+  const unwrappedOverview: TeacherDuelOverview | null =
+    hasData<TeacherDuelOverview>(rawOverviewUnknown)
+      ? rawOverviewUnknown.data
+      : (overview.data as TeacherDuelOverview | null);
+
+  const o: TeacherDuelOverview = unwrappedOverview ?? EMPTY_OVERVIEW;
+
+  const timeline = Array.isArray(o.timeline) ? o.timeline : [];
+
+  // Top players con nombre desde directorio si no viene en la respuesta
+  const topPlayersUi = (Array.isArray(o.topPlayers) ? o.topPlayers : []).map(
+    (p) => {
+      const played = typeof p.played === "number" ? p.played : 0;
+      const wins = typeof p.wins === "number" ? p.wins : 0;
+      const winRate =
+        typeof p.winRate === "number"
+          ? p.winRate
+          : played > 0
+          ? wins / played
+          : 0;
+
+      // nombre preferente: p.name -> directorio.fullName -> undefined
+      const dirName = membersById.get(p.userId)?.fullName ?? undefined;
+
+      return {
+        userId: p.userId,
+        name: p.name && p.name.trim().length > 0 ? p.name : dirName,
+        played,
+        wins,
+        winRate,
+        rating: p.rating,
+      };
+    }
+  );
+
+  // ================== MATCHES seguro ==================
+  const hasMatches = matches.status === "success" && !!matches.data;
+  const m: TeacherMatchesResp = hasMatches ? matches.data! : EMPTY_MATCHES;
+
+  const safeMatches: TeacherMatchesResp = {
+    total: typeof m.total === "number" ? m.total : 0,
+    limit: typeof m.limit === "number" ? m.limit : 5,
+    offset: typeof m.offset === "number" ? m.offset : 0,
+    items: Array.isArray(m.items) ? m.items : [],
+  };
+
+  const onPrev = () =>
+    matches.setOffset(
+      Math.max(0, (safeMatches.offset ?? 0) - (safeMatches.limit ?? 5))
+    );
+  const onNext = () => {
+    const off = safeMatches.offset ?? 0;
+    const lim = safeMatches.limit ?? 5;
+    const tot = safeMatches.total ?? 0;
+    if (off + lim < tot) matches.setOffset(off + lim);
+  };
+
   const selectCls =
     "border border-gray-300 dark:border-white/10 rounded px-2 py-1 text-sm bg-white dark:bg-[#2d3b46] text-gray-900 dark:text-gray-100 focus-visible:ring-2 focus-visible:ring-green-500";
 
@@ -86,7 +170,7 @@ export default function DuelReports() {
               id="days"
               className={selectCls}
               value={days}
-              onChange={(e) => setDays(parseInt(e.target.value))}
+              onChange={(e) => setDays(parseInt(e.target.value, 10))}
             >
               <option value={7}>7 días</option>
               <option value={14}>14 días</option>
@@ -129,7 +213,7 @@ export default function DuelReports() {
         </div>
       )}
 
-      {!loading && o && (
+      {!loading && hasOverview && (
         <>
           <DuelKpiCards
             matches={o.totals.matches}
@@ -141,18 +225,22 @@ export default function DuelReports() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2">
-              <DuelTimeline data={o.timeline} />
+              <DuelTimeline data={timeline} />
             </div>
             <div>
-              <DuelTopPlayers items={o.topPlayers} />
+              <DuelTopPlayers items={topPlayersUi} />
             </div>
           </div>
         </>
       )}
 
-      <DuelMatchesTable data={matches.data} onPrev={onPrev} onNext={onNext} />
+      <DuelMatchesTable
+        data={safeMatches}
+        onPrev={onPrev}
+        onNext={onNext}
+        nameById={membersById} // solo fullName
+      />
 
-      {/* Panel puntual por alumno */}
       <DuelStudentPanel selectedUserId={studentId ?? undefined} />
     </div>
   );

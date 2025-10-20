@@ -1,10 +1,15 @@
-// src/types/duels/reports.ts
 export type GroupBy = "day" | "week" | "month";
 
+/**
+ * Alineado al backend:
+ * - El BE incluye groupBy y classroomId dentro de range.
+ */
 export interface TimeRange {
-  from: string; // ISO (incl.)
-  to: string; // ISO (excl. o incl.; el BE lo maneja con finished_at)
+  from: string; // ISO
+  to: string; // ISO
   curriculumId?: string;
+  groupBy?: GroupBy;
+  classroomId?: string;
 }
 
 export interface TeacherDuelOverview {
@@ -14,36 +19,50 @@ export interface TeacherDuelOverview {
     rounds: number;
     answers: number;
     players: number; // únicos
-    classrooms?: number; // si el BE lo expone (opcional)
+    classrooms?: number;
   };
   performance: {
     winRate: number; // 0..1
     avgRoundTimeSec: number; // segundos
     correctRate: number; // 0..1
   };
-  timeline: Array<{ bucket: string; matches: number }>; // bucket = YYYY-MM-DD (día/semana/mes)
+  timeline: Array<{ bucket: string; matches: number }>;
   topPlayers: Array<{
     userId: string;
     name?: string;
-    played: number;
-    wins: number;
-    winRate: number; // 0..1
     rating?: number;
+    played?: number;
+    wins?: number;
+    winRate?: number; // 0..1
   }>;
 }
 
+/**
+ * Alineado al backend /teacher/matches (con enriquecidos).
+ */
 export interface TeacherMatchRow {
   matchId: string;
+  createdAt: string | null; // <-- NUEVO
   finishedAt: string | null;
   bestOf: number;
   status: "WAITING" | "RUNNING" | "FINISHED";
   winnerId: string | null;
-  players: Array<{ userId: string; name?: string }>;
-  rounds: number;
-  answers: number;
+
+  // Enriquecidos por el BE
+  players?: Array<{ userId: string; name?: string }>;
+  rounds?: number;
+  answers?: number;
+
   objectiveId?: string | null;
   difficulty?: "EASY" | "MEDIUM" | "HARD" | null;
   shortCode?: string | null;
+
+  // NUEVOS (el BE los envía)
+  mode?: string | null;
+  maxPlayers?: number | null;
+
+  // legacy opcional
+  questionsPerRound?: number;
 }
 
 export interface TeacherMatchesResp {
