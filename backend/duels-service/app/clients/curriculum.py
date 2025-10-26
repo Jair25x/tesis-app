@@ -7,11 +7,17 @@ import httpx
 
 from ..metrics import duels_check_latency_seconds
 from ..config import CURRICULUM_BASE
-from .s2s import s2s_token  # ← usar helper único
+from .s2s import s2s_token  # helper único
 
 @asynccontextmanager
 async def _client():
-    headers = {"Authorization": f"Bearer {s2s_token(authorities=['ROLE_INTERNAL'])}"}
+    headers = {
+        "Authorization": f"Bearer {s2s_token(authorities=['ROLE_INTERNAL'])}",
+        "X-Internal-Call": "duels-service",
+        "X-Auth-Username": "duels-service",
+        "X-Auth-Roles": "ROLE_INTERNAL",
+        "Content-Type": "application/json",
+    }
     async with httpx.AsyncClient(
         base_url=CURRICULUM_BASE,
         timeout=3.0,

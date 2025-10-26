@@ -6,7 +6,7 @@ import time
 import httpx
 
 from ..config import CLASSROOM_BASE
-from .s2s import s2s_token  # ⬅️ nuevo helper centralizado
+from .s2s import s2s_token  # helper unificado
 
 log = logging.getLogger("duels.classrooms")
 
@@ -29,7 +29,13 @@ def _set_cached(key: Tuple[str, str], value: List[str]):
 
 def _headers_for(user_id: Optional[str] = None) -> Dict[str, str]:
     token = s2s_token(authorities=["ROLE_INTERNAL"])
-    h = {"Authorization": f"Bearer {token}"}
+    h = {
+        "Authorization": f"Bearer {token}",
+        "X-Internal-Call": "duels-service",
+        "X-Auth-Username": "duels-service",
+        "X-Auth-Roles": "ROLE_INTERNAL",
+        "Content-Type": "application/json",
+    }
     if user_id:
         h["X-Act-As-User"] = str(user_id)
     return h

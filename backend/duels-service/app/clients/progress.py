@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
 
 from ..config import PROGRESS_BASE
-from .s2s import s2s_token  # ← helper unificado
+from .s2s import s2s_token  # helper unificado
 
 TIMEOUT = 5.0
 
@@ -14,7 +14,13 @@ async def _client():
     if not PROGRESS_BASE:
         yield None
         return
-    headers = {"Authorization": f"Bearer {s2s_token(authorities=['ROLE_INTERNAL'])}"}
+    headers = {
+        "Authorization": f"Bearer {s2s_token(authorities=['ROLE_INTERNAL'])}",
+        "X-Internal-Call": "duels-service",
+        "X-Auth-Username": "duels-service",
+        "X-Auth-Roles": "ROLE_INTERNAL",
+        "Content-Type": "application/json",
+    }
     async with httpx.AsyncClient(base_url=PROGRESS_BASE, timeout=TIMEOUT, headers=headers) as c:
         yield c
 

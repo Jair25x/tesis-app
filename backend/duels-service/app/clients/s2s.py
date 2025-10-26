@@ -5,7 +5,7 @@ import jwt
 from typing import Iterable, Dict, Any
 from ..config import S2S_JWT_SECRET, S2S_JWT_ISSUER
 
-_ALG = "HS256"  # ← alinea con Spring y tus otros clientes
+_ALG = "HS256"  # alineado con Spring Security
 
 def s2s_token(
     *,
@@ -26,3 +26,15 @@ def s2s_token(
     if extra_claims:
         claims.update(extra_claims)
     return jwt.encode(claims, S2S_JWT_SECRET, algorithm=_ALG)
+
+def mint_internal_jwt(
+    *,
+    roles: Iterable[str] = ("ROLE_INTERNAL",),
+    subject: str = "duels-service",
+    ttl_seconds: int = 300,
+    extra_claims: Dict[str, Any] | None = None,
+) -> str:
+    """
+    Para emitir un JWT interno coherente con filtros S2S de Spring. Documentalo no te olvidess
+    """
+    return s2s_token(subject=subject, authorities=roles, ttl_seconds=ttl_seconds, extra_claims=extra_claims)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import json, time, uuid, asyncio, logging, contextlib
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone  # <- añade timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Tuple
 
 from fastapi import WebSocket, WebSocketDisconnect, HTTPException
@@ -24,6 +24,7 @@ log = logging.getLogger("duels.manager")
 COUNTDOWN_SEC = 3
 ROUND_MS_DEFAULT = 30_000  # fallback
 DEFAULT_MAX_PLAYERS = 2
+NO_PARTICIPATION_RETRY = 1  # reintentos por ronda si nadie responde
 
 # -------------------------------------------------------------------
 # Short code & CRUD
@@ -43,11 +44,6 @@ def _matchplayer_exists(db: Session, match_id: str, user_id: str) -> bool:
     return bool(db.scalar(q))
 
 def _distribute_top_level_picks(dedup_ids: List[str], best_of: int, questions_per_round: int) -> Dict[Tuple[int,int], str]:
-    """
-    Distribuye exerciseIds secuencialmente por (n, q_index).
-    Retorna {(n, q_index) -> exerciseId}.
-    Si faltan ids, los huecos se rellenarán en runtime por picker.
-    """
     mapping: Dict[Tuple[int,int], str] = {}
     i = 0
     total_needed = best_of * questions_per_round
@@ -61,30 +57,21 @@ def _distribute_top_level_picks(dedup_ids: List[str], best_of: int, questions_pe
     return mapping
 
 def create_match(db: Session, *, creator_id: str, req) -> Match:
-    """
-    Crea el Match con validación robusta de inventario.
-    Soporta modo uniforme (questionsPerRound/difficulty) o modo avanzado con rounds[].
-    Garantiza picks exactos por sub-pregunta si envías exerciseIds (top-level o por ronda).
-    """
     rounds_req = getattr(req, "rounds", None) or []
     best_of = int(getattr(req, "bestOf", 1) or 1)
     qpr_uniform = int(getattr(req, "questionsPerRound", 1) or 1)
     objective_id = getattr(req, "objectiveId", None)
     difficulty_global = getattr(req, "difficulty", None)
 
-    # Coherencia best_of vs rounds[]
     if rounds_req:
         best_of = len(rounds_req)
 
-    # Validación mínima
     provided_ids_top = [str(x) for x in (getattr(req, "exerciseIds", None) or [])]
     has_any_round_ids = any((getattr(r, "exerciseIds", None) or []) for r in rounds_req)
     if not objective_id and not provided_ids_top and not has_any_round_ids:
         raise HTTPException(status_code=400, detail="Provide exerciseIds[]/rounds[].exerciseIds[] or objectiveId")
 
-    # === Validar inventario ===
     if rounds_req:
-        # Rondas
         if objective_id:
             for idx, r in enumerate(rounds_req, start=1):
                 q_needed = int(getattr(r, "questions", 1) or 1)
@@ -96,7 +83,6 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
                             status_code=400,
                             detail=f"Ronda {idx}: OA tiene {available} ejercicios activos (dif={diff_r or difficulty_global}); se requieren {q_needed}."
                         )
-        # Longitud picks por ronda (si se mandan)
         for idx, r in enumerate(rounds_req, start=1):
             ids_r = [str(x) for x in (getattr(r, "exerciseIds", None) or [])]
             if ids_r and len(dict.fromkeys(ids_r)) < int(getattr(r, "questions", 1) or 1):
@@ -105,7 +91,6 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
                     detail=f"Ronda {idx}: enviaste {len(dict.fromkeys(ids_r))} IDs; se requieren {int(getattr(r, 'questions', 1) or 1)}."
                 )
     else:
-        # Uniforme
         total_needed = best_of * qpr_uniform
         if provided_ids_top:
             dedup = list(dict.fromkeys(provided_ids_top))
@@ -122,7 +107,6 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
                     detail=f"El OA seleccionado tiene {available} ejercicios activos; se requieren {total_needed}."
                 )
 
-    # === Crear Match
     m = Match(
         id=str(uuid.uuid4()),
         creator_id=creator_id,
@@ -137,7 +121,6 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
         win_target=getattr(req, "winTarget", None),
         questions_per_round=qpr_uniform,
     )
-    # Hints opcionales
     try:
         if hasattr(m, "objective_id") and objective_id:
             setattr(m, "objective_id", str(objective_id))
@@ -151,14 +134,12 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
 
     m.short_code = _ensure_short_code(db)
     db.add(m)
-    db.flush()  # ya tenemos m.id
+    db.flush()
 
-    # Registrar creador como jugador
     if not _matchplayer_exists(db, m.id, creator_id):
         db.add(MatchPlayer(match_id=m.id, user_id=creator_id))
         db.flush()
 
-    # === Persistir configuración / picks
     rounds_req = getattr(req, "rounds", None) or []
     if rounds_req:
         for i, r in enumerate(rounds_req, start=1):
@@ -188,30 +169,13 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
     return m
 
 def list_open_matches(db: Session, *, curriculum_id: Optional[str] = None, limit: int = 50) -> list[Match]:
-    """
-    Devuelve partidas públicas realmente abiertas:
-      - WAITING
-      - short_code no vacío
-      - al menos 1 jugador (EXISTS en match_players)
-      - no muy antiguas (por defecto 48h; configurable vía DUELS_OPEN_MAX_AGE_H)
-      - (Opcional) con cupo disponible (jugadores < max_players)
-    """
-    # Ventana de "vigencia" para el lobby
     try:
         max_age_h = int(os.getenv("DUELS_OPEN_MAX_AGE_H", "48"))
     except Exception:
         max_age_h = 48
-    max_age_h = max(1, min(max_age_h, 336))  # [1h, 14d]
+    max_age_h = max(1, min(max_age_h, 336))
     min_created_at = datetime.utcnow() - timedelta(hours=max_age_h)
 
-    # Subquery: contar jugadores por match (útil para cupo)
-    mp_count_sq = (
-        select(MatchPlayer.match_id, func.count().label("cnt"))
-        .group_by(MatchPlayer.match_id)
-        .subquery()
-    )
-
-    # Base query
     q = (
         select(Match)
         .where(
@@ -220,7 +184,7 @@ def list_open_matches(db: Session, *, curriculum_id: Optional[str] = None, limit
             Match.created_at >= min_created_at,
             Match.short_code.is_not(None),
             func.length(func.trim(Match.short_code)) >= 4,
-            exists().where(MatchPlayer.match_id == Match.id),  # 👈 debe haber algún jugador
+            exists().where(MatchPlayer.match_id == Match.id),
         )
         .order_by(Match.created_at.desc())
         .limit(limit)
@@ -228,13 +192,6 @@ def list_open_matches(db: Session, *, curriculum_id: Optional[str] = None, limit
 
     if curriculum_id:
         q = q.where(Match.curriculum_id == curriculum_id)
-
-    # (Opcional) exigir cupo disponible: players < max_players
-    # Descomenta si quieres ocultar salas llenas:
-    # q = (
-    #     q.join(mp_count_sq, mp_count_sq.c.match_id == Match.id, isouter=True)
-    #       .where((mp_count_sq.c.cnt.is_(None)) | (mp_count_sq.c.cnt < (Match.max_players or 2)))
-    # )
 
     return list(db.scalars(q))
 
@@ -415,7 +372,10 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
             n = int(data.get("round") or 0)
             if n <= 0 or n != room.round_no or not room.current_exercise_id or room.q_index <= 0:
                 continue
-            answer = data.get("answer") or {}
+            answer = data.get("answer")
+            if answer is None:
+                # ignorar envíos vacíos
+                continue
 
             # Evalúa y persiste
             try:
@@ -469,7 +429,7 @@ async def _fail_and_close(room: Room, message: str):
 # Orquestador con sub-preguntas por ronda
 # -------------------------------------------------------------------
 async def _orchestrator(room: Room):
-    # Espera jugadores suficientes y registra MatchPlayer
+    # Espera jugadores y registra MatchPlayer
     while True:
         if room.closed:
             return
@@ -492,7 +452,7 @@ async def _orchestrator(room: Room):
 
     await _send_state(room)
 
-    # Lobby: todos listos (o min(players, max_players))
+    # Lobby: todos listos (mín: 2)
     while True:
         if room.closed:
             return
@@ -533,15 +493,12 @@ async def _orchestrator(room: Room):
         mode = m.mode or "bestOf"
         needed = best_of // 2 + 1 if mode == "bestOf" else None
 
-        # Participantes
         rows = list(db.scalars(select(MatchPlayer).where(MatchPlayer.match_id == room.match_id)))
         participants = {r.user_id for r in rows} or set(room.members.keys())
 
-        # Inferencias globales
         inferred_objective = getattr(m, "objective_id", None)
         inferred_difficulty = getattr(m, "difficulty", None)
 
-        # Round configs (si no hay, usamos legacy)
         rc_rows = db.query(RoundConfig).filter_by(match_id=room.match_id).all()
         rc_map: Dict[int, RoundConfig] = {int(rc.n): rc for rc in rc_rows}
 
@@ -553,27 +510,70 @@ async def _orchestrator(room: Room):
     by_round: list[dict] = []
     winner_id: Optional[str] = None
 
-    def _decide_round_winner(stats: Dict[str, Tuple[int, int, int]]) -> Optional[str]:
+    def _decide_round_winner(stats: Dict[str, Tuple[int, int, int, int]]) -> Tuple[Optional[str], bool]:
+        """
+        stats[user] = (correct_count, total_time, best_time, attempts)
+        Retorna (winnerId|None, noParticipation: bool)
+        """
         if not stats:
-            return None
+            return None, True
+        total_attempts = sum(v[3] for v in stats.values())
+        if total_attempts == 0:
+            return None, True
+
+        # Orden: más correctas, más intentos, menor tiempo total, mejor tiempo (0 -> infinito)
         ordered = sorted(
             stats.items(),
-            key=lambda kv: (-kv[1][0], kv[1][1], kv[1][2] if kv[1][2] > 0 else 1_000_000_000)
+            key=lambda kv: (
+                -kv[1][0],            # correctas
+                -kv[1][3],            # intentos (participación)
+                kv[1][1],             # tiempo total
+                kv[1][2] if kv[1][2] > 0 else 1_000_000_000
+            )
         )
+
         if len(ordered) == 1:
-            return ordered[0][0]
+            return ordered[0][0], False
+
         a, b = ordered[0][1], ordered[1][1]
-        if a[0] != b[0] or a[1] != b[1] or a[2] != b[2]:
-            return ordered[0][0]
-        return None
+        if (a[0], a[3], a[1], a[2]) != (b[0], b[3], b[1], b[2]):
+            return ordered[0][0], False
+
+        # Sigue empate absoluto entre los dos primeros → decide por “primero en lograr un envío correcto”,
+        # si no hubo correctas, por “primero en enviar”.
+        db2 = SessionLocal()
+        try:
+            # Earliest answer (created_at) entre empatados
+            users = [ordered[0][0], ordered[1][0]]
+            earliest: List[Tuple[str, datetime]] = list(
+                db2.execute(
+                    select(Answer.student_id, func.min(Answer.created_at))
+                    .where(
+                        Answer.match_id == room.match_id,
+                        Answer.n == room.round_no,
+                        Answer.student_id.in_(users)
+                    )
+                    .group_by(Answer.student_id)
+                )
+            )
+            if earliest:
+                earliest.sort(key=lambda x: x[1] or datetime.max.replace(tzinfo=timezone.utc))
+                return earliest[0][0], False
+        except Exception:
+            pass
+        finally:
+            db2.close()
+
+        # Si todo igual-igual, permitir empate en la ronda (no suma)
+        return None, False
 
     rounds_to_play = best_of if mode in ("bestOf", "timePerQuestion") else 10
 
-    for n in range(1, rounds_to_play + 1):
+    n = 1
+    while n <= rounds_to_play:
         if room.closed:
             return
 
-        # ===== Ronda n =====
         rc = rc_map.get(n)
         q_total = int(rc.questions) if rc else room.questions_per_round
         diff_for_round = rc.difficulty if (rc and rc.difficulty) else inferred_difficulty
@@ -582,7 +582,7 @@ async def _orchestrator(room: Room):
         room.q_total = max(1, q_total)
         room.round_t0 = time.perf_counter()
 
-        # Jugamos q_index=1..q_total
+        # ------ sub-preguntas de la ronda ------
         for q in range(1, room.q_total + 1):
             if room.closed:
                 return
@@ -592,18 +592,14 @@ async def _orchestrator(room: Room):
             try:
                 exercise_id: Optional[str] = None
 
-                # 1) PRIORIDAD: RoundPick persistido
                 rp = db.query(RoundPick).filter_by(match_id=room.match_id, n=n, q_index=q).one_or_none()
                 if rp:
                     exercise_id = rp.exercise_id
                 else:
-                    # 2) Legacy para q==1: Round.exercise_id
                     if q == 1:
                         r: Round | None = db.query(Round).filter_by(match_id=room.match_id, n=n).one_or_none()
                         if r:
                             exercise_id = r.exercise_id
-
-                    # 3) Picker (OA obligatorio)
                     if not exercise_id:
                         if not inferred_objective:
                             await _fail_and_close(room, f"no exercises available (objective={inferred_objective}, qIndex={q})")
@@ -634,17 +630,17 @@ async def _orchestrator(room: Room):
                 "qTotal": room.q_total,
             })
 
-            deadline = time.time() + (qtime_ms / 1000.0)
+            deadline = time.perf_counter() + (qtime_ms / 1000.0)
 
             # Espera: todos contesten o timeout
-            while time.time() < deadline:
+            while time.perf_counter() < deadline:
                 if room.closed:
                     return
                 db = SessionLocal()
                 try:
                     a_rows = db.query(Answer).filter_by(match_id=room.match_id, n=n, q_index=q).all()
                     got = {str(a.student_id) for a in a_rows}
-                    if got.issuperset(participants):
+                    if got.issuperset(set(score.keys())):
                         break
                 finally:
                     db.close()
@@ -653,31 +649,66 @@ async def _orchestrator(room: Room):
             # margen pequeño
             await asyncio.sleep(0.2)
 
-        # ===== Fin de ronda n: decidir ganador =====
+        # ===== Fin de ronda n: decidir ganador o no-participación =====
         start_perf = room.round_t0 or time.perf_counter()
         db = SessionLocal()
         try:
             a_rows = db.query(Answer).filter_by(match_id=room.match_id, n=n).all()
-            stats: Dict[str, Tuple[int, int, int]] = {}
-            for uid in participants:
+            stats: Dict[str, Tuple[int, int, int, int]] = {}
+            for uid in score.keys():
                 user_ans = [a for a in a_rows if str(a.student_id) == uid]
+                attempts = len(user_ans)
                 correct_count = sum(1 for a in user_ans if a.correct)
                 total_time = sum(int(a.time_ms or 0) for a in user_ans)
                 best_time = min([int(a.time_ms or 0) for a in user_ans], default=0)
-                stats[uid] = (correct_count, total_time, best_time)
+                stats[uid] = (correct_count, total_time, best_time, attempts)
         finally:
             db.close()
 
         duels_round_duration_seconds.observe(max(0.0, time.perf_counter() - start_perf))
 
-        round_winner: Optional[str] = _decide_round_winner(stats)
+        round_winner, no_participation = _decide_round_winner(stats)
 
-        by_round.append({"round": n, "winnerId": round_winner})
+        # Si nadie participó, reintentar una vez la ronda
+        retried = False
+        if no_participation:
+            for _ in range(NO_PARTICIPATION_RETRY):
+                retried = True
+                # small backoff
+                await asyncio.sleep(0.6)
+
+                # limpiar cualquier resto de respuestas (no debería haber)
+                db = SessionLocal()
+                try:
+                    # nada que borrar explícitamente; simplemente se juega de nuevo
+                    pass
+                finally:
+                    db.close()
+
+                # REJUGAR la misma ronda n (rompemos el while para re-correr la ronda completa)
+                break
+
+        if retried and no_participation:
+            # Se programó reintento: re-correr la ronda n
+            # (volvemos al inicio del while sin incrementar n)
+            continue
+
+        # Registrar resultado de ronda
+        by_round.append({"round": n, "winnerId": round_winner, "noParticipation": bool(no_participation)})
+
+        await _broadcast(room, {
+            "type": "round_end",
+            "round": n,
+            "score": score,
+            "noParticipation": bool(no_participation),
+            "winnerId": round_winner,
+        })
+
+        # Sumar punto sólo si hubo ganador
         if round_winner:
             score[round_winner] = score.get(round_winner, 0) + 1
 
-        await _broadcast(room, {"type": "round_end", "round": n, "score": score})
-
+        # ¿ya hay ganador del duelo?
         if room.mode == "bestOf" and needed is not None:
             if any(v >= needed for v in score.values()):
                 winner_id = max(score.items(), key=lambda kv: kv[1])[0]
@@ -687,7 +718,9 @@ async def _orchestrator(room: Room):
             if any(v >= target for v in score.values()):
                 winner_id = max(score.items(), key=lambda kv: kv[1])[0]
                 break
-        # timePerQuestion: se decide al final
+        # timePerQuestion: decide al final
+
+        n += 1  # siguiente ronda
 
     # Decidir ganador si aún no
     if winner_id is None:
@@ -696,9 +729,8 @@ async def _orchestrator(room: Room):
             if len(ordered) == 1 or ordered[0][1] > ordered[1][1]:
                 winner_id = ordered[0][0]
             else:
-                winner_id = None
+                winner_id = None  # empate real
 
-    # Final
     await _broadcast(room, {
         "type": "final",
         "winnerId": winner_id,
@@ -707,14 +739,14 @@ async def _orchestrator(room: Room):
         "playersInfo": _players_info(room),
     })
 
-    # Persistir FINISHED + ganador + Elo (1v1) + finished_at
+    # Persistir FINISHED + ganador + Elo + finished_at
     db = SessionLocal()
     try:
         m = db.get(Match, room.match_id)
         if m and m.status != "FINISHED":
             m.status = "FINISHED"
             m.winner_id = winner_id
-            m.finished_at = datetime.now(timezone.utc)  # <- NUEVO
+            m.finished_at = datetime.now(timezone.utc)
             db.add(m)
             if len(score) == 2:
                 players = list(score.keys())
@@ -744,7 +776,6 @@ async def _orchestrator(room: Room):
         with contextlib.suppress(Exception):
             await ws.close(code=1000)
 
-    # LIMPIEZA
     async with ROOMS_LOCK:
         ROOMS.pop(room.match_id, None)
 
@@ -776,7 +807,6 @@ async def ws_lobby(ws: WebSocket, user_id: str, user_name: Optional[str] = None)
         await ws.close(code=1008)
         return
 
-    # Validaciones básicas
     db = SessionLocal()
     try:
         m: Match | None = db.get(Match, match_id)
@@ -794,24 +824,20 @@ async def ws_lobby(ws: WebSocket, user_id: str, user_name: Optional[str] = None)
     finally:
         db.close()
 
-    # Unir (y registrar nombre para UI)
     display_name = (user_name or "").strip() or f"Jugador {user_id[:4]}"
     async with room.lock:
         room.members[user_id] = ws
         room.names[user_id] = display_name
         room.ready.discard(user_id)
 
-    # Keepalive
     ka = asyncio.create_task(_keepalive(ws, user_id))
     async with room.lock:
         room.keepalive_tasks[user_id] = ka
 
     await _send_state(room)
 
-    # Reader
     reader = asyncio.create_task(_reader_task(room, user_id, ws))
 
-    # Orquestador (solo una vez, el líder/creator)
     async with room.lock:
         need_start = (not room.orchestrator_started) and (room.leader_id == user_id)
         if need_start:
@@ -819,7 +845,6 @@ async def ws_lobby(ws: WebSocket, user_id: str, user_name: Optional[str] = None)
     if need_start:
         asyncio.create_task(_orchestrator(room))
 
-    # Mantener vivo hasta cierre
     try:
         while True:
             if room.closed:
