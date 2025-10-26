@@ -14,10 +14,9 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
   const wsRef = useRef<WebSocket | null>(null);
   const queueRef = useRef<ClientMsg[]>([]);
   const backoffRef = useRef<number>(500);
-  const stopRef = useRef<boolean>(false); // corta reconexiones (p. ej. tras finalizar)
-  const finishedRef = useRef<boolean>(false); // marca que el duelo terminó (final/RESULTS)
+  const stopRef = useRef<boolean>(false);
+  const finishedRef = useRef<boolean>(false);
 
-  // Descompón en primitivas estables
   const token = opts.token;
   const matchId = "matchId" in opts ? opts.matchId : "";
   const code = "code" in opts ? opts.code : "";
@@ -31,7 +30,6 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
     return `${scheme}://${
       window.location.host
     }/api/duels/ws?${params.toString()}`;
-    // ⚠️ Dependencias SOLO primitivas para evitar reconexiones falsas
   }, [token, matchId, code]);
 
   const send = useCallback((msg: ClientMsg) => {
@@ -52,7 +50,9 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
       if (wsRef.current) {
         try {
           wsRef.current.close();
-        } catch { /* empty */ }
+        } catch {
+          /* empty */
+        }
         wsRef.current = null;
       }
       return;
@@ -70,7 +70,6 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
       ws.onopen = () => {
         setConnected(true);
         backoffRef.current = 500;
-        // Drenar cola
         for (const m of queueRef.current.splice(0)) {
           ws.send(JSON.stringify(m));
         }
@@ -91,15 +90,15 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
           [k: string]: unknown;
         };
 
-        // Heartbeat backend → respondemos
         if (payload.type === "ping") {
           try {
             ws.send(JSON.stringify({ type: "pong" }));
-          } catch { /* empty */ }
+          } catch {
+            /* empty */
+          }
           return;
         }
 
-        // Errores del backend
         if (payload.type === "error") {
           const err = payload as ErrorMsg;
           if (err.message === "unauthorized") {
@@ -107,14 +106,16 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
             stopRef.current = true;
             try {
               ws.close(1008, "unauthorized");
-            } catch { /* empty */ }
+            } catch {
+              /* empty */
+            }
             return;
           }
-          // Otros errores → se exponen vía UI si corresponde
+          // Otros errores se manejan desde la UI
+          setLastMsg(payload as ServerMsg);
           return;
         }
 
-        // Si llega "final" o "state: RESULTS", marcamos fin y NO reconectamos
         if (
           payload.type === "final" ||
           (payload.type === "state" && payload.status === "RESULTS")
@@ -122,34 +123,28 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
           finishedRef.current = true;
           stopRef.current = true;
           setLastMsg(payload as ServerMsg);
-          // Cerramos con cierre normal; onclose no intentará reconectar
           try {
             ws.close(1000, "done");
-          } catch { /* empty */ }
+          } catch {
+            /* empty */
+          }
           return;
         }
 
-        // Mensaje válido del servidor
         setLastMsg(payload as ServerMsg);
       };
 
       ws.onclose = (ev: CloseEvent) => {
         setConnected(false);
-        // No reintentar si:
-        // - stopRef está activo (p. ej. finalizado), o
-        // - cierre normal/controlado (1000) o away (1001), o
-        // - unauthorized (1008)
         if (stopRef.current) return;
         if (ev.code === 1000 || ev.code === 1001 || ev.code === 1008) return;
-
-        // Backoff exponencial con cap
         const wait = Math.min(backoffRef.current, 8000);
         window.setTimeout(connect, wait);
         backoffRef.current *= 2;
       };
 
       ws.onerror = () => {
-        // onclose hará el backoff si corresponde
+        /* onclose hará el backoff */
       };
     };
 
@@ -160,7 +155,9 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
       if (wsRef.current) {
         try {
           wsRef.current.close();
-        } catch { /* empty */ }
+        } catch {
+          /* empty */
+        }
         wsRef.current = null;
       }
     };

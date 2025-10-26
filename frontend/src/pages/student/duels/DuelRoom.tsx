@@ -47,7 +47,13 @@ function isCompleteExercise(ex: DuelExercise): ex is DuelExercise & {
   );
 }
 
-/** Extra de estado para lobby */
+/** Extensión local para soportar un posible flag noParticipation del backend */
+type FinalRoundItemExt = {
+  round: number;
+  winnerId: string | null;
+  noParticipation?: boolean;
+};
+
 type StateExtras = {
   code?: string;
   ready?: number;
@@ -84,7 +90,7 @@ const DuelRoom: React.FC = () => {
   const [score, setScore] = useState<Record<string, number>>({});
   const [finalWinner, setFinalWinner] = useState<string | null>(null);
   const [finalByRound, setFinalByRound] = useState<
-    Array<{ round: number; winnerId: string | null }>
+    Array<{ round: number; winnerId: string | null; noParticipation?: boolean }>
   >([]);
 
   const [countdown, setCountdown] = useState<number>(0);
@@ -93,7 +99,7 @@ const DuelRoom: React.FC = () => {
   const [loadingExerciseMeta, setLoadingExerciseMeta] = useState(false);
   const [exerciseLoadErr, setExerciseLoadErr] = useState<string | null>(null);
 
-  // Lobby: métricas opcionales del backend
+  // Lobby
   const [readyCount, setReadyCount] = useState<number | undefined>(undefined);
   const [readyIds, setReadyIds] = useState<Set<string>>(new Set());
   const [playersCount, setPlayersCount] = useState<number | undefined>(
@@ -101,29 +107,27 @@ const DuelRoom: React.FC = () => {
   );
   const [maxPlayers, setMaxPlayers] = useState<number | undefined>(undefined);
 
-  // Nombres de jugadores
-  const [playersMap, setPlayersMap] = useState<Record<string, string>>({}); // id -> name
+  // Nombres
+  const [playersMap, setPlayersMap] = useState<Record<string, string>>({});
 
-  // Tiempo por pregunta (si el backend manda deadline millis)
+  // Timer por pregunta
   const deadlineRef = useRef<number | null>(null);
   const totalTimeMsRef = useRef<number>(0);
   const [timeLeftMs, setTimeLeftMs] = useState<number>(0);
   const timerRef = useRef<number | null>(null);
 
-  // Envío “en curso” (ref para usar dentro de setInterval)
   const sentRef = useRef<boolean>(false);
 
-  // UI: estado "yo estoy listo"
+  // UI: listo
   const [iAmReady, setIAmReady] = useState<boolean>(false);
 
-  // Código corto a mostrar
+  // Código corto
   const [shortCode, setShortCode] = useState<string | null>(
     codeFromUrl ?? null
   );
 
   const token = getAccessToken() || "";
 
-  // Habilitar WS solo si hay login + token + (match o código) y no estamos en RESULTS
   const wsEnabled = useMemo(
     () =>
       isAuthenticated &&
@@ -133,7 +137,6 @@ const DuelRoom: React.FC = () => {
     [isAuthenticated, token, shortCode, matchIdParam, status]
   );
 
-  // ⚠️ MEMO: que no cambie la identidad en cada render
   const wsOpts: WsOpts = useMemo(() => {
     if (shortCode != null) return { code: shortCode, token };
     if (matchIdParam) return { matchId: matchIdParam, token };
@@ -147,12 +150,11 @@ const DuelRoom: React.FC = () => {
   const now = () =>
     typeof performance !== "undefined" ? performance.now() : Date.now();
 
-  // Mantener sentRef sincronizado
   useEffect(() => {
     sentRef.current = sent;
   }, [sent]);
 
-  // Validaciones de sesión/token
+  // Validaciones básicas
   useEffect(() => {
     if (!isAuthenticated) {
       setError("No hay sesión activa. Inicia sesión.");
@@ -164,7 +166,7 @@ const DuelRoom: React.FC = () => {
     }
   }, [isAuthenticated, token]);
 
-  // Si entro por :matchId y no tengo ?code, resuelvo por HTTP
+  // Resolver shortCode por HTTP si entro con :matchId
   useEffect(() => {
     const run = async () => {
       if (shortCode || !matchIdParam || !token) return;
@@ -172,13 +174,13 @@ const DuelRoom: React.FC = () => {
         const m = await getMatch(matchIdParam, token);
         if (m?.shortCode) setShortCode(m.shortCode);
       } catch {
-        /* empty */
+        /* noop */
       }
     };
     void run();
   }, [matchIdParam, shortCode, token]);
 
-  // Limpia el timer del banner de tiempo cuando desmonta
+  // Limpieza del interval al desmontar
   useEffect(() => {
     return () => {
       if (timerRef.current != null) {
@@ -203,7 +205,7 @@ const DuelRoom: React.FC = () => {
     });
   };
 
-  // Retry de meta del ejercicio
+  // Reintento meta ejercicio
   const retryExerciseMeta = useCallback(() => {
     if (!exercise?.id) return;
     setExerciseLoadErr(null);
@@ -250,10 +252,10 @@ const DuelRoom: React.FC = () => {
       case "countdown": {
         setStatus("COUNTDOWN");
         setCountdown(m.sec);
-        // reset UI flags
+        // reset de UI
         setIAmReady(false);
         setSent(false);
-        // limpia banner de tiempo si veníamos de round
+        // timer a cero
         deadlineRef.current = null;
         if (timerRef.current != null) {
           window.clearInterval(timerRef.current);
@@ -265,13 +267,13 @@ const DuelRoom: React.FC = () => {
       case "round_start": {
         setStatus("ROUND");
         setRound(m.round);
-        setSent(false); // permite auto-submit si no respondo
+        setSent(false);
         setIAmReady(false);
         setQIndex(m.qIndex ?? 1);
         setQTotal(m.qTotal ?? 1);
         t0Ref.current = now();
 
-        // Banner de tiempo por pregunta (si el backend manda deadline en ms epoch)
+        // Banner de tiempo (sin auto-envío al expirar)
         if (typeof m.deadline === "number" && m.deadline > Date.now()) {
           const deadlineMs = m.deadline;
           deadlineRef.current = deadlineMs;
@@ -280,27 +282,19 @@ const DuelRoom: React.FC = () => {
           setTimeLeftMs(totalTimeMsRef.current);
 
           if (timerRef.current != null) window.clearInterval(timerRef.current);
-          // Intervalo de 250ms: al llegar a 0, auto-envía si no envié
+
           timerRef.current = window.setInterval(() => {
             const rest = (deadlineRef.current ?? 0) - Date.now();
-            setTimeLeftMs(Math.max(0, rest));
+            const clamped = Math.max(0, rest);
+            setTimeLeftMs(clamped);
 
-            if (rest <= 0) {
-              if (timerRef.current != null) {
-                window.clearInterval(timerRef.current);
-                timerRef.current = null;
-              }
-              // Auto-submit si NO envié
-              if (!sentRef.current) {
-                const t1 = now();
-                const durationMs = Math.max(0, Math.round(t1 - t0Ref.current));
-                send({ type: "answer", round, answer: {}, durationMs });
-                setSent(true);
-              }
+            if (clamped <= 0 && timerRef.current != null) {
+              window.clearInterval(timerRef.current);
+              timerRef.current = null;
+              // ⛔️ No enviamos respuesta vacía: backend maneja noParticipation/reintento.
             }
           }, 250);
         } else {
-          // Sin deadline → desactiva banner
           deadlineRef.current = null;
           totalTimeMsRef.current = 0;
           if (timerRef.current != null) {
@@ -354,14 +348,21 @@ const DuelRoom: React.FC = () => {
         const fm = m as ServerFinalMsgWithExtras;
         setStatus("RESULTS");
         setFinalWinner(fm.winnerId ?? null);
-        const mapped = (fm.byRound || []).map((r) => ({
+
+        // Mapeo seguro: leemos un posible noParticipation si el backend lo envía.
+        const mapped: FinalRoundItemExt[] = (
+          fm.byRound as unknown as FinalRoundItemExt[]
+        ).map((r) => ({
           round: r.round,
-          winnerId: r.winnerId,
+          winnerId: r.winnerId ?? null,
+          noParticipation: r.noParticipation === true ? true : undefined,
         }));
         setFinalByRound(mapped);
+
         setScore(fm.score);
         if (Array.isArray(fm.playersInfo)) mergePlayersInfo(fm.playersInfo);
-        // limpia timer por si acaso
+
+        // limpia timer
         deadlineRef.current = null;
         if (timerRef.current != null) {
           window.clearInterval(timerRef.current);
@@ -375,7 +376,7 @@ const DuelRoom: React.FC = () => {
         break;
       }
     }
-  }, [lastMsg, shortCode, round, send]);
+  }, [lastMsg, shortCode]);
 
   const onReady = () => {
     if (iAmReady) return;
@@ -385,6 +386,7 @@ const DuelRoom: React.FC = () => {
 
   const onSubmit = (answer: Record<string, unknown>) => {
     if (sent) return;
+    if (timeLeftMs <= 0) return; // evita carreras al expirarse el tiempo
     const t1 = now();
     const durationMs = Math.max(0, Math.round(t1 - t0Ref.current));
     send({ type: "answer", round, answer, durationMs });
@@ -407,13 +409,11 @@ const DuelRoom: React.FC = () => {
 
   const meScore = useMemo(() => (myId ? score[myId] ?? 0 : 0), [score, myId]);
   const oppScore = useMemo(() => {
-    // compat 1v1 (para el chip de cabecera)
     const ids = Object.keys(score);
     const other = ids.find((id) => id !== myId);
     return other ? score[other] ?? 0 : 0;
   }, [score, myId]);
 
-  // === UI helpers ===
   const submissionKey = useMemo(
     () =>
       exercise
@@ -430,7 +430,7 @@ const DuelRoom: React.FC = () => {
     ? `Match: ${matchIdParam}`
     : "";
 
-  // === Banner tiempo por pregunta ===
+  // Tiempo
   const fmtTime = (ms: number) => {
     const sec = Math.ceil(ms / 1000);
     const s = Math.max(0, sec);
@@ -444,7 +444,6 @@ const DuelRoom: React.FC = () => {
     return Math.min(100, Math.max(0, (used / totalTimeMsRef.current) * 100));
   }, [timeLeftMs]);
 
-  // Lista de conectados para el lobby (con "listo" ✔)
   const lobbyPlayers = useMemo(() => {
     return Object.entries(playersMap).map(([id, name]) => ({
       id,
@@ -452,6 +451,7 @@ const DuelRoom: React.FC = () => {
       ready: readyIds.has(id),
     }));
   }, [playersMap, readyIds, myId]);
+
 
   return (
     <div className="mx-auto max-w-3xl p-4">
@@ -603,7 +603,7 @@ const DuelRoom: React.FC = () => {
                             )}`
                           );
                         } catch {
-                          /* empty */
+                          /* noop */
                         }
                       }}
                     >
@@ -631,7 +631,7 @@ const DuelRoom: React.FC = () => {
                             await navigator.clipboard.writeText(link);
                           }
                         } catch {
-                          /* empty */
+                          /* noop */
                         }
                       }}
                     >
@@ -670,7 +670,7 @@ const DuelRoom: React.FC = () => {
 
       {status === "ROUND" && (
         <div className="space-y-3" aria-live="polite">
-          {/* Banner de tiempo por pregunta (si aplica) */}
+          {/* Banner de tiempo por pregunta */}
           {timeLeftMs > 0 && (
             <div className="rounded-lg border p-3 dark:border-gray-700">
               <div className="mb-1 flex items-center justify-between text-xs sm:text-sm">
@@ -684,12 +684,18 @@ const DuelRoom: React.FC = () => {
                 />
               </div>
 
-              {/* Indicador: respuesta enviada, esperando al resto */}
               {sent && timeLeftMs > 0 && (
                 <div className="mt-2 text-xs sm:text-sm text-emerald-700 dark:text-emerald-300">
                   Respuesta enviada — esperando al resto…
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Aviso si se acabó el tiempo y no enviaste */}
+          {timeLeftMs <= 0 && !sent && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs sm:text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+              Se acabó el tiempo para esta pregunta.
             </div>
           )}
 
@@ -725,7 +731,7 @@ const DuelRoom: React.FC = () => {
               params={exercise.params}
               submissionKey={submissionKey}
               onSubmit={onSubmit}
-              disabled={sent}
+              disabled={!(status === "ROUND" && timeLeftMs > 0 && !sent)}
               statementHtml={exerciseHtml}
             />
           )}
@@ -775,7 +781,9 @@ const DuelRoom: React.FC = () => {
             {finalByRound.map((r) => (
               <div key={r.round}>
                 Ronda {r.round}:{" "}
-                {r.winnerId
+                {r.noParticipation
+                  ? "nadie respondió"
+                  : r.winnerId
                   ? r.winnerId === myId
                     ? "tú"
                     : displayName(r.winnerId)

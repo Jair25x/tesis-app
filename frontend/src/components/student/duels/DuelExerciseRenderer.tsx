@@ -24,21 +24,18 @@ const DuelExerciseRenderer: React.FC<Props> = ({
 }) => {
   const mod = runtimeRegistry[templateType];
 
-  // valida/normaliza parámetros del template
   const guardedParams = useMemo(
     () => mod?.guard(params) ?? null,
     [mod, params]
   );
 
-  // estado del valor del adapter (desconocido para nosotros; lo maneja el runtime)
   const [value, setValue] = useState<unknown>(() =>
     mod ? mod.read(undefined) : null
   );
 
-  // Si cambia el ejercicio, resetea el valor inicial limpio
   useEffect(() => {
     if (mod) setValue(mod.read(undefined));
-  }, [mod, submissionKey]); // cambia con la ronda / ejercicio
+  }, [mod, submissionKey]);
 
   if (!mod || !guardedParams) {
     return (
@@ -59,14 +56,22 @@ const DuelExerciseRenderer: React.FC<Props> = ({
       : value != null;
 
   const doSubmit = () => {
-    // del runtime → objeto JSON plano
+    if (disabled) return;
     const wire: WireAnswer = mod.write(value as never);
     onSubmit(wire);
   };
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border bg-white p-4">
+      <div
+        className="rounded-lg border bg-white p-4"
+        onKeyDown={(e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "enter") {
+            e.preventDefault();
+            if (!disabled && isValid) doSubmit();
+          }
+        }}
+      >
         <mod.Render
           params={guardedParams as never}
           value={value as never}
@@ -79,7 +84,7 @@ const DuelExerciseRenderer: React.FC<Props> = ({
       <div className="flex items-center justify-end">
         <button
           onClick={doSubmit}
-          disabled={disabled || !isValid}
+          disabled={!!disabled || !isValid}
           className="px-4 py-2 rounded-lg bg-blue-600 text-white disabled:opacity-50"
         >
           Enviar
