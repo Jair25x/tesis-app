@@ -34,10 +34,15 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
 
   const send = useCallback((msg: ClientMsg) => {
     const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
-    } else {
-      queueRef.current.push(msg);
+    try {
+      console.debug("[WS SEND]", msg, ws?.readyState);
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(msg));
+      } else {
+        queueRef.current.push(msg);
+      }
+    } catch (e) {
+      console.error("[WS SEND ERROR]", e);
     }
   }, []);
 

@@ -1,4 +1,3 @@
-# app/services/duel_manager.py
 from __future__ import annotations
 import os
 import json, time, uuid, asyncio, logging, contextlib
@@ -273,6 +272,8 @@ class Room:
     closed: bool = False
     leader_id: Optional[str] = None
     keepalive_tasks: Dict[str, asyncio.Task] = field(default_factory=dict)
+    # NUEVO: total de participantes del match (preciso, no solo conectados)
+    participants_total: int = 0
 
 ROOMS: Dict[str, Room] = {}
 ROOMS_LOCK = asyncio.Lock()
@@ -356,6 +357,26 @@ async def _keepalive(ws: WebSocket, user_id: str):
 # WS readers por conexión
 # -------------------------------------------------------------------
 async def _reader_task(room: Room, user_id: str, ws: WebSocket):
+    async def _broadcast_progress(n: int, q_index: int):
+        """Emite progreso respondido X/Y para la sub-pregunta actual."""
+        dbp = SessionLocal()
+        try:
+            a_rows = dbp.query(Answer).filter_by(
+                match_id=room.match_id, n=n, q_index=q_index
+            ).all()
+            responded = len({str(a.student_id) for a in a_rows})
+        finally:
+            dbp.close()
+
+        total = room.participants_total or max(1, len(room.members))
+        await _broadcast(room, {
+            "type": "answer_progress",
+            "round": n,
+            "qIndex": q_index,
+            "responded": int(responded),
+            "total": int(total),
+        })
+
     while True:
         try:
             msg = await ws.receive_text()
@@ -380,13 +401,20 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
             continue
 
         if t == "answer":
+            # ---------- DEBUG E2E ----------
+            log.info("WS_ANSWER_RX match=%s user=%s keys=%s", room.match_id, user_id, list(data.keys()))
+            # ------------------------------
+
             n = int(data.get("round") or 0)
             if n <= 0 or n != room.round_no or room.q_index <= 0:
+                log.debug("WS_ANSWER_IGNORED out_of_window match=%s user=%s round=%s q_index(room)=%s",
+                          room.match_id, user_id, n, room.q_index)
                 continue
 
-            answer = data.get("answer")
-            if answer is None:
-                # ignorar envíos vacíos
+            answer_obj = data.get("answer")
+            if answer_obj is None:
+                # ignorar envíos vacíos (null); {} sí se acepta
+                log.debug("WS_ANSWER_IGNORED empty match=%s user=%s", room.match_id, user_id)
                 continue
 
             # Tomar el qIndex del cliente (compat: fallback a room.q_index)
@@ -396,13 +424,15 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
                 q_index = 0
             if q_index <= 0 or q_index > room.q_total:
                 # fuera de rango para la ronda actual
+                log.debug("WS_ANSWER_IGNORED bad_qindex match=%s user=%s q_index=%s q_total=%s",
+                          room.match_id, user_id, q_index, room.q_total)
                 continue
 
             # 🔎 Recuperar el exercise_id REAL para (n, q_index)
             exercise_id_for_q: Optional[str] = None
-            db = SessionLocal()
+            db_lookup = SessionLocal()
             try:
-                rp = db.query(RoundPick).filter_by(
+                rp = db_lookup.query(RoundPick).filter_by(
                     match_id=room.match_id, n=n, q_index=q_index
                 ).one_or_none()
                 if rp:
@@ -410,23 +440,26 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
                 else:
                     # Compat: si no hay RoundPick y es q=1, intentamos Round.exercise_id
                     if q_index == 1:
-                        r: Round | None = db.query(Round).filter_by(
+                        r: Round | None = db_lookup.query(Round).filter_by(
                             match_id=room.match_id, n=n
                         ).one_or_none()
                         if r and r.exercise_id:
                             exercise_id_for_q = r.exercise_id
             finally:
-                db.close()
+                db_lookup.close()
 
             # Si no logramos recuperar, como último recurso usamos la "actual".
             exid_for_eval = exercise_id_for_q or room.current_exercise_id
-            if not exid_for_eval:
+
+            # Evaluación (best effort): aunque falle, persistimos como incorrecta.
+            correct = False
+            try:
+                if exid_for_eval:
+                    correct, _score, _fb = await check_answer(exid_for_eval, answer_obj)
+            except Exception as e:
+                log.warning("CHECK_ANSWER_FAIL match=%s n=%s q=%s user=%s err=%s",
+                            room.match_id, n, q_index, user_id, e)
                 correct = False
-            else:
-                try:
-                    correct, _score, _fb = await check_answer(exid_for_eval, answer)
-                except Exception:
-                    correct = False
 
             elapsed_ms = 0
             if room.question_t0 is not None:
@@ -434,24 +467,57 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
 
             duels_answers_total.labels(correct="true" if correct else "false").inc()
 
+            # Persistir respuesta (+ payload/raw_payload/exercise_id si existen)
+            committed = False
             db = SessionLocal()
             try:
+                # Serializa la respuesta
+                payload_json = None
+                try:
+                    payload_json = json.dumps(answer_obj, ensure_ascii=False)
+                except Exception:
+                    payload_json = None
+
                 a = Answer(
-                    match_id=room.match_id, n=n, q_index=q_index, student_id=user_id,
-                    correct=bool(correct), time_ms=elapsed_ms
+                    match_id=room.match_id,
+                    n=n,
+                    q_index=q_index,
+                    student_id=user_id,
+                    correct=bool(correct),
+                    time_ms=elapsed_ms,
                 )
-                db.add(a); db.commit()
+
+                # Campos opcionales (solo si tu modelo los tiene)
+                with contextlib.suppress(Exception):
+                    if hasattr(a, "payload"):
+                        setattr(a, "payload", payload_json)
+                    if hasattr(a, "raw_payload"):
+                        setattr(a, "raw_payload", payload_json)
+                    if hasattr(a, "exercise_id") and exid_for_eval:
+                        setattr(a, "exercise_id", exid_for_eval)
+
+                db.add(a)
+                db.commit()
+                committed = True
                 log.info("ANSWER_SAVED match=%s n=%s q=%s user=%s correct=%s",
                          room.match_id, n, q_index, user_id, bool(correct))
             except IntegrityError:
                 db.rollback()
-                log.info("ANSWER_DUPLICATE match=%s n=%s q=%s user=%s", room.match_id, n, q_index, user_id)
+                log.info("ANSWER_DUPLICATE match=%s n=%s q=%s user=%s",
+                         room.match_id, n, q_index, user_id)
             except Exception as e:
                 db.rollback()
                 log.exception("Persistiendo answer falló: match=%s n=%s q=%s user=%s err=%s",
                               room.match_id, n, q_index, user_id, e)
             finally:
                 db.close()
+
+            # ➕ Telemetría X/Y (siempre recontamos DB para consistencia)
+            try:
+                await _broadcast_progress(n, q_index)
+            except Exception:
+                log.exception("answer_progress broadcast failed match=%s n=%s q=%s",
+                              room.match_id, n, q_index)
 
 # -------------------------------------------------------------------
 # Helpers de fallo amable
@@ -571,7 +637,10 @@ async def _orchestrator(room: Room):
     score: Dict[str, int] = {uid: 0 for uid in participants}
     by_round: list[dict] = []
     winner_id: Optional[str] = None
-    
+
+    # Guarda total de participantes para telemetría precisa
+    room.participants_total = len(score)
+
     log.info(
         "ORCH init match=%s best_of=%s mode=%s participants=%s qpr=%s used_seed=%d",
         room.match_id,
@@ -653,12 +722,12 @@ async def _orchestrator(room: Room):
         room.round_no = n
         room.q_total = max(1, q_total)
         room.round_t0 = time.perf_counter()
-        
+
         log.info(
             "ORCH start round n=%s q_total=%s participants=%s",
             n,
             room.q_total,
-            sorted(participants),
+            sorted(score.keys()),
         )
 
         # ------ sub-preguntas de la ronda ------
@@ -737,7 +806,7 @@ async def _orchestrator(room: Room):
 
             qtime_ms = room.question_time_ms or ROUND_MS_DEFAULT
             deadline_ms = int(time.time() * 1000) + qtime_ms
-            
+
             log.info(
                 "ROUND start match=%s n=%s q=%s deadline_ms=%s exercise_id=%s",
                 room.match_id,
@@ -808,7 +877,7 @@ async def _orchestrator(room: Room):
 
         round_winner, no_participation = _decide_round_winner(stats)
         log.info("ROUND_DECIDE match=%s n=%s winner=%s no_part=%s", room.match_id, n, round_winner, no_participation)
-        
+
         if no_participation and FAIL_ON_EMPTY_ROUND:
             await _fail_and_close(room, "round had no participation")
             return
@@ -818,14 +887,11 @@ async def _orchestrator(room: Room):
         if no_participation:
             for _ in range(NO_PARTICIPATION_RETRY):
                 retried = True
-                # small backoff
                 await asyncio.sleep(0.6)
-                # REJUGAR la misma ronda n
                 break
 
         if retried and no_participation:
-            # Re-correr la ronda n (volvemos al inicio del while sin incrementar n)
-            continue
+            continue  # reintenta misma n
 
         # Registrar resultado de ronda
         by_round.append({"round": n, "winnerId": round_winner, "noParticipation": bool(no_participation)})
@@ -890,7 +956,7 @@ async def _orchestrator(room: Room):
         winner_id,
         score,
     )
-    
+
     # Persistir FINISHED + ganador + Elo + finished_at
     db = SessionLocal()
     try:

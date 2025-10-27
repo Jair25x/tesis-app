@@ -19,6 +19,35 @@ import { getMatch } from "../../../services/duelsService";
 import type { TemplateType } from "../../../types/exercise/TemplateSchemaResponse";
 
 /* === Helpers === */
+function isServerMsg(v: unknown): v is ServerMsg {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    "type" in v &&
+    typeof (v as { type: unknown }).type === "string"
+  );
+}
+
+/** Mensaje extra local para progreso por sub-pregunta */
+type AnswerProgressMsg = {
+  type: "answer_progress";
+  round: number;
+  qIndex: number;
+  responded: number;
+  total: number;
+};
+function isAnswerProgressMsg(v: unknown): v is AnswerProgressMsg {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    (v as { type?: unknown }).type === "answer_progress" &&
+    typeof (v as { round?: unknown }).round === "number" &&
+    typeof (v as { qIndex?: unknown }).qIndex === "number" &&
+    typeof (v as { responded?: unknown }).responded === "number" &&
+    typeof (v as { total?: unknown }).total === "number"
+  );
+}
+
 function getAccessToken(): string | null {
   try {
     return (
@@ -127,6 +156,10 @@ const DuelRoom: React.FC = () => {
     codeFromUrl ?? null
   );
 
+  // Progreso por sub-pregunta
+  const [responded, setResponded] = useState<number>(0);
+  const [respondedTotal, setRespondedTotal] = useState<number>(0);
+
   const token = getAccessToken() || "";
 
   const wsEnabled = useMemo(
@@ -232,6 +265,12 @@ const DuelRoom: React.FC = () => {
 
       const t1 = now();
       const durationMs = Math.max(0, Math.round(t1 - t0Ref.current));
+      console.debug("[DUEL submitAnswer]", {
+        round,
+        qIndexAtSend,
+        answer,
+        durationMs,
+      });
       send({ type: "answer", round, qIndex: qIndexAtSend, answer, durationMs });
       sentRef.current = true;
       autoSubmittedRef.current = auto;
@@ -265,7 +304,24 @@ const DuelRoom: React.FC = () => {
   useEffect(() => {
     if (!lastMsg) return;
 
-    const m = lastMsg;
+    // 1) Mensaje de progreso (no está en ServerMsg): manejar y salir
+    if (isAnswerProgressMsg(lastMsg)) {
+      if (
+        lastMsg.round === round &&
+        lastMsg.qIndex === qIndex &&
+        typeof lastMsg.responded === "number" &&
+        typeof lastMsg.total === "number"
+      ) {
+        setResponded(lastMsg.responded);
+        setRespondedTotal(lastMsg.total);
+      }
+      return;
+    }
+
+    // 2) Resto de mensajes tipados
+    if (!isServerMsg(lastMsg)) return;
+    const m: ServerMsg = lastMsg;
+
     switch (m.type) {
       case "state": {
         const st = m as ServerStateMsgWithExtras;
@@ -299,6 +355,9 @@ const DuelRoom: React.FC = () => {
           timerRef.current = null;
         }
         setTimeLeftMs(0);
+        // progreso a cero
+        setResponded(0);
+        setRespondedTotal(0);
         break;
       }
       case "round_start": {
@@ -310,6 +369,10 @@ const DuelRoom: React.FC = () => {
         setQIndex(m.qIndex ?? 1);
         setQTotal(m.qTotal ?? 1);
         t0Ref.current = now();
+
+        // reset progreso
+        setResponded(0);
+        setRespondedTotal(0);
 
         // Banner de tiempo
         if (typeof m.deadline === "number" && m.deadline > Date.now()) {
@@ -332,7 +395,10 @@ const DuelRoom: React.FC = () => {
               if (!autoSubmittedRef.current && !sentRef.current) {
                 // autosubmit con qIndex congelado de ESTA pregunta
                 const qFrozen = m.qIndex ?? qIndex;
-                submitAnswer({}, { force: true, auto: true, qIndexAtSend: qFrozen });
+                submitAnswer(
+                  {},
+                  { force: true, auto: true, qIndexAtSend: qFrozen }
+                );
               }
             }
           }, 250);
@@ -384,6 +450,9 @@ const DuelRoom: React.FC = () => {
           timerRef.current = null;
         }
         setTimeLeftMs(0);
+        // reset progreso al cerrar sub-pregunta
+        setResponded(0);
+        setRespondedTotal(0);
         break;
       }
       case "final": {
@@ -404,13 +473,15 @@ const DuelRoom: React.FC = () => {
         setScore(fm.score);
         if (Array.isArray(fm.playersInfo)) mergePlayersInfo(fm.playersInfo);
 
-        // limpia timer
+        // limpia timer y progreso
         deadlineRef.current = null;
         if (timerRef.current != null) {
           window.clearInterval(timerRef.current);
           timerRef.current = null;
         }
         setTimeLeftMs(0);
+        setResponded(0);
+        setRespondedTotal(0);
         break;
       }
       case "error": {
@@ -418,7 +489,7 @@ const DuelRoom: React.FC = () => {
         break;
       }
     }
-  }, [lastMsg, shortCode, submitAnswer, qIndex]);
+  }, [lastMsg, shortCode, submitAnswer, qIndex, round]);
 
   const onReady = () => {
     if (iAmReady) return;
@@ -727,6 +798,19 @@ const DuelRoom: React.FC = () => {
           {sent && (
             <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs sm:text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200">
               Respuesta enviada — esperando al resto…
+            </div>
+          )}
+
+          {/* Progreso global de la sub-pregunta */}
+          {(responded > 0 || respondedTotal > 0) && (
+            <div className="text-xs sm:text-sm opacity-80">
+              Participantes que respondieron: <b>{responded}</b>
+              {respondedTotal > 0 ? (
+                <>
+                  {" "}
+                  / <b>{respondedTotal}</b>
+                </>
+              ) : null}
             </div>
           )}
 

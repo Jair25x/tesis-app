@@ -51,6 +51,15 @@ export interface PlayerInfo {
   name: string;
 }
 
+/** NUEVO: mensaje de progreso por sub-pregunta */
+export type AnswerProgressMsg = {
+  type: "answer_progress";
+  round: number;   // ronda actual
+  qIndex: number;  // índice de la sub-pregunta (1-based)
+  responded: number; // cuántos ya respondieron
+  total: number;     // total de participantes esperados
+};
+
 export type ServerMsg =
   | {
       type: "state";
@@ -87,14 +96,15 @@ export type ServerMsg =
       }>;
       playersInfo?: PlayerInfo[];
     }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | AnswerProgressMsg; // ⬅️ NUEVO: agrega el tipo a la unión
 
 export type ClientMsg =
   | { type: "ready" }
   | {
       type: "answer";
       round: number;
-      qIndex?: number; // ⬅️ NUEVO (opcional por compat)
+      qIndex?: number; // ⬅️ compat (lo usas)
       answer: Record<string, unknown>;
       durationMs: number;
     };

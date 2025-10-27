@@ -57,8 +57,13 @@ const DuelExerciseRenderer: React.FC<Props> = ({
 
   const doSubmit = () => {
     if (disabled) return;
-    const wire: WireAnswer = mod.write(value as never);
-    onSubmit(wire);
+    try {
+      const wire: WireAnswer = mod.write(value as never);
+      console.debug("[DUEL renderer doSubmit] wire=", wire);
+      onSubmit(wire);
+    } catch (e) {
+      console.error("[DUEL renderer doSubmit ERROR]", e);
+    }
   };
 
   return (
