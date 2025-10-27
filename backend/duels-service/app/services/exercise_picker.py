@@ -100,15 +100,23 @@ async def pick_exercise_for_objective_async(
 # API sincronizada (compat) — safe en contextos sync
 # =========================================================
 
+async def available_count_for_objective_async(
+    objective_id: str,
+    k: int,
+    difficulty: Optional[str] = None,
+) -> int:
+    return await _async_available_count_for_objective(objective_id, k, difficulty)
+
+
+
 def available_count_for_objective(
     objective_id: str,
     k: int,
     difficulty: Optional[str] = None,
 ) -> int:
     """
-    Wrapper síncrono sobre _async_available_count_for_objective.
-    - Usa asyncio.run si NO hay loop.
-    - Si YA hay loop corriendo (p.ej. en un handler async), lanza una tarea y la espera con to_thread.
+    Wrapper síncrono sobre available_count_for_objective_async.
+    Sólo puede usarse cuando NO hay un event loop corriendo en el hilo actual.
     """
     try:
         loop = asyncio.get_running_loop()
@@ -116,32 +124,21 @@ def available_count_for_objective(
         loop = None
 
     if loop and loop.is_running():
-        # Estamos en contexto async. Ejecutamos la corrutina sin bloquear el loop:
-        # a) Opción simple y segura: crear una Task y esperarla con asyncio.run_coroutine_threadsafe
-        #    no aplica aquí porque no hay executor. Usamos alternativa thread.
-        return asyncio.run(
-            _bridge_async_count(objective_id, k, difficulty)
+        raise RuntimeError(
+            "available_count_for_objective() no puede llamarse desde un contexto async; "
+            "usa available_count_for_objective_async()"
         )
 
-    # Contexto sync normal
-    return asyncio.run(_async_available_count_for_objective(objective_id, k, difficulty))
+    return asyncio.run(available_count_for_objective_async(objective_id, k, difficulty))
 
-
-async def _bridge_async_count(objective_id: str, k: int, difficulty: Optional[str]) -> int:
-    return await _async_available_count_for_objective(objective_id, k, difficulty)
-
-
-# =========================================================
-# API histórica (sync) — usado por otros servicios
-# =========================================================
 
 def pick_exercise_for_objective(
     objective_id: str,
     difficulty: Optional[str] = None,
 ) -> Optional[str]:
     """
-    Wrapper síncrono de pick_exercise_for_objective_async.
-    Mantiene compatibilidad con código que la llama en flujos sync.
+    Wrapper síncrono sobre pick_exercise_for_objective_async.
+    Se limita a contextos puramente síncronos para evitar asyncio.run() anidados.
     """
     try:
         loop = asyncio.get_running_loop()
@@ -149,10 +146,9 @@ def pick_exercise_for_objective(
         loop = None
 
     if loop and loop.is_running():
-        return asyncio.run(_bridge_async_pick(objective_id, difficulty))
+        raise RuntimeError(
+            "pick_exercise_for_objective() no puede llamarse desde un contexto async; "
+            "usa pick_exercise_for_objective_async()"
+        )
 
     return asyncio.run(pick_exercise_for_objective_async(objective_id, difficulty))
-
-
-async def _bridge_async_pick(objective_id: str, difficulty: Optional[str]) -> Optional[str]:
-    return await pick_exercise_for_objective_async(objective_id, difficulty)
