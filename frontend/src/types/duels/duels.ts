@@ -94,6 +94,7 @@ export type ClientMsg =
   | {
       type: "answer";
       round: number;
+      qIndex?: number; // ⬅️ NUEVO (opcional por compat)
       answer: Record<string, unknown>;
       durationMs: number;
     };

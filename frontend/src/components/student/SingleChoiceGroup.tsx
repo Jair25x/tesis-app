@@ -20,13 +20,13 @@ export function SingleChoiceGroup({
           <label
             key={opt}
             htmlFor={id}
-            className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-gray-50 dark:hover:bg-gray-700"
+            className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:bg-gray-50 focus-within:ring-2 focus-within:ring-emerald-500/30 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
           >
             <input
               id={id}
               type="radio"
               name={name}
-              className="h-4 w-4"
+              className="h-4 w-4 text-emerald-600 focus:ring-emerald-500"
               checked={value === opt}
               onChange={() => onChange(opt)}
             />

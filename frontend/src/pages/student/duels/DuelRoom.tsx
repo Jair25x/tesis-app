@@ -117,6 +117,7 @@ const DuelRoom: React.FC = () => {
   const timerRef = useRef<number | null>(null);
 
   const sentRef = useRef<boolean>(false);
+  const autoSubmittedRef = useRef<boolean>(false);
 
   // UI: listo
   const [iAmReady, setIAmReady] = useState<boolean>(false);
@@ -205,6 +206,41 @@ const DuelRoom: React.FC = () => {
     });
   };
 
+  // IMPORTANTE: pasar siempre qIndex congelado al enviar (manual o auto)
+  const submitAnswer = useCallback(
+    (
+      answer: Record<string, unknown>,
+      opts: { force?: boolean; auto?: boolean; qIndexAtSend?: number } = {}
+    ) => {
+      const { force = false, auto = false } = opts;
+      if (sentRef.current) return false;
+      if (round <= 0) return false;
+
+      // congela qIndex al inicio del submit
+      const qIndexAtSend =
+        typeof opts.qIndexAtSend === "number" && opts.qIndexAtSend > 0
+          ? opts.qIndexAtSend
+          : qIndex;
+      if (!qIndexAtSend) return false;
+
+      if (!force) {
+        const deadlineMs = deadlineRef.current;
+        if (deadlineMs && Date.now() >= deadlineMs) {
+          return false;
+        }
+      }
+
+      const t1 = now();
+      const durationMs = Math.max(0, Math.round(t1 - t0Ref.current));
+      send({ type: "answer", round, qIndex: qIndexAtSend, answer, durationMs });
+      sentRef.current = true;
+      autoSubmittedRef.current = auto;
+      setSent(true);
+      return true;
+    },
+    [round, qIndex, send]
+  );
+
   // Reintento meta ejercicio
   const retryExerciseMeta = useCallback(() => {
     if (!exercise?.id) return;
@@ -255,6 +291,7 @@ const DuelRoom: React.FC = () => {
         // reset de UI
         setIAmReady(false);
         setSent(false);
+        autoSubmittedRef.current = false;
         // timer a cero
         deadlineRef.current = null;
         if (timerRef.current != null) {
@@ -268,12 +305,13 @@ const DuelRoom: React.FC = () => {
         setStatus("ROUND");
         setRound(m.round);
         setSent(false);
+        autoSubmittedRef.current = false;
         setIAmReady(false);
         setQIndex(m.qIndex ?? 1);
         setQTotal(m.qTotal ?? 1);
         t0Ref.current = now();
 
-        // Banner de tiempo (sin auto-envío al expirar)
+        // Banner de tiempo
         if (typeof m.deadline === "number" && m.deadline > Date.now()) {
           const deadlineMs = m.deadline;
           deadlineRef.current = deadlineMs;
@@ -291,7 +329,11 @@ const DuelRoom: React.FC = () => {
             if (clamped <= 0 && timerRef.current != null) {
               window.clearInterval(timerRef.current);
               timerRef.current = null;
-              // ⛔️ No enviamos respuesta vacía: backend maneja noParticipation/reintento.
+              if (!autoSubmittedRef.current && !sentRef.current) {
+                // autosubmit con qIndex congelado de ESTA pregunta
+                const qFrozen = m.qIndex ?? qIndex;
+                submitAnswer({}, { force: true, auto: true, qIndexAtSend: qFrozen });
+              }
             }
           }, 250);
         } else {
@@ -376,7 +418,7 @@ const DuelRoom: React.FC = () => {
         break;
       }
     }
-  }, [lastMsg, shortCode]);
+  }, [lastMsg, shortCode, submitAnswer, qIndex]);
 
   const onReady = () => {
     if (iAmReady) return;
@@ -385,12 +427,9 @@ const DuelRoom: React.FC = () => {
   };
 
   const onSubmit = (answer: Record<string, unknown>) => {
-    if (sent) return;
-    if (timeLeftMs <= 0) return; // evita carreras al expirarse el tiempo
-    const t1 = now();
-    const durationMs = Math.max(0, Math.round(t1 - t0Ref.current));
-    send({ type: "answer", round, answer, durationMs });
-    setSent(true);
+    // Envío manual: congela qIndex en el momento del click
+    const qFrozen = qIndex;
+    submitAnswer(answer, { qIndexAtSend: qFrozen });
   };
 
   // === Scoreboard N jugadores ===
@@ -451,7 +490,6 @@ const DuelRoom: React.FC = () => {
       ready: readyIds.has(id),
     }));
   }, [playersMap, readyIds, myId]);
-
 
   return (
     <div className="mx-auto max-w-3xl p-4">
@@ -672,7 +710,7 @@ const DuelRoom: React.FC = () => {
         <div className="space-y-3" aria-live="polite">
           {/* Banner de tiempo por pregunta */}
           {timeLeftMs > 0 && (
-            <div className="rounded-lg border p-3 dark:border-gray-700">
+            <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="mb-1 flex items-center justify-between text-xs sm:text-sm">
                 <span className="opacity-80">Tiempo restante</span>
                 <span className="font-semibold">{fmtTime(timeLeftMs)}</span>
@@ -683,12 +721,12 @@ const DuelRoom: React.FC = () => {
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
+            </div>
+          )}
 
-              {sent && timeLeftMs > 0 && (
-                <div className="mt-2 text-xs sm:text-sm text-emerald-700 dark:text-emerald-300">
-                  Respuesta enviada — esperando al resto…
-                </div>
-              )}
+          {sent && (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs sm:text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200">
+              Respuesta enviada — esperando al resto…
             </div>
           )}
 

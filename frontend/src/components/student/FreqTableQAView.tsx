@@ -67,7 +67,7 @@ export default function FreqTableQAView({ params, value, onChange }: Props) {
   // 3) Render
   // -------------------------------
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 text-gray-800 dark:text-gray-100">
       <ExerciseTable columns={columns} rows={normRows} align="center" compact />
 
       <div className="space-y-4">
@@ -77,7 +77,7 @@ export default function FreqTableQAView({ params, value, onChange }: Props) {
           return (
             <div
               key={q.id}
-              className="rounded-lg border p-3 dark:border-gray-700 dark:bg-gray-800"
+              className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900"
             >
               <div className="mb-2 text-sm font-medium text-gray-800 dark:text-gray-100">
                 {q.prompt}
@@ -101,7 +101,7 @@ export default function FreqTableQAView({ params, value, onChange }: Props) {
                 <input
                   type="text"
                   inputMode="numeric"
-                  className="w-32 rounded-md border px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                  className="w-32 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-400"
                   value={
                     typeof current === "number" && Number.isFinite(current)
                       ? String(current)

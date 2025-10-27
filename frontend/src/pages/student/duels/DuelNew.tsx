@@ -121,7 +121,7 @@ const DuelNew: React.FC = () => {
 
   // Estado UI
   const [busy, setBusy] = useState<boolean>(false);
-const [/* error */, setError] = useState<string | null>(null);
+  const [, /* error */ setError] = useState<string | null>(null);
   const [loadingFull, setLoadingFull] = useState<boolean>(false);
 
   // Duelo rápido (wizard)
@@ -222,7 +222,10 @@ const [/* error */, setError] = useState<string | null>(null);
 
   // Disponibilidad final que usaremos (server si llegó, si no local)
   const effectiveAvailable = serverAvailable ?? localAvailableCount;
-
+  const requiredQuestions = useMemo(
+    () => Math.max(QPR_MIN, Math.min(QPR_MAX, quickQPR)),
+    [quickQPR]
+  );
   // ===== Server availability fetch =====
   useEffect(() => {
     setServerAvailable(null);
@@ -238,8 +241,8 @@ const [/* error */, setError] = useState<string | null>(null);
       try {
         const resp = await getObjectiveAvailability(objectiveId, token, {
           difficulty: quickDifficulty || undefined,
-          minRequired: QPR_MIN,
-          maxAllowed: QPR_MAX,
+          minRequired: requiredQuestions,
+          maxAllowed: requiredQuestions,
         });
         if (!mounted) return;
         const safe =
@@ -256,7 +259,7 @@ const [/* error */, setError] = useState<string | null>(null);
     return () => {
       mounted = false;
     };
-  }, [objectiveId, quickDifficulty, isAuthenticated]);
+  }, [objectiveId, quickDifficulty, requiredQuestions, isAuthenticated]);
 
   // Sugerir OA inicial si no se ha elegido (según dificultad seleccionada)
   useEffect(() => {
@@ -269,10 +272,10 @@ const [/* error */, setError] = useState<string | null>(null);
 
   // Ajustar QPR si supera los disponibles
   useEffect(() => {
-    if (effectiveAvailable > 0 && quickQPR > effectiveAvailable) {
+    if (effectiveAvailable > 0 && requiredQuestions > effectiveAvailable) {
       setQuickQPR(Math.max(QPR_MIN, Math.min(QPR_MAX, effectiveAvailable)));
     }
-  }, [effectiveAvailable, quickQPR]);
+  }, [effectiveAvailable, requiredQuestions]);
 
   // ===== helpers =====
   const fmtNode = (n: IdName) => (n.code ? `${n.code} — ${n.name}` : n.name);
@@ -298,11 +301,11 @@ const [/* error */, setError] = useState<string | null>(null);
     if (!curriculumId) return toastError("Elige un currículo.");
     if (!objectiveId) return toastError("Elige un objetivo.");
 
-    if (effectiveAvailable < quickQPR) {
+    if (effectiveAvailable < requiredQuestions) {
       return toastError(
         `Este objetivo no tiene suficientes ejercicios activos${
           quickDifficulty ? ` (${quickDifficulty.toLowerCase()})` : ""
-        }. Disponibles: ${effectiveAvailable}.`
+        }. Disponibles: ${effectiveAvailable} · Requeridos: ${requiredQuestions}.`
       );
     }
 
@@ -527,15 +530,14 @@ const [/* error */, setError] = useState<string | null>(null);
                 </span>
               </div>
 
-              {objectiveId && effectiveAvailable < quickQPR && (
-                <div className="mt-2 text-xs text-amber-600">
-                  No hay suficientes ejercicios activos para {quickQPR}{" "}
-                  preguntas. Reduce el número, cambia la dificultad o el
-                  objetivo.
-                </div>
-              )}
-
               <div className="mt-4">
+                {objectiveId && effectiveAvailable < requiredQuestions && (
+                  <div className="mb-2 text-xs text-amber-600">
+                    No hay suficientes ejercicios activos para{" "}
+                    {requiredQuestions} preguntas. Reduce el número, cambia la
+                    dificultad o el objetivo.
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={submitQuick}
@@ -543,8 +545,12 @@ const [/* error */, setError] = useState<string | null>(null);
                     busy ||
                     !curriculumId ||
                     !objectiveId ||
-                    effectiveAvailable <
-                      Math.max(QPR_MIN, Math.min(QPR_MAX, quickQPR))
+                    effectiveAvailable < requiredQuestions
+                  }
+                  title={
+                    objectiveId && effectiveAvailable < requiredQuestions
+                      ? "No hay suficientes ejercicios activos para esta dificultad."
+                      : undefined
                   }
                   className="inline-flex h-11 items-center justify-center rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >

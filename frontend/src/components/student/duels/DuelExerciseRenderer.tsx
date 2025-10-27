@@ -39,11 +39,11 @@ const DuelExerciseRenderer: React.FC<Props> = ({
 
   if (!mod || !guardedParams) {
     return (
-      <div className="p-4 rounded-md border bg-white">
-        <div className="font-medium mb-2">
+      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div className="mb-2 font-medium text-gray-800 dark:text-gray-100">
           Plantilla no soportada aún ({templateType})
         </div>
-        <div className="text-sm opacity-70">
+        <div className="text-sm text-gray-600 dark:text-gray-300">
           No se pudo renderizar este ejercicio.
         </div>
       </div>
@@ -64,7 +64,7 @@ const DuelExerciseRenderer: React.FC<Props> = ({
   return (
     <div className="space-y-4">
       <div
-        className="rounded-lg border bg-white p-4"
+        className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900"
         onKeyDown={(e) => {
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "enter") {
             e.preventDefault();
@@ -72,20 +72,22 @@ const DuelExerciseRenderer: React.FC<Props> = ({
           }
         }}
       >
-        <mod.Render
-          params={guardedParams as never}
-          value={value as never}
-          onChange={(next) => setValue(next)}
-          statementHtml={statementHtml ?? null}
-          submissionItemId={submissionKey}
-        />
+        <div className="prose prose-sm max-w-none text-gray-800 dark:prose-invert dark:text-gray-100">
+          <mod.Render
+            params={guardedParams as never}
+            value={value as never}
+            onChange={(next) => setValue(next)}
+            statementHtml={statementHtml ?? null}
+            submissionItemId={submissionKey}
+          />
+        </div>
       </div>
 
       <div className="flex items-center justify-end">
         <button
           onClick={doSubmit}
           disabled={!!disabled || !isValid}
-          className="px-4 py-2 rounded-lg bg-blue-600 text-white disabled:opacity-50"
+          className="rounded-lg bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
         >
           Enviar
         </button>

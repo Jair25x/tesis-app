@@ -123,7 +123,7 @@ export default function FreqTableCompleteInlineCells({
             // Usamos text+inputMode para teclado numérico móvil, y parseamos manual
             type="text"
             inputMode="numeric"
-            className="w-20 rounded-md border px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+            className="w-20 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-400"
             value={value[uiKey] ?? ""}
             onChange={(e) => handleRowFreqChange(uiKey, e.target.value)}
             aria-label={`Frecuencia de ${row[colA] as string}`}
@@ -135,7 +135,7 @@ export default function FreqTableCompleteInlineCells({
   });
 
   return (
-    <div className="rounded-lg border bg-white p-4 dark:border-gray-800 dark:bg-gray-800">
+    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
       <ExerciseTable
         columns={columns}
         rows={rowsWithInputs}
@@ -155,7 +155,7 @@ export default function FreqTableCompleteInlineCells({
               <input
                 type="text"
                 inputMode="numeric"
-                className="w-24 rounded-md border px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                className="w-24 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-400"
                 value={value.total ?? ""}
                 onChange={(e) => handleTotalChange(e.target.value)}
                 aria-label="Total de la tabla"
@@ -172,7 +172,7 @@ export default function FreqTableCompleteInlineCells({
           </div>
         }
       />
-      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+      <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">
         Completa las celdas con fondo editable y luego envía tu respuesta.
       </p>
     </div>
