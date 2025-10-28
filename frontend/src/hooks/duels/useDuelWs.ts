@@ -35,11 +35,13 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
   const send = useCallback((msg: ClientMsg) => {
     const ws = wsRef.current;
     try {
-      console.debug("[WS SEND]", msg, ws?.readyState);
+      console.log("[WS SEND]", { msg, readyState: ws?.readyState });
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));
+        console.log("[WS SEND OK]");
       } else {
         queueRef.current.push(msg);
+        console.log("[WS QUEUED]", { queued: queueRef.current.length });
       }
     } catch (e) {
       console.error("[WS SEND ERROR]", e);
@@ -48,6 +50,7 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) {
+      console.log("[WS DISABLED] closing...");
       setConnected(false);
       setLastMsg(null);
       stopRef.current = true;
@@ -56,7 +59,7 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
         try {
           wsRef.current.close();
         } catch {
-          /* empty */
+          /* noop */
         }
         wsRef.current = null;
       }
@@ -69,14 +72,27 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
     const connect = () => {
       if (stopRef.current) return;
 
+      console.log("[WS CONNECT] opening", url);
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
         setConnected(true);
         backoffRef.current = 500;
-        for (const m of queueRef.current.splice(0)) {
-          ws.send(JSON.stringify(m));
+
+        const pending = queueRef.current.splice(0);
+        if (pending.length > 0) {
+          console.log("[WS OPEN] flushing", pending.length, "message(s)");
+        }
+        for (const m of pending) {
+          try {
+            ws.send(JSON.stringify(m));
+            console.log("[WS FLUSH] sent", m);
+          } catch (err) {
+            console.error("[WS FLUSH ERROR]", err, m);
+            queueRef.current.unshift(m);
+            break;
+          }
         }
       };
 
@@ -85,8 +101,13 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
         try {
           parsed = JSON.parse(ev.data);
         } catch {
+          console.log("[WS RECV] (non-JSON)", ev.data);
           return;
         }
+
+        // Log genérico de todo lo que llega
+        console.log("[WS RECV]", parsed);
+
         if (!parsed || typeof parsed !== "object") return;
 
         const payload = parsed as {
@@ -116,7 +137,6 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
             }
             return;
           }
-          // Otros errores se manejan desde la UI
           setLastMsg(payload as ServerMsg);
           return;
         }
@@ -136,32 +156,37 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
           return;
         }
 
+        // Deja pasar TODO lo que tenga type, aunque sea un tipo “nuevo”
         setLastMsg(payload as ServerMsg);
       };
 
       ws.onclose = (ev: CloseEvent) => {
+        console.warn("[WS CLOSE]", ev.code, ev.reason);
         setConnected(false);
         if (stopRef.current) return;
         if (ev.code === 1000 || ev.code === 1001 || ev.code === 1008) return;
         const wait = Math.min(backoffRef.current, 8000);
+        console.log("[WS RETRY] in", wait, "ms");
         window.setTimeout(connect, wait);
         backoffRef.current *= 2;
       };
 
-      ws.onerror = () => {
-        /* onclose hará el backoff */
+      ws.onerror = (ev) => {
+        console.error("[WS ERROR]", ev);
+        // onclose hará el backoff
       };
     };
 
     connect();
 
     return () => {
+      console.log("[WS CLEANUP] closing...");
       stopRef.current = true;
       if (wsRef.current) {
         try {
           wsRef.current.close();
         } catch {
-          /* empty */
+          /* noop */
         }
         wsRef.current = null;
       }

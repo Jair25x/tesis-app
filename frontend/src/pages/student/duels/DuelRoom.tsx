@@ -28,7 +28,7 @@ function isServerMsg(v: unknown): v is ServerMsg {
   );
 }
 
-/** Mensaje extra local para progreso por sub-pregunta */
+/** Mensaje extra local para progreso por sub-pregunta (versión "clásica") */
 type AnswerProgressMsg = {
   type: "answer_progress";
   round: number;
@@ -97,6 +97,71 @@ type ServerStateMsgWithExtras = Extract<ServerMsg, { type: "state" }> &
 type ServerFinalMsgWithExtras = Extract<ServerMsg, { type: "final" }> & {
   playersInfo?: PlayerInfo[];
 };
+
+/* === Progreso alternativo (sin 'any') === */
+
+function getNumber(
+  obj: Record<string, unknown>,
+  key: string
+): number | undefined {
+  const v = obj[key];
+  return typeof v === "number" ? v : undefined;
+}
+
+function isProgressType(t?: string): boolean {
+  return (
+    t === "answer_progress" ||
+    t === "progress" ||
+    t === "answer_count" ||
+    t === "answered"
+  );
+}
+
+type ProgressLike = {
+  round?: number;
+  qIndex?: number;
+  responded?: number;
+  total?: number;
+};
+
+/**
+ * Intenta extraer campos de progreso incluso si el backend usa nombres distintos.
+ * No usa 'any'. Trabaja sobre Record<string, unknown>.
+ */
+function extractProgressLike(m: Record<string, unknown>): ProgressLike | null {
+  const round = getNumber(m, "round") ?? getNumber(m, "r"); // alias común
+
+  const qIndex = getNumber(m, "qIndex") ?? getNumber(m, "questionIndex"); // alias común
+
+  const respondedCandidates = [
+    "responded",
+    "answered",
+    "submitted",
+    "count",
+    "done",
+  ];
+  let responded: number | undefined;
+  for (const k of respondedCandidates) {
+    const n = getNumber(m, k);
+    if (typeof n === "number") {
+      responded = n;
+      break;
+    }
+  }
+
+  const totalCandidates = ["total", "participants", "expected", "all", "size"];
+  let total: number | undefined;
+  for (const k of totalCandidates) {
+    const n = getNumber(m, k);
+    if (typeof n === "number") {
+      total = n;
+      break;
+    }
+  }
+
+  if (responded == null && total == null) return null;
+  return { round, qIndex, responded, total };
+}
 
 const DuelRoom: React.FC = () => {
   const { matchId: matchIdParam = "" } = useParams<{ matchId: string }>();
@@ -265,13 +330,20 @@ const DuelRoom: React.FC = () => {
 
       const t1 = now();
       const durationMs = Math.max(0, Math.round(t1 - t0Ref.current));
-      console.debug("[DUEL submitAnswer]", {
+
+      // Palanca para verificar si el backend espera qIndex 0-based:
+      const zeroIdxHack = window.localStorage.getItem("duelsZeroIndex") === "1";
+      const qOut = zeroIdxHack ? Math.max(0, qIndexAtSend - 1) : qIndexAtSend;
+
+      console.log("[DUEL submitAnswer]", {
         round,
         qIndexAtSend,
+        qOut,
         answer,
         durationMs,
       });
-      send({ type: "answer", round, qIndex: qIndexAtSend, answer, durationMs });
+
+      send({ type: "answer", round, qIndex: qOut, answer, durationMs });
       sentRef.current = true;
       autoSubmittedRef.current = auto;
       setSent(true);
@@ -300,11 +372,11 @@ const DuelRoom: React.FC = () => {
       .finally(() => setLoadingExerciseMeta(false));
   }, [exercise?.id]);
 
-  // Manejo de mensajes del WS
+  // Manejo de mensajes del WS (incluye progreso alternativo)
   useEffect(() => {
     if (!lastMsg) return;
 
-    // 1) Mensaje de progreso (no está en ServerMsg): manejar y salir
+    // 1) Mensaje de progreso (clásico)
     if (isAnswerProgressMsg(lastMsg)) {
       if (
         lastMsg.round === round &&
@@ -318,7 +390,52 @@ const DuelRoom: React.FC = () => {
       return;
     }
 
-    // 2) Resto de mensajes tipados
+    // 2) Mensaje de progreso alternativo
+    if (typeof lastMsg === "object" && lastMsg !== null) {
+      const anyMsg = lastMsg as Record<string, unknown>;
+      const maybeType =
+        typeof anyMsg.type === "string" ? anyMsg.type : undefined;
+
+      // 2.1) Si el 'type' es de progreso conocido
+      if (isProgressType(maybeType)) {
+        const prog = extractProgressLike(anyMsg);
+        if (prog) {
+          const sameRound =
+            typeof prog.round === "number" ? prog.round === round : true;
+          const sameQuestion =
+            typeof prog.qIndex === "number"
+              ? prog.qIndex === qIndex || prog.qIndex + 1 === qIndex // acepta 0-based
+              : true;
+          if (sameRound && sameQuestion) {
+            if (typeof prog.responded === "number")
+              setResponded(prog.responded);
+            if (typeof prog.total === "number") setRespondedTotal(prog.total);
+          }
+          return; // ya procesado
+        }
+      }
+
+      // 2.2) Si viene embebido dentro de un "state"
+      if (maybeType === "state") {
+        const prog = extractProgressLike(anyMsg);
+        if (prog) {
+          const sameRound =
+            typeof prog.round === "number" ? prog.round === round : true;
+          const sameQuestion =
+            typeof prog.qIndex === "number"
+              ? prog.qIndex === qIndex || prog.qIndex + 1 === qIndex
+              : true;
+          if (sameRound && sameQuestion) {
+            if (typeof prog.responded === "number")
+              setResponded(prog.responded);
+            if (typeof prog.total === "number") setRespondedTotal(prog.total);
+          }
+          // no hacemos return; seguimos procesando el propio state abajo
+        }
+      }
+    }
+
+    // 3) Resto de mensajes tipados
     if (!isServerMsg(lastMsg)) return;
     const m: ServerMsg = lastMsg;
 

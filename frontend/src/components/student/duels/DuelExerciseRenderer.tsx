@@ -14,6 +14,32 @@ type Props = {
   statementHtml?: string | null; // opcional si en params no viene renderizado
 };
 
+/** Type guard útil para trabajar como objeto indexable sin usar `any`. */
+function isRecordUnknown(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+/**
+ * Normaliza la forma del wire para el servidor de duelo:
+ * - Si viene un campo "template", lo elimina.
+ * - Si además queda una única clave útil (p.ej. "filled", "answers" o "value"),
+ *   devuelve un objeto con solo esa clave.
+ */
+function normalizeWireForDuel(
+  w: Record<string, unknown>
+): Record<string, unknown> {
+  if ("template" in w) {
+    const keys = Object.keys(w).filter((k) => k !== "template");
+    if (keys.length === 1) {
+      const key = keys[0];
+      const result: Record<string, unknown> = {};
+      result[key] = w[key];
+      return result;
+    }
+  }
+  return w;
+}
+
 const DuelExerciseRenderer: React.FC<Props> = ({
   templateType,
   params,
@@ -25,7 +51,7 @@ const DuelExerciseRenderer: React.FC<Props> = ({
   const mod = runtimeRegistry[templateType];
 
   const guardedParams = useMemo(
-    () => mod?.guard(params) ?? null,
+    () => (mod ? mod.guard(params) : null),
     [mod, params]
   );
 
@@ -58,9 +84,14 @@ const DuelExerciseRenderer: React.FC<Props> = ({
   const doSubmit = () => {
     if (disabled) return;
     try {
-      const wire: WireAnswer = mod.write(value as never);
-      console.debug("[DUEL renderer doSubmit] wire=", wire);
-      onSubmit(wire);
+      const wireRaw = mod.write(value as never);
+      // Aseguramos que sea un objeto indexable y normalizamos sin usar `any`.
+      const wireObject: Record<string, unknown> = isRecordUnknown(wireRaw)
+        ? (wireRaw as Record<string, unknown>)
+        : { value: wireRaw as unknown };
+      const normalized = normalizeWireForDuel(wireObject);
+      console.log("[DUEL renderer doSubmit]", { wire: wireObject, normalized });
+      onSubmit(normalized);
     } catch (e) {
       console.error("[DUEL renderer doSubmit ERROR]", e);
     }
