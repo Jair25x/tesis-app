@@ -1,4 +1,4 @@
-// src/pages/duels/DuelRoom.tsx
+// src/pages/student/duels/DuelRoom.tsx
 import React, {
   useCallback,
   useEffect,
@@ -303,10 +303,9 @@ const DuelRoom: React.FC = () => {
 
     switch (lastMsg.type) {
       case "answer_progress": {
-        // Sólo mostramos si corresponde a la pregunta/ronda actual
+        // Coincidir exactamente ronda y pregunta (1-based)
         const sameRound = lastMsg.round === round;
-        const sameQuestion =
-          lastMsg.qIndex === qIndex || lastMsg.qIndex + 1 === qIndex; // compat 1-based
+        const sameQuestion = lastMsg.qIndex === qIndex;
         if (sameRound && sameQuestion) {
           setResponded(lastMsg.responded);
           setRespondedTotal(lastMsg.total);
@@ -390,6 +389,7 @@ const DuelRoom: React.FC = () => {
             }
           }, 250);
         } else {
+          // ⬇️ sin deadline: permitir enviar normalmente
           deadlineRef.current = null;
           totalTimeMsRef.current = 0;
           if (timerRef.current != null) {
@@ -470,15 +470,11 @@ const DuelRoom: React.FC = () => {
         setTimeLeftMs(0);
         setResponded(0);
         setRespondedTotal(0);
-        // limpia draft local
+        // limpia draft local usando la misma clave que guardamos
         try {
-          const storageKey =
-            exercise && (shortCode || matchIdParam)
-              ? `duel:${shortCode || matchIdParam}:r${round}:q${qIndex}:ex:${
-                  exercise.id
-                }`
-              : null;
-          if (storageKey) localStorage.removeItem(`duel:ans:${storageKey}`);
+          if (submissionKey) {
+            localStorage.removeItem(`duel:ans:${submissionKey}`);
+          }
         } catch {
           /* noop */
         }
@@ -529,7 +525,7 @@ const DuelRoom: React.FC = () => {
         break;
       }
     }
-  }, [lastMsg, shortCode, submitAnswer, qIndex, round, exercise, matchIdParam]);
+  }, [lastMsg, shortCode, submitAnswer, qIndex, round, matchIdParam]); // (exercise) no es necesario en deps
 
   const onReady = () => {
     if (iAmReady) return;
@@ -861,7 +857,7 @@ const DuelRoom: React.FC = () => {
           )}
 
           {/* Fin de tiempo */}
-          {timeLeftMs <= 0 && !sent && (
+          {timeLeftMs <= 0 && deadlineRef.current && !sent && (
             <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs sm:text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
               Se acabó el tiempo para esta pregunta.
             </div>
@@ -899,7 +895,14 @@ const DuelRoom: React.FC = () => {
               params={exercise.params}
               submissionKey={submissionKey}
               onSubmit={onSubmit}
-              disabled={!(status === "ROUND" && timeLeftMs > 0 && !sent)}
+              // ⬇️ FIX: permitir envío cuando no hay deadline (o mientras queda tiempo) y no se ha enviado aún
+              disabled={
+                !(
+                  status === "ROUND" &&
+                  !sent &&
+                  (timeLeftMs > 0 || !deadlineRef.current)
+                )
+              }
               statementHtml={exerciseHtml}
             />
           )}

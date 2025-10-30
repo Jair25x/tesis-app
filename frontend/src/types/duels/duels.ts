@@ -11,10 +11,24 @@ export type RoundPlan = {
   exerciseIds?: string[];
 };
 
+/** Picks exactos a nivel top-level (opcional) */
+export type RoundPick = {
+  round?: number;   // o 'n'
+  n?: number;       // compat
+  qIndex: number;
+  exerciseId: string;
+};
+
+export type RoundConfig = {
+  roundNo: number;
+  questions: number;
+  difficulty?: Difficulty;
+};
+
 export interface CreateMatchReq {
   curriculumId: string;
   opponentId?: string;
-  bestOf?: number; // en UI usarás 1 | 3 | 5, pero el backend acepta hasta 9
+  bestOf?: number; // UI: 1 | 3 | 5; BE acepta hasta 9
   objectiveId?: string;
   difficulty?: Difficulty;
   exerciseIds?: string[];
@@ -30,7 +44,9 @@ export interface CreateMatchReq {
   questionsPerRound?: number;
 
   // Avanzado
-  rounds?: RoundPlan[];
+  rounds?: RoundPlan[];        // tu campo original
+  roundConfigs?: RoundConfig[]; // alias/alternativa
+  roundPicks?: RoundPick[];     // picks exactos
 }
 
 export interface CreateMatchResp {
@@ -51,18 +67,54 @@ export interface PlayerInfo {
   name: string;
 }
 
-/** NUEVO: mensaje de progreso por sub-pregunta */
+/** Progreso por sub-pregunta */
 export type AnswerProgressMsg = {
   type: "answer_progress";
-  round: number;   // ronda actual
-  qIndex: number;  // índice de la sub-pregunta (1-based)
+  round: number;     // ronda actual
+  qIndex: number;    // índice 1-based
   responded: number; // cuántos ya respondieron
   total: number;     // total de participantes esperados
+};
+
+export type ClientMsg =
+  | { type: "ready" }
+  | {
+      type: "answer";
+      round: number;
+      qIndex?: number; // compat 1-based
+      answer: Record<string, unknown>;
+      durationMs: number;
+    };
+
+/** Disponibilidad por objetivo */
+export interface ObjectiveAvailabilityResp {
+  objectiveId: string;
+  difficulty?: Difficulty | null;
+  available: number;
+  minRequired: number;
+  maxAllowed: number;
+  source: "server" | "sample";
+}
+
+export type RoundSummary = {
+  round: number;
+  winnerId: string | null;
+  noParticipation: boolean;
+};
+
+export type RoundEndMsg = {
+  type: "round_end";
+  round: number;
+  score: Record<string, number>;
+  noParticipation: boolean; // nuevo
+  winnerId: string | null;  // nuevo
 };
 
 export type ServerMsg =
   | {
       type: "state";
+      // Nota: el BE no emite "COUNTDOWN" dentro de 'state' (va en evento aparte),
+      // pero mantener DuelState no rompe.
       status: DuelState;
       round?: number;
       code?: string;
@@ -81,40 +133,13 @@ export type ServerMsg =
       qIndex?: number; // 1-based
       qTotal?: number;
     }
-  | {
-      type: "round_end";
-      round: number;
-      score: Record<string, number>;
-    }
+  | RoundEndMsg
   | {
       type: "final";
       winnerId: string | null;
       score: Record<string, number>;
-      byRound: Array<{
-        round: number;
-        winnerId: string | null;
-      }>;
+      byRound: RoundSummary[]; // con noParticipation
       playersInfo?: PlayerInfo[];
     }
   | { type: "error"; message: string }
-  | AnswerProgressMsg; // ⬅️ NUEVO: agrega el tipo a la unión
-
-export type ClientMsg =
-  | { type: "ready" }
-  | {
-      type: "answer";
-      round: number;
-      qIndex?: number; // ⬅️ compat (lo usas)
-      answer: Record<string, unknown>;
-      durationMs: number;
-    };
-
-/** NUEVO: disponibilidad por objetivo (duels-service) */
-export interface ObjectiveAvailabilityResp {
-  objectiveId: string;
-  difficulty?: Difficulty | null;
-  available: number;
-  minRequired: number;
-  maxAllowed: number;
-  source: "server" | "sample";
-}
+  | AnswerProgressMsg;

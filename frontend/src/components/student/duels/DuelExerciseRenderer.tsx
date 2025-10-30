@@ -36,11 +36,11 @@ export default function DuelExerciseRenderer({
       const raw = localStorage.getItem(`duel:ans:${submissionKey}`);
       if (raw) {
         // Si hay módulo y soporta read(), úsalo para reconstruir desde el "wire"
+        const parsed = JSON.parse(raw);
         if (mod && typeof mod.read === "function") {
-          return mod.read(raw);
+          return mod.read(parsed);
         }
-        // Caso fallback: intenta parsear
-        return JSON.parse(raw);
+        return parsed;
       }
     } catch {
       /* noop */

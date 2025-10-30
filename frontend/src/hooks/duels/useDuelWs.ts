@@ -1,4 +1,4 @@
-// src/hooks/useDuelWS.ts
+// src/hooks/duels/useDuelWs.ts
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ServerMsg, ClientMsg } from "../../types/duels/duels";
 
@@ -54,21 +54,16 @@ function isServerMsg(u: unknown): u is ServerMsg {
   if (typeof t !== "string" || !allowedTypes.has(t as ServerMsg["type"])) {
     return false;
   }
-  // Validación mínima por variante (evita falsos positivos sin sobrerrestricción)
+  // Validación mínima por variante
   switch (t) {
     case "state":
-      // opcionales, no exigimos campos adicionales
       return true;
     case "countdown":
       return typeof u["sec"] === "number";
     case "round_start":
-      return (
-        typeof u["round"] === "number" && isRecord(u["exercise"]) // no validamos estructura completa aquí
-      );
+      return typeof u["round"] === "number" && isRecord(u["exercise"]);
     case "round_end":
-      return (
-        typeof u["round"] === "number" && isRecord(u["score"]) // score: Record<string, number>
-      );
+      return typeof u["round"] === "number" && isRecord(u["score"]);
     case "final":
       return isRecord(u["score"]);
     case "error":
@@ -87,16 +82,14 @@ function isServerMsg(u: unknown): u is ServerMsg {
 
 /**
  * Construye la URL de WebSocket a partir de:
- * - VITE_DUELS_WS_URL: puede ser absoluta (ws/wss/http/https) o relativa (ej. "/api/duels/ws")
+ * - VITE_DUELS_WS_URL: absoluta (ws/wss/http/https) o relativa (ej. "/api/duels/ws")
  * - Host/scheme actuales del navegador (si la base es relativa)
  * - Params: token + (matchId | code)
  */
 function buildWsUrl(base: string | undefined, params: URLSearchParams): string {
-  // Si no hay base definida en env, usar la ruta por defecto:
   const defaultBase = "/api/duels/ws";
   const rawBase = base ?? defaultBase;
 
-  // Si la base es absoluta (ws:, wss:, http:, https:), usarla directo
   const isAbsolute =
     rawBase.startsWith("ws://") ||
     rawBase.startsWith("wss://") ||
@@ -104,7 +97,6 @@ function buildWsUrl(base: string | undefined, params: URLSearchParams): string {
     rawBase.startsWith("https://");
 
   if (isAbsolute) {
-    // Permitimos base http/https (proxies pueden reescribir a ws/wss)
     try {
       const u = new URL(rawBase);
       if (u.protocol === "http:") u.protocol = "ws:";
@@ -112,11 +104,10 @@ function buildWsUrl(base: string | undefined, params: URLSearchParams): string {
       u.search = params.toString();
       return u.toString();
     } catch {
-      // Si falla el parse, volver a ruta por defecto relativa
+      /* fallback abajo */
     }
   }
 
-  // Si la base es relativa, construir con host/scheme actuales
   const scheme = window.location.protocol === "https:" ? "wss" : "ws";
   const host = window.location.host;
   const path = rawBase.startsWith("/") ? rawBase : `/${rawBase}`;
@@ -140,7 +131,6 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
   const matchId = "matchId" in opts ? opts.matchId : "";
   const code = "code" in opts ? opts.code : "";
 
-  // Base configurable: absoluta o relativa. Si no se define, usamos "/api/duels/ws".
   const base = import.meta.env.VITE_DUELS_WS_URL as string | undefined;
 
   const url = useMemo(() => {
@@ -156,7 +146,6 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
     try {
       payload = JSON.stringify(msg);
     } catch (e: unknown) {
-      // Error serializando
       return {
         ok: false,
         queued: false,
@@ -174,9 +163,8 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
         return { ok: true, queued: false, readyState };
       }
 
-      // Limitar la cola para evitar crecimiento sin control
       if (queueRef.current.length >= MAX_QUEUE) {
-        queueRef.current.shift(); // descarta el más antiguo
+        queueRef.current.shift();
       }
       queueRef.current.push({ raw: msg, payload });
 
@@ -212,7 +200,7 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
         setConnected(true);
         backoffRef.current = 500;
 
-        // Flush de cola (respetando el límite, aunque aquí ya está controlado)
+        // Flush cola
         const pending = queueRef.current.splice(0);
         while (pending.length > 0) {
           const item = pending.shift();
@@ -220,7 +208,6 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
           try {
             ws.send(item.payload);
           } catch {
-            // devolver los no enviados al inicio de la cola (manteniendo orden)
             queueRef.current.unshift(item, ...pending);
             break;
           }
@@ -228,16 +215,26 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
       };
 
       ws.onmessage = (ev: MessageEvent<string>) => {
-        // Intentar parsear a ServerMsg de forma segura
         try {
-          const parsedUnknown: unknown = JSON.parse(ev.data);
-          if (isServerMsg(parsedUnknown)) {
-            setLastMsg(parsedUnknown);
-          } else {
-            // Ignora frames que no cumplen el contrato de ServerMsg
+          const unknownParsed: unknown = JSON.parse(ev.data);
+
+          // —— ping/pong lightweight ——
+          if (isRecord(unknownParsed) && unknownParsed.type === "ping") {
+            // responder "pong" y no pasar al reducer
+            try {
+              ws.send(JSON.stringify({ type: "pong" }));
+            } catch {
+              /* noop */
+            }
+            return;
+          }
+
+          // Mensajes de aplicación
+          if (isServerMsg(unknownParsed)) {
+            setLastMsg(unknownParsed);
           }
         } catch {
-          // Ignora frames no-JSON
+          // Ignora frames no JSON
         }
       };
 
@@ -252,7 +249,6 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
       };
 
       ws.onerror = () => {
-        // Forzar cierre para disparar onclose y el backoff
         try {
           ws.close();
         } catch {

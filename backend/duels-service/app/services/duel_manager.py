@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Tuple, Set
 
 from fastapi import WebSocket, WebSocketDisconnect, HTTPException
-from sqlalchemy import select, func, exists, and_
+from sqlalchemy import select, func, exists, and_, text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -70,7 +70,7 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
     Crea el Match soportando:
     - rounds[] (cada item: questions, difficulty?, exerciseIds? dedupe)
     - roundConfigs[] (alias de rounds[], mismo shape)
-    - roundPicks[] top-level (cada item: n, qIndex, exerciseId) -> se congelan
+    - roundPicks[] top-level (cada item: round|n, qIndex, exerciseId) -> se congelan
     - exerciseIds[] top-level uniforme (se reparte bestOf * questionsPerRound)
     - objectiveId + difficulty (global) con validación de stock
     """
@@ -91,7 +91,7 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
 
     provided_ids_top = [str(x) for x in (getattr(req, "exerciseIds", None) or [])]
     has_any_round_ids = any((getattr(r, "exerciseIds", None) or []) for r in rounds_req)
-    round_picks_top = getattr(req, "roundPicks", None) or []  # [{n, qIndex, exerciseId}]
+    round_picks_top = getattr(req, "roundPicks", None) or []  # [{round|n, qIndex, exerciseId}]
 
     if not objective_id and not provided_ids_top and not has_any_round_ids and not round_picks_top:
         raise HTTPException(
@@ -230,9 +230,21 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
     if round_picks_top:
         for rp in round_picks_top:
             try:
-                n = int(getattr(rp, "n", None) or rp.get("n"))
-                q_idx = int(getattr(rp, "qIndex", None) or rp.get("qIndex"))
-                exid = str(getattr(rp, "exerciseId", None) or rp.get("exerciseId"))
+                # aceptar ambas formas por compatibilidad: round / n
+                n = int(
+                    getattr(rp, "round", None)
+                    or getattr(rp, "n", None)
+                    or (rp.get("round") if isinstance(rp, dict) else None)
+                    or (rp.get("n") if isinstance(rp, dict) else None)
+                )
+                q_idx = int(
+                    getattr(rp, "qIndex", None)
+                    or (rp.get("qIndex") if isinstance(rp, dict) else None)
+                )
+                exid = str(
+                    getattr(rp, "exerciseId", None)
+                    or (rp.get("exerciseId") if isinstance(rp, dict) else None)
+                )
             except Exception:
                 continue
             if not n or not q_idx or not exid:
@@ -305,6 +317,14 @@ def _normalize_answer_payload(answer_obj):
     except Exception:
         pass
     return answer_obj
+
+# Límite defensivo de tamaño para respuestas
+MAX_ANSWER_BYTES = 32_768
+def _byte_len(obj) -> int:
+    try:
+        return len(json.dumps(obj).encode("utf-8"))
+    except Exception:
+        return len(str(obj).encode("utf-8"))
 
 # -------------------------------------------------------------------
 # Elo rating (1v1)
@@ -503,6 +523,11 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
                 log.debug("WS_ANSWER_IGNORED empty match=%s user=%s", room.match_id, user_id)
                 continue
 
+            # límite defensivo de tamaño
+            if _byte_len(raw_answer) > MAX_ANSWER_BYTES:
+                log.info("ANSWER_TOO_LARGE match=%s user=%s", room.match_id, user_id)
+                continue
+
             try:
                 q_index = int(data.get("qIndex") or room.q_index or 0)
             except Exception:
@@ -550,6 +575,20 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
 
             duels_answers_total.labels(correct="true" if correct else "false").inc()
 
+            # --- Asegura la fila de rounds para el FK (idempotente) ---
+            db = SessionLocal()
+            try:
+                db.execute(text("""
+                    INSERT INTO rounds (match_id, n, started_at)
+                    VALUES (:m, :n, NOW())
+                    ON CONFLICT (match_id, n) DO NOTHING
+                """), {"m": room.match_id, "n": n})
+                db.commit()
+            except Exception:
+                db.rollback()
+            finally:
+                db.close()
+
             # Persistir respuesta (+ payload/raw_payload/exercise_id si existen)
             db = SessionLocal()
             try:
@@ -557,7 +596,7 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
                     match_id=room.match_id,
                     n=n,
                     q_index=q_index,
-                    student_id=user_id,      # ⬅️ UUID string del sub
+                    student_id=user_id,      # ⬅️ UUID/string del sub
                     correct=bool(correct),
                     time_ms=elapsed_ms,
                 )
@@ -795,6 +834,20 @@ async def _orchestrator(room: Room):
             room.q_total,
             sorted(score.keys()),
         )
+
+        # ------ INICIO RONDA: upsert rounds (garantiza fila para FK) ------
+        db_up = SessionLocal()
+        try:
+            db_up.execute(text("""
+                INSERT INTO rounds (match_id, n, started_at)
+                VALUES (:m, :n, NOW())
+                ON CONFLICT (match_id, n) DO NOTHING
+            """), {"m": room.match_id, "n": n})
+            db_up.commit()
+        except Exception:
+            db_up.rollback()
+        finally:
+            db_up.close()
 
         # ------ sub-preguntas de la ronda ------
         for q in range(1, room.q_total + 1):
