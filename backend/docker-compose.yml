@@ -531,6 +531,8 @@ services:
       - EUREKA_SERVER=http://eureka-server:8761/eureka/
       - EUREKA_APP_NAME=DUELS-SERVICE
       - DUELS_HOST=duels-service
+      - LOG_LEVEL=DEBUG
+      - UVICORN_LOG_LEVEL=debug
       - HEALTH_URL=http://duels-service:8087/healthz
       - HOME_URL=http://duels-service:8087/docs
       - RATE_LIMIT_REDIS_URL=redis://advisor-redis:6379/1

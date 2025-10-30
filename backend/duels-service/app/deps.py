@@ -7,7 +7,7 @@ from fastapi import Header, HTTPException, status
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from .config import DATABASE_URL, REDIS_URL, JWT_SECRET, JWT_ALGS
+from .config import DATABASE_URL, REDIS_URL, JWT_KEY_BYTES, JWT_ALGS
 
 # =======================
 # DB (SQLAlchemy, 2.x)
@@ -86,8 +86,8 @@ def decode_jwt_token(authorization: Optional[str]) -> Tuple[str, List[str]]:
     try:
         payload = jwt.decode(
             token,
-            JWT_SECRET,
-            algorithms=JWT_ALGS,
+            JWT_KEY_BYTES,               # ⬅️ clave HMAC ya decodificada
+            algorithms=JWT_ALGS,         # ⬅️ por defecto incluye HS512
             options={"verify_aud": False},
         )
         sub = str(payload.get("sub") or payload.get("userId") or "").strip()
@@ -126,7 +126,7 @@ async def current_user(
         raise HTTPException(status_code=403, detail="Requires student role")
     return sub
 
-# === NUEVO: actor genérico (docente/admin) + validador de roles ===
+# === actor genérico (docente/admin) + validador de roles ===
 async def current_actor(
     authorization: Optional[str] = Header(None),
     x_user_id: Optional[str] = Header(None, alias="x-user-id"),

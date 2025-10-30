@@ -155,14 +155,18 @@ export async function checkAnswer(
 
 /**
  * Obtener ejercicio para examen (sin hints/steps si el BE aplica examMode=true).
- * ⚠️ Recomendado: expón en BE GET /curricula/exercises/{exerciseId}?mode=exam
+ * Ahora admite cancelación con AbortSignal.
  */
 export const getExerciseForExam = async (
-  exerciseId: string
+  exerciseId: string,
+  signal?: AbortSignal
 ): Promise<ExamExerciseResponse> => {
   const { data } = await api.get<ExamExerciseResponse>(
     `/curricula/exercises/${exerciseId}`,
-    { params: { mode: "exam" } }
+    {
+      params: { mode: "exam" },
+      signal, // ✅ cancelación real
+    }
   );
   return data;
 };

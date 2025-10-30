@@ -1,78 +1,210 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+// src/hooks/useDuelWS.ts
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ServerMsg, ClientMsg } from "../../types/duels/duels";
+
+/* ============================
+   Tipos locales (sin any)
+   ============================ */
+
+type QueuedMsg = { raw: ClientMsg; payload: string };
+
+export type SendResult =
+  | { ok: true; queued: boolean; readyState: number | null }
+  | {
+      ok: false;
+      queued: false;
+      readyState: number | null;
+      error: unknown;
+    };
 
 type WsOpts =
   | { matchId: string; token: string }
   | { code: string; token: string };
 
-type ErrorMsg = { type: "error"; message: string };
+type UseDuelWsReturn = {
+  connected: boolean;
+  lastMsg: ServerMsg | null;
+  send: (msg: ClientMsg) => SendResult;
+};
 
-export function useDuelWs(opts: WsOpts, enabled: boolean) {
+// ===== Configuraciones =====
+const MAX_QUEUE = 200; // límite de mensajes en cola
+
+/* ============================
+   Utilidades de tipado seguro
+   ============================ */
+
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null;
+}
+
+const allowedTypes = new Set<ServerMsg["type"]>([
+  "state",
+  "countdown",
+  "round_start",
+  "round_end",
+  "final",
+  "error",
+  "answer_progress",
+]);
+
+function isServerMsg(u: unknown): u is ServerMsg {
+  if (!isRecord(u)) return false;
+  const t = u["type"];
+  if (typeof t !== "string" || !allowedTypes.has(t as ServerMsg["type"])) {
+    return false;
+  }
+  // Validación mínima por variante (evita falsos positivos sin sobrerrestricción)
+  switch (t) {
+    case "state":
+      // opcionales, no exigimos campos adicionales
+      return true;
+    case "countdown":
+      return typeof u["sec"] === "number";
+    case "round_start":
+      return (
+        typeof u["round"] === "number" && isRecord(u["exercise"]) // no validamos estructura completa aquí
+      );
+    case "round_end":
+      return (
+        typeof u["round"] === "number" && isRecord(u["score"]) // score: Record<string, number>
+      );
+    case "final":
+      return isRecord(u["score"]);
+    case "error":
+      return typeof u["message"] === "string";
+    case "answer_progress":
+      return (
+        typeof u["round"] === "number" &&
+        typeof u["qIndex"] === "number" &&
+        typeof u["responded"] === "number" &&
+        typeof u["total"] === "number"
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * Construye la URL de WebSocket a partir de:
+ * - VITE_DUELS_WS_URL: puede ser absoluta (ws/wss/http/https) o relativa (ej. "/api/duels/ws")
+ * - Host/scheme actuales del navegador (si la base es relativa)
+ * - Params: token + (matchId | code)
+ */
+function buildWsUrl(base: string | undefined, params: URLSearchParams): string {
+  // Si no hay base definida en env, usar la ruta por defecto:
+  const defaultBase = "/api/duels/ws";
+  const rawBase = base ?? defaultBase;
+
+  // Si la base es absoluta (ws:, wss:, http:, https:), usarla directo
+  const isAbsolute =
+    rawBase.startsWith("ws://") ||
+    rawBase.startsWith("wss://") ||
+    rawBase.startsWith("http://") ||
+    rawBase.startsWith("https://");
+
+  if (isAbsolute) {
+    // Permitimos base http/https (proxies pueden reescribir a ws/wss)
+    try {
+      const u = new URL(rawBase);
+      if (u.protocol === "http:") u.protocol = "ws:";
+      if (u.protocol === "https:") u.protocol = "wss:";
+      u.search = params.toString();
+      return u.toString();
+    } catch {
+      // Si falla el parse, volver a ruta por defecto relativa
+    }
+  }
+
+  // Si la base es relativa, construir con host/scheme actuales
+  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+  const host = window.location.host;
+  const path = rawBase.startsWith("/") ? rawBase : `/${rawBase}`;
+  return `${scheme}://${host}${path}?${params.toString()}`;
+}
+
+/* ============================
+   Hook principal
+   ============================ */
+
+export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
   const [connected, setConnected] = useState<boolean>(false);
   const [lastMsg, setLastMsg] = useState<ServerMsg | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const queueRef = useRef<ClientMsg[]>([]);
+  const queueRef = useRef<QueuedMsg[]>([]);
   const backoffRef = useRef<number>(500);
   const stopRef = useRef<boolean>(false);
-  const finishedRef = useRef<boolean>(false);
 
-  const token = opts.token;
+  const token = "token" in opts ? opts.token : "";
   const matchId = "matchId" in opts ? opts.matchId : "";
   const code = "code" in opts ? opts.code : "";
 
+  // Base configurable: absoluta o relativa. Si no se define, usamos "/api/duels/ws".
+  const base = import.meta.env.VITE_DUELS_WS_URL as string | undefined;
+
   const url = useMemo(() => {
-    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     const params = new URLSearchParams();
     if (matchId) params.set("matchId", matchId);
     if (code) params.set("code", code);
     params.set("token", token);
-    return `${scheme}://${
-      window.location.host
-    }/api/duels/ws?${params.toString()}`;
-  }, [token, matchId, code]);
+    return buildWsUrl(base, params);
+  }, [token, matchId, code, base]);
 
-  const send = useCallback((msg: ClientMsg) => {
-    const ws = wsRef.current;
+  const send = useCallback((msg: ClientMsg): SendResult => {
+    let payload: string;
     try {
-      console.log("[WS SEND]", { msg, readyState: ws?.readyState });
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(msg));
-        console.log("[WS SEND OK]");
-      } else {
-        queueRef.current.push(msg);
-        console.log("[WS QUEUED]", { queued: queueRef.current.length });
+      payload = JSON.stringify(msg);
+    } catch (e: unknown) {
+      // Error serializando
+      return {
+        ok: false,
+        queued: false,
+        readyState: wsRef.current?.readyState ?? null,
+        error: e,
+      };
+    }
+
+    const ws = wsRef.current;
+    const readyState = ws?.readyState ?? null;
+
+    try {
+      if (ws && readyState === WebSocket.OPEN) {
+        ws.send(payload);
+        return { ok: true, queued: false, readyState };
       }
-    } catch (e) {
-      console.error("[WS SEND ERROR]", e);
+
+      // Limitar la cola para evitar crecimiento sin control
+      if (queueRef.current.length >= MAX_QUEUE) {
+        queueRef.current.shift(); // descarta el más antiguo
+      }
+      queueRef.current.push({ raw: msg, payload });
+
+      return { ok: true, queued: true, readyState };
+    } catch (e: unknown) {
+      return { ok: false, queued: false, readyState, error: e };
     }
   }, []);
 
   useEffect(() => {
     if (!enabled) {
-      console.log("[WS DISABLED] closing...");
       setConnected(false);
       setLastMsg(null);
       stopRef.current = true;
-      finishedRef.current = false;
-      if (wsRef.current) {
-        try {
-          wsRef.current.close();
-        } catch {
-          /* noop */
-        }
-        wsRef.current = null;
+      try {
+        wsRef.current?.close();
+      } catch {
+        /* noop */
       }
+      wsRef.current = null;
       return;
     }
 
     stopRef.current = false;
-    finishedRef.current = false;
 
     const connect = () => {
       if (stopRef.current) return;
 
-      console.log("[WS CONNECT] opening", url);
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
@@ -80,118 +212,66 @@ export function useDuelWs(opts: WsOpts, enabled: boolean) {
         setConnected(true);
         backoffRef.current = 500;
 
+        // Flush de cola (respetando el límite, aunque aquí ya está controlado)
         const pending = queueRef.current.splice(0);
-        if (pending.length > 0) {
-          console.log("[WS OPEN] flushing", pending.length, "message(s)");
-        }
-        for (const m of pending) {
+        while (pending.length > 0) {
+          const item = pending.shift();
+          if (!item) continue;
           try {
-            ws.send(JSON.stringify(m));
-            console.log("[WS FLUSH] sent", m);
-          } catch (err) {
-            console.error("[WS FLUSH ERROR]", err, m);
-            queueRef.current.unshift(m);
+            ws.send(item.payload);
+          } catch {
+            // devolver los no enviados al inicio de la cola (manteniendo orden)
+            queueRef.current.unshift(item, ...pending);
             break;
           }
         }
       };
 
       ws.onmessage = (ev: MessageEvent<string>) => {
-        let parsed: unknown;
+        // Intentar parsear a ServerMsg de forma segura
         try {
-          parsed = JSON.parse(ev.data);
+          const parsedUnknown: unknown = JSON.parse(ev.data);
+          if (isServerMsg(parsedUnknown)) {
+            setLastMsg(parsedUnknown);
+          } else {
+            // Ignora frames que no cumplen el contrato de ServerMsg
+          }
         } catch {
-          console.log("[WS RECV] (non-JSON)", ev.data);
-          return;
+          // Ignora frames no-JSON
         }
-
-        // Log genérico de todo lo que llega
-        console.log("[WS RECV]", parsed);
-
-        if (!parsed || typeof parsed !== "object") return;
-
-        const payload = parsed as {
-          type?: string;
-          status?: string;
-          [k: string]: unknown;
-        };
-
-        if (payload.type === "ping") {
-          try {
-            ws.send(JSON.stringify({ type: "pong" }));
-          } catch {
-            /* empty */
-          }
-          return;
-        }
-
-        if (payload.type === "error") {
-          const err = payload as ErrorMsg;
-          if (err.message === "unauthorized") {
-            setLastMsg(null);
-            stopRef.current = true;
-            try {
-              ws.close(1008, "unauthorized");
-            } catch {
-              /* empty */
-            }
-            return;
-          }
-          setLastMsg(payload as ServerMsg);
-          return;
-        }
-
-        if (
-          payload.type === "final" ||
-          (payload.type === "state" && payload.status === "RESULTS")
-        ) {
-          finishedRef.current = true;
-          stopRef.current = true;
-          setLastMsg(payload as ServerMsg);
-          try {
-            ws.close(1000, "done");
-          } catch {
-            /* empty */
-          }
-          return;
-        }
-
-        // Deja pasar TODO lo que tenga type, aunque sea un tipo “nuevo”
-        setLastMsg(payload as ServerMsg);
       };
 
-      ws.onclose = (ev: CloseEvent) => {
-        console.warn("[WS CLOSE]", ev.code, ev.reason);
+      ws.onclose = () => {
         setConnected(false);
         if (stopRef.current) return;
-        if (ev.code === 1000 || ev.code === 1001 || ev.code === 1008) return;
-        const wait = Math.min(backoffRef.current, 8000);
-        console.log("[WS RETRY] in", wait, "ms");
-        window.setTimeout(connect, wait);
-        backoffRef.current *= 2;
+
+        // Reconexión exponencial con tope
+        const delay = Math.min(backoffRef.current, 8000);
+        backoffRef.current = Math.min(backoffRef.current * 2, 8000);
+        window.setTimeout(connect, delay);
       };
 
-      ws.onerror = (ev) => {
-        console.error("[WS ERROR]", ev);
-        // onclose hará el backoff
+      ws.onerror = () => {
+        // Forzar cierre para disparar onclose y el backoff
+        try {
+          ws.close();
+        } catch {
+          /* noop */
+        }
       };
     };
 
     connect();
-
     return () => {
-      console.log("[WS CLEANUP] closing...");
       stopRef.current = true;
-      if (wsRef.current) {
-        try {
-          wsRef.current.close();
-        } catch {
-          /* noop */
-        }
-        wsRef.current = null;
+      try {
+        wsRef.current?.close();
+      } catch {
+        /* noop */
       }
+      wsRef.current = null;
     };
-  }, [url, enabled]);
+  }, [enabled, url]);
 
   return { connected, lastMsg, send };
 }

@@ -1,5 +1,6 @@
+# app/routers/ws.py
 from __future__ import annotations
-import os, base64, logging
+import logging
 from typing import Optional, Dict, Any, Tuple
 
 from fastapi import APIRouter, WebSocket
@@ -9,44 +10,10 @@ from sqlalchemy.orm import Session
 
 from ..deps import SessionLocal
 from ..services.duel_manager import ws_lobby, resolve_short_code
+from ..config import JWT_KEY_BYTES, JWT_ALGS
 
 router = APIRouter()
 log = logging.getLogger("duels.ws")
-
-JWT_ALGS = [a.strip() for a in (os.getenv("JWT_ALGS") or "HS512,HS384,HS256").split(",")]
-JWT_SECRET_RAW = (os.getenv("JWT_SECRET") or "").strip()
-
-
-def _best_effort_hmac_key() -> Optional[bytes]:
-    if not JWT_SECRET_RAW:
-        log.error("JWT_SECRET vacío en entorno")
-        return None
-
-    candidates = {JWT_SECRET_RAW}
-    for pad in ("", "=", "==", "==="):
-        candidates.add(JWT_SECRET_RAW + pad)
-
-    for s in list(candidates):
-        try:
-            b = base64.b64decode(s, validate=True)
-            if b:
-                return b
-        except Exception:
-            pass
-    for s in list(candidates):
-        try:
-            b = base64.urlsafe_b64decode(s + "===")
-            if b:
-                return b
-        except Exception:
-            pass
-
-    log.warning("JWT_SECRET no es Base64 válido; usando bytes crudos como clave HMAC (fallback)")
-    return JWT_SECRET_RAW.encode("utf-8")
-
-
-JWT_KEY_BYTES = _best_effort_hmac_key()
-
 
 def _extract_token(headers: Dict[str, Any], query_params: Dict[str, Any]) -> Optional[str]:
     auth = headers.get("authorization") or headers.get("Authorization")
@@ -55,7 +22,6 @@ def _extract_token(headers: Dict[str, Any], query_params: Dict[str, Any]) -> Opt
     if "token" in query_params:
         return str(query_params["token"])
     return None
-
 
 def _parse_user(token: str) -> Tuple[Optional[str], Optional[str]]:
     """
@@ -85,7 +51,6 @@ def _parse_user(token: str) -> Tuple[Optional[str], Optional[str]]:
         log.warning("JWT decode error: %s", e)
         return None, None
 
-
 def _resolve_match_id_and_code(ws: WebSocket) -> tuple[Optional[str], Optional[str]]:
     qp = dict(ws.query_params)
     mid = qp.get("matchId")
@@ -102,15 +67,12 @@ def _resolve_match_id_and_code(ws: WebSocket) -> tuple[Optional[str], Optional[s
             db.close()
     return None, None
 
-
 async def _safe_send_json(ws: WebSocket, payload: dict) -> None:
-    # Evita raise si ya se envió un close
     if ws.client_state == WebSocketState.CONNECTED:
         try:
             await ws.send_json(payload)
         except RuntimeError:
             pass
-
 
 async def _safe_close(ws: WebSocket, code: int) -> None:
     if ws.client_state != WebSocketState.DISCONNECTED:
@@ -118,7 +80,6 @@ async def _safe_close(ws: WebSocket, code: int) -> None:
             await ws.close(code=code)
         except RuntimeError:
             pass
-
 
 @router.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):
@@ -147,13 +108,9 @@ async def ws_endpoint(websocket: WebSocket):
         )
 
         log.info("WS enter lobby matchId=%s user=%s name=%s", match_id, user_id, username or "-")
-        # Dentro de ws_lobby se gestionan ready X/Y, round loop, keepalive pings y cierre final.
         await ws_lobby(websocket, user_id=user_id, user_name=username)
-        # IMPORTANTE: no enviar nada más aquí; ws_lobby podría haber cerrado el socket.
-
         return
     except Exception as e:
-        # WebSocketDisconnect también cae aquí en Starlette pero nos vale el handler genérico
         log.exception("WS fatal error: %s", e)
         await _safe_send_json(websocket, {"type": "error", "message": "internal"})
         await _safe_close(websocket, 1011)

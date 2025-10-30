@@ -1,3 +1,4 @@
+// src/pages/duels/DuelRoom.tsx
 import React, {
   useCallback,
   useEffect,
@@ -7,46 +8,18 @@ import React, {
 } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../context/useAuth";
-import { useDuelWs } from "../../../hooks/duels/useDuelWs";
 import type {
   ServerMsg,
   DuelExercise,
   PlayerInfo,
 } from "../../../types/duels/duels";
-import DuelExerciseRenderer from "../../../components/student/duels/DuelExerciseRenderer";
 import { getExerciseForExam } from "../../../services/exerciseService";
 import { getMatch } from "../../../services/duelsService";
 import type { TemplateType } from "../../../types/exercise/TemplateSchemaResponse";
+import { useDuelWs } from "../../../hooks/duels/useDuelWs";
+import DuelExerciseRenderer from "../../../components/student/duels/DuelExerciseRenderer";
 
-/* === Helpers === */
-function isServerMsg(v: unknown): v is ServerMsg {
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    "type" in v &&
-    typeof (v as { type: unknown }).type === "string"
-  );
-}
-
-/** Mensaje extra local para progreso por sub-pregunta (versión "clásica") */
-type AnswerProgressMsg = {
-  type: "answer_progress";
-  round: number;
-  qIndex: number;
-  responded: number;
-  total: number;
-};
-function isAnswerProgressMsg(v: unknown): v is AnswerProgressMsg {
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    (v as { type?: unknown }).type === "answer_progress" &&
-    typeof (v as { round?: unknown }).round === "number" &&
-    typeof (v as { qIndex?: unknown }).qIndex === "number" &&
-    typeof (v as { responded?: unknown }).responded === "number" &&
-    typeof (v as { total?: unknown }).total === "number"
-  );
-}
+/* ---------------- Helpers ---------------- */
 
 function getAccessToken(): string | null {
   try {
@@ -59,12 +32,12 @@ function getAccessToken(): string | null {
   }
 }
 
-/** Opciones para abrir WS: por matchId o por código corto */
+/** Opciones para abrir WS: por matchId o por code */
 type WsOpts =
   | { token: string; matchId: string; code?: undefined }
   | { token: string; matchId?: undefined; code: string };
 
-/** Type guard: ejercicio “completo” (ya trae templateType/params) */
+/** Ejercicio completo (ya con templateType/params) */
 function isCompleteExercise(ex: DuelExercise): ex is DuelExercise & {
   templateType: TemplateType;
   params: Record<string, unknown>;
@@ -76,7 +49,7 @@ function isCompleteExercise(ex: DuelExercise): ex is DuelExercise & {
   );
 }
 
-/** Extensión local para soportar un posible flag noParticipation del backend */
+/** Extensión opcional (si el BE envía estos campos adicionales) */
 type FinalRoundItemExt = {
   round: number;
   winnerId: string | null;
@@ -93,75 +66,12 @@ type StateExtras = {
 };
 
 type ServerStateMsgWithExtras = Extract<ServerMsg, { type: "state" }> &
-  StateExtras;
+  Partial<StateExtras>;
 type ServerFinalMsgWithExtras = Extract<ServerMsg, { type: "final" }> & {
   playersInfo?: PlayerInfo[];
 };
 
-/* === Progreso alternativo (sin 'any') === */
-
-function getNumber(
-  obj: Record<string, unknown>,
-  key: string
-): number | undefined {
-  const v = obj[key];
-  return typeof v === "number" ? v : undefined;
-}
-
-function isProgressType(t?: string): boolean {
-  return (
-    t === "answer_progress" ||
-    t === "progress" ||
-    t === "answer_count" ||
-    t === "answered"
-  );
-}
-
-type ProgressLike = {
-  round?: number;
-  qIndex?: number;
-  responded?: number;
-  total?: number;
-};
-
-/**
- * Intenta extraer campos de progreso incluso si el backend usa nombres distintos.
- * No usa 'any'. Trabaja sobre Record<string, unknown>.
- */
-function extractProgressLike(m: Record<string, unknown>): ProgressLike | null {
-  const round = getNumber(m, "round") ?? getNumber(m, "r"); // alias común
-
-  const qIndex = getNumber(m, "qIndex") ?? getNumber(m, "questionIndex"); // alias común
-
-  const respondedCandidates = [
-    "responded",
-    "answered",
-    "submitted",
-    "count",
-    "done",
-  ];
-  let responded: number | undefined;
-  for (const k of respondedCandidates) {
-    const n = getNumber(m, k);
-    if (typeof n === "number") {
-      responded = n;
-      break;
-    }
-  }
-
-  const totalCandidates = ["total", "participants", "expected", "all", "size"];
-  let total: number | undefined;
-  for (const k of totalCandidates) {
-    const n = getNumber(m, k);
-    if (typeof n === "number") {
-      total = n;
-      break;
-    }
-  }
-
-  if (responded == null && total == null) return null;
-  return { round, qIndex, responded, total };
-}
+/* ================================ Componente ================================ */
 
 const DuelRoom: React.FC = () => {
   const { matchId: matchIdParam = "" } = useParams<{ matchId: string }>();
@@ -183,9 +93,7 @@ const DuelRoom: React.FC = () => {
 
   const [score, setScore] = useState<Record<string, number>>({});
   const [finalWinner, setFinalWinner] = useState<string | null>(null);
-  const [finalByRound, setFinalByRound] = useState<
-    Array<{ round: number; winnerId: string | null; noParticipation?: boolean }>
-  >([]);
+  const [finalByRound, setFinalByRound] = useState<FinalRoundItemExt[]>([]);
 
   const [countdown, setCountdown] = useState<number>(0);
   const [sent, setSent] = useState<boolean>(false);
@@ -227,10 +135,15 @@ const DuelRoom: React.FC = () => {
 
   const token = getAccessToken() || "";
 
+  // De-dupe de meta de ejercicio
+  const lastExerciseKeyRef = useRef<string | null>(null);
+  const inFlightRef = useRef<Record<string, boolean>>({});
+  const fetchAbortRef = useRef<AbortController | null>(null);
+
   const wsEnabled = useMemo(
     () =>
       isAuthenticated &&
-      !!token &&
+      token.length > 0 &&
       (Boolean(shortCode) || Boolean(matchIdParam)) &&
       status !== "RESULTS",
     [isAuthenticated, token, shortCode, matchIdParam, status]
@@ -244,7 +157,7 @@ const DuelRoom: React.FC = () => {
 
   const { connected, lastMsg, send } = useDuelWs(wsOpts, wsEnabled);
 
-  // medición local de duración por (sub)pregunta
+  // medición local de duración
   const t0Ref = useRef<number>(0);
   const now = () =>
     typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -265,7 +178,7 @@ const DuelRoom: React.FC = () => {
     }
   }, [isAuthenticated, token]);
 
-  // Resolver shortCode por HTTP si entro con :matchId
+  // Resolver shortCode si entro con :matchId
   useEffect(() => {
     const run = async () => {
       if (shortCode || !matchIdParam || !token) return;
@@ -279,12 +192,17 @@ const DuelRoom: React.FC = () => {
     void run();
   }, [matchIdParam, shortCode, token]);
 
-  // Limpieza del interval al desmontar
+  // Limpieza al desmontar
   useEffect(() => {
     return () => {
       if (timerRef.current != null) {
         window.clearInterval(timerRef.current);
         timerRef.current = null;
+      }
+      try {
+        fetchAbortRef.current?.abort();
+      } catch {
+        /* noop */
       }
     };
   }, []);
@@ -297,24 +215,23 @@ const DuelRoom: React.FC = () => {
         if (p && typeof p.id === "string") {
           const nm = (p.name || "").trim();
           if (nm) next[p.id] = nm;
-          else next[p.id] ||= `Jugador ${p.id.slice(0, 4)}`;
+          else if (!next[p.id]) next[p.id] = `Jugador ${p.id.slice(0, 4)}`;
         }
       }
       return next;
     });
   };
 
-  // IMPORTANTE: pasar siempre qIndex congelado al enviar (manual o auto)
+  // Envío de respuesta; congela qIndex
   const submitAnswer = useCallback(
     (
       answer: Record<string, unknown>,
       opts: { force?: boolean; auto?: boolean; qIndexAtSend?: number } = {}
-    ) => {
+    ): boolean => {
       const { force = false, auto = false } = opts;
       if (sentRef.current) return false;
       if (round <= 0) return false;
 
-      // congela qIndex al inicio del submit
       const qIndexAtSend =
         typeof opts.qIndexAtSend === "number" && opts.qIndexAtSend > 0
           ? opts.qIndexAtSend
@@ -323,27 +240,13 @@ const DuelRoom: React.FC = () => {
 
       if (!force) {
         const deadlineMs = deadlineRef.current;
-        if (deadlineMs && Date.now() >= deadlineMs) {
-          return false;
-        }
+        if (deadlineMs && Date.now() >= deadlineMs) return false;
       }
 
       const t1 = now();
       const durationMs = Math.max(0, Math.round(t1 - t0Ref.current));
 
-      // Palanca para verificar si el backend espera qIndex 0-based:
-      const zeroIdxHack = window.localStorage.getItem("duelsZeroIndex") === "1";
-      const qOut = zeroIdxHack ? Math.max(0, qIndexAtSend - 1) : qIndexAtSend;
-
-      console.log("[DUEL submitAnswer]", {
-        round,
-        qIndexAtSend,
-        qOut,
-        answer,
-        durationMs,
-      });
-
-      send({ type: "answer", round, qIndex: qOut, answer, durationMs });
+      send({ type: "answer", round, qIndex: qIndexAtSend, answer, durationMs });
       sentRef.current = true;
       autoSubmittedRef.current = auto;
       setSent(true);
@@ -352,12 +255,19 @@ const DuelRoom: React.FC = () => {
     [round, qIndex, send]
   );
 
-  // Reintento meta ejercicio
+  // Reintento meta manual (con signal)
   const retryExerciseMeta = useCallback(() => {
     if (!exercise?.id) return;
     setExerciseLoadErr(null);
     setLoadingExerciseMeta(true);
-    getExerciseForExam(exercise.id)
+    try {
+      fetchAbortRef.current?.abort();
+    } catch {
+      /* noop */
+    }
+    fetchAbortRef.current = new AbortController();
+
+    getExerciseForExam(exercise.id, fetchAbortRef.current.signal)
       .then((meta) => {
         setExercise({
           id: exercise.id,
@@ -366,85 +276,48 @@ const DuelRoom: React.FC = () => {
         });
         setExerciseHtml(meta.statementRendered ?? null);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        if (
+          (err as { name?: string })?.name === "CanceledError" ||
+          (err as { name?: string })?.name === "AbortError"
+        ) {
+          return; // petición cancelada
+        }
         setExerciseLoadErr("No se pudo cargar el enunciado del ejercicio.");
       })
       .finally(() => setLoadingExerciseMeta(false));
   }, [exercise?.id]);
 
-  // Manejo de mensajes del WS (incluye progreso alternativo)
+  // Auto “ready” al reconectar si ya estabas listo
+  useEffect(() => {
+    if (!connected || !iAmReady || status === "RESULTS") return;
+    const res = send({ type: "ready" });
+    if (!res.ok) {
+      // no bloqueante
+    }
+  }, [connected, iAmReady, status, send]);
+
+  // Manejo de mensajes WS (ya tipados)
   useEffect(() => {
     if (!lastMsg) return;
 
-    // 1) Mensaje de progreso (clásico)
-    if (isAnswerProgressMsg(lastMsg)) {
-      if (
-        lastMsg.round === round &&
-        lastMsg.qIndex === qIndex &&
-        typeof lastMsg.responded === "number" &&
-        typeof lastMsg.total === "number"
-      ) {
-        setResponded(lastMsg.responded);
-        setRespondedTotal(lastMsg.total);
-      }
-      return;
-    }
-
-    // 2) Mensaje de progreso alternativo
-    if (typeof lastMsg === "object" && lastMsg !== null) {
-      const anyMsg = lastMsg as Record<string, unknown>;
-      const maybeType =
-        typeof anyMsg.type === "string" ? anyMsg.type : undefined;
-
-      // 2.1) Si el 'type' es de progreso conocido
-      if (isProgressType(maybeType)) {
-        const prog = extractProgressLike(anyMsg);
-        if (prog) {
-          const sameRound =
-            typeof prog.round === "number" ? prog.round === round : true;
-          const sameQuestion =
-            typeof prog.qIndex === "number"
-              ? prog.qIndex === qIndex || prog.qIndex + 1 === qIndex // acepta 0-based
-              : true;
-          if (sameRound && sameQuestion) {
-            if (typeof prog.responded === "number")
-              setResponded(prog.responded);
-            if (typeof prog.total === "number") setRespondedTotal(prog.total);
-          }
-          return; // ya procesado
+    switch (lastMsg.type) {
+      case "answer_progress": {
+        // Sólo mostramos si corresponde a la pregunta/ronda actual
+        const sameRound = lastMsg.round === round;
+        const sameQuestion =
+          lastMsg.qIndex === qIndex || lastMsg.qIndex + 1 === qIndex; // compat 1-based
+        if (sameRound && sameQuestion) {
+          setResponded(lastMsg.responded);
+          setRespondedTotal(lastMsg.total);
         }
+        break;
       }
 
-      // 2.2) Si viene embebido dentro de un "state"
-      if (maybeType === "state") {
-        const prog = extractProgressLike(anyMsg);
-        if (prog) {
-          const sameRound =
-            typeof prog.round === "number" ? prog.round === round : true;
-          const sameQuestion =
-            typeof prog.qIndex === "number"
-              ? prog.qIndex === qIndex || prog.qIndex + 1 === qIndex
-              : true;
-          if (sameRound && sameQuestion) {
-            if (typeof prog.responded === "number")
-              setResponded(prog.responded);
-            if (typeof prog.total === "number") setRespondedTotal(prog.total);
-          }
-          // no hacemos return; seguimos procesando el propio state abajo
-        }
-      }
-    }
-
-    // 3) Resto de mensajes tipados
-    if (!isServerMsg(lastMsg)) return;
-    const m: ServerMsg = lastMsg;
-
-    switch (m.type) {
       case "state": {
-        const st = m as ServerStateMsgWithExtras;
+        const st = lastMsg as ServerStateMsgWithExtras;
         setStatus(st.status);
         if (typeof st.round === "number") setRound(st.round);
-
         if (typeof st.code === "string" && !shortCode) setShortCode(st.code);
         setReadyCount(typeof st.ready === "number" ? st.ready : undefined);
         setPlayersCount(
@@ -453,67 +326,64 @@ const DuelRoom: React.FC = () => {
         setMaxPlayers(
           typeof st.maxPlayers === "number" ? st.maxPlayers : undefined
         );
-
         if (Array.isArray(st.readyIds)) setReadyIds(new Set(st.readyIds));
         if (Array.isArray(st.playersInfo)) mergePlayersInfo(st.playersInfo);
         break;
       }
+
       case "countdown": {
         setStatus("COUNTDOWN");
-        setCountdown(m.sec);
-        // reset de UI
+        setCountdown(lastMsg.sec);
         setIAmReady(false);
         setSent(false);
         autoSubmittedRef.current = false;
-        // timer a cero
         deadlineRef.current = null;
         if (timerRef.current != null) {
           window.clearInterval(timerRef.current);
           timerRef.current = null;
         }
         setTimeLeftMs(0);
-        // progreso a cero
         setResponded(0);
         setRespondedTotal(0);
         break;
       }
+
       case "round_start": {
         setStatus("ROUND");
-        setRound(m.round);
+        setRound(lastMsg.round);
         setSent(false);
         autoSubmittedRef.current = false;
         setIAmReady(false);
-        setQIndex(m.qIndex ?? 1);
-        setQTotal(m.qTotal ?? 1);
+        setQIndex(lastMsg.qIndex ?? 1);
+        setQTotal(lastMsg.qTotal ?? 1);
         t0Ref.current = now();
 
-        // reset progreso
         setResponded(0);
         setRespondedTotal(0);
 
-        // Banner de tiempo
-        if (typeof m.deadline === "number" && m.deadline > Date.now()) {
-          const deadlineMs = m.deadline;
+        // Tiempo por pregunta
+        if (
+          typeof lastMsg.deadline === "number" &&
+          lastMsg.deadline > Date.now()
+        ) {
+          const deadlineMs = lastMsg.deadline;
           deadlineRef.current = deadlineMs;
           const total = deadlineMs - Date.now();
           totalTimeMsRef.current = total > 0 ? total : 0;
           setTimeLeftMs(totalTimeMsRef.current);
 
           if (timerRef.current != null) window.clearInterval(timerRef.current);
-
           timerRef.current = window.setInterval(() => {
             const rest = (deadlineRef.current ?? 0) - Date.now();
             const clamped = Math.max(0, rest);
             setTimeLeftMs(clamped);
-
             if (clamped <= 0 && timerRef.current != null) {
               window.clearInterval(timerRef.current);
               timerRef.current = null;
               if (!autoSubmittedRef.current && !sentRef.current) {
-                // autosubmit con qIndex congelado de ESTA pregunta
-                const qFrozen = m.qIndex ?? qIndex;
+                const qFrozen = lastMsg.qIndex ?? qIndex;
                 submitAnswer(
-                  {},
+                  { value: null },
                   { force: true, auto: true, qIndexAtSend: qFrozen }
                 );
               }
@@ -529,68 +399,112 @@ const DuelRoom: React.FC = () => {
           setTimeLeftMs(0);
         }
 
-        // Cargar meta del ejercicio
+        // === DEDUPE de meta del ejercicio ===
         setExerciseLoadErr(null);
-        const ex = m.exercise;
+        const ex = lastMsg.exercise;
+        const exId = ex.id;
+        const key = `${lastMsg.round}:${lastMsg.qIndex ?? 1}:${exId}`;
+
+        // mismo ejercicio → no repitas
+        if (lastExerciseKeyRef.current === key) break;
+        lastExerciseKeyRef.current = key;
+
+        // aborta peticiones anteriores y prepara signal
+        try {
+          fetchAbortRef.current?.abort();
+        } catch {
+          /* noop */
+        }
+        fetchAbortRef.current = new AbortController();
+
         if (isCompleteExercise(ex)) {
           setExercise(ex);
           setExerciseHtml(null);
-        } else {
-          setLoadingExerciseMeta(true);
-          getExerciseForExam(ex.id)
-            .then((meta) => {
-              setExercise({
-                id: ex.id,
-                templateType: meta.templateType,
-                params: meta.parameters ?? {},
-              });
-              setExerciseHtml(meta.statementRendered ?? null);
-            })
-            .catch(() => {
-              setExercise({ id: ex.id });
-              setExerciseHtml(null);
-              setExerciseLoadErr(
-                "No se pudo cargar el enunciado del ejercicio."
-              );
-            })
-            .finally(() => setLoadingExerciseMeta(false));
+          break;
         }
+
+        if (inFlightRef.current[key]) break;
+        inFlightRef.current[key] = true;
+
+        setLoadingExerciseMeta(true);
+        getExerciseForExam(exId, fetchAbortRef.current.signal)
+          .then((meta) => {
+            if (lastExerciseKeyRef.current !== key) return; // llegó otra pregunta antes
+            setExercise({
+              id: exId,
+              templateType: meta.templateType,
+              params: meta.parameters ?? {},
+            });
+            setExerciseHtml(meta.statementRendered ?? null);
+          })
+          .catch((err: unknown) => {
+            if (lastExerciseKeyRef.current !== key) return;
+            if (
+              (err as { name?: string })?.name === "CanceledError" ||
+              (err as { name?: string })?.name === "AbortError"
+            ) {
+              return;
+            }
+            setExercise({ id: exId });
+            setExerciseHtml(null);
+            setExerciseLoadErr("No se pudo cargar el enunciado del ejercicio.");
+          })
+          .finally(() => {
+            if (lastExerciseKeyRef.current === key) {
+              setLoadingExerciseMeta(false);
+            }
+            inFlightRef.current[key] = false;
+          });
+
         break;
       }
+
       case "round_end": {
         setSent(true);
-        setScore(m.score);
-        // apagar banner de tiempo
+        setScore(lastMsg.score);
         deadlineRef.current = null;
         if (timerRef.current != null) {
           window.clearInterval(timerRef.current);
           timerRef.current = null;
         }
         setTimeLeftMs(0);
-        // reset progreso al cerrar sub-pregunta
         setResponded(0);
         setRespondedTotal(0);
+        // limpia draft local
+        try {
+          const storageKey =
+            exercise && (shortCode || matchIdParam)
+              ? `duel:${shortCode || matchIdParam}:r${round}:q${qIndex}:ex:${
+                  exercise.id
+                }`
+              : null;
+          if (storageKey) localStorage.removeItem(`duel:ans:${storageKey}`);
+        } catch {
+          /* noop */
+        }
         break;
       }
+
       case "final": {
-        const fm = m as ServerFinalMsgWithExtras;
+        const fm = lastMsg as ServerFinalMsgWithExtras;
         setStatus("RESULTS");
         setFinalWinner(fm.winnerId ?? null);
 
-        // Mapeo seguro: leemos un posible noParticipation si el backend lo envía.
-        const mapped: FinalRoundItemExt[] = (
-          fm.byRound as unknown as FinalRoundItemExt[]
-        ).map((r) => ({
-          round: r.round,
-          winnerId: r.winnerId ?? null,
-          noParticipation: r.noParticipation === true ? true : undefined,
-        }));
-        setFinalByRound(mapped);
+        const byR: FinalRoundItemExt[] = Array.isArray(fm.byRound)
+          ? fm.byRound.map((r) => ({
+              round: r.round,
+              winnerId: r.winnerId ?? null,
+              noParticipation:
+                (r as { noParticipation?: boolean }).noParticipation === true
+                  ? true
+                  : undefined,
+            }))
+          : [];
+        setFinalByRound(byR);
 
         setScore(fm.score);
         if (Array.isArray(fm.playersInfo)) mergePlayersInfo(fm.playersInfo);
 
-        // limpia timer y progreso
         deadlineRef.current = null;
         if (timerRef.current != null) {
           window.clearInterval(timerRef.current);
@@ -601,26 +515,38 @@ const DuelRoom: React.FC = () => {
         setRespondedTotal(0);
         break;
       }
+
       case "error": {
-        setError(m.message);
+        const raw = String(lastMsg.message || "").toLowerCase();
+        if (raw.includes("room full")) setError("La sala está llena.");
+        else if (raw.includes("match running"))
+          setError("El duelo ya está en curso.");
+        else if (raw.includes("match finished"))
+          setError("El duelo ya finalizó.");
+        else if (raw.includes("match not found"))
+          setError("No se encontró el duelo.");
+        else setError(lastMsg.message);
         break;
       }
     }
-  }, [lastMsg, shortCode, submitAnswer, qIndex, round]);
+  }, [lastMsg, shortCode, submitAnswer, qIndex, round, exercise, matchIdParam]);
 
   const onReady = () => {
     if (iAmReady) return;
+    const res = send({ type: "ready" });
+    if (!res.ok) {
+      // no bloqueante
+      return;
+    }
     setIAmReady(true);
-    send({ type: "ready" });
   };
 
   const onSubmit = (answer: Record<string, unknown>) => {
-    // Envío manual: congela qIndex en el momento del click
     const qFrozen = qIndex;
     submitAnswer(answer, { qIndexAtSend: qFrozen });
   };
 
-  // === Scoreboard N jugadores ===
+  // Scoreboard
   const entries = useMemo(() => {
     const ids = Object.keys(score);
     return ids
@@ -665,19 +591,22 @@ const DuelRoom: React.FC = () => {
     const ss = s % 60;
     return `${mm}:${ss.toString().padStart(2, "0")}`;
   };
+
   const progressPct = useMemo(() => {
     if (!totalTimeMsRef.current || timeLeftMs <= 0) return 0;
     const used = totalTimeMsRef.current - timeLeftMs;
     return Math.min(100, Math.max(0, (used / totalTimeMsRef.current) * 100));
   }, [timeLeftMs]);
 
-  const lobbyPlayers = useMemo(() => {
-    return Object.entries(playersMap).map(([id, name]) => ({
-      id,
-      name: id === myId ? "Tú" : name || `${id.slice(0, 8)}…`,
-      ready: readyIds.has(id),
-    }));
-  }, [playersMap, readyIds, myId]);
+  const lobbyPlayers = useMemo(
+    () =>
+      Object.entries(playersMap).map(([id, name]) => ({
+        id,
+        name: id === myId ? "Tú" : name || `${id.slice(0, 8)}…`,
+        ready: readyIds.has(id),
+      })),
+    [playersMap, readyIds, myId]
+  );
 
   return (
     <div className="mx-auto max-w-3xl p-4">
@@ -761,7 +690,7 @@ const DuelRoom: React.FC = () => {
             </div>
           )}
 
-          {/* Lista de conectados con estado listo */}
+          {/* Lista de conectados */}
           {lobbyPlayers.length > 0 && (
             <ul className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {lobbyPlayers.map((p) => (
@@ -896,7 +825,7 @@ const DuelRoom: React.FC = () => {
 
       {status === "ROUND" && (
         <div className="space-y-3" aria-live="polite">
-          {/* Banner de tiempo por pregunta */}
+          {/* Banner de tiempo */}
           {timeLeftMs > 0 && (
             <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="mb-1 flex items-center justify-between text-xs sm:text-sm">
@@ -918,7 +847,7 @@ const DuelRoom: React.FC = () => {
             </div>
           )}
 
-          {/* Progreso global de la sub-pregunta */}
+          {/* Progreso global */}
           {(responded > 0 || respondedTotal > 0) && (
             <div className="text-xs sm:text-sm opacity-80">
               Participantes que respondieron: <b>{responded}</b>
@@ -931,7 +860,7 @@ const DuelRoom: React.FC = () => {
             </div>
           )}
 
-          {/* Aviso si se acabó el tiempo y no enviaste */}
+          {/* Fin de tiempo */}
           {timeLeftMs <= 0 && !sent && (
             <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs sm:text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
               Se acabó el tiempo para esta pregunta.

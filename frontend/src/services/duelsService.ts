@@ -1,10 +1,18 @@
-// services/duelsService.ts
+// src/services/duelsService.ts
 import type {
   CreateMatchReq,
   CreateMatchResp,
   Difficulty,
   ObjectiveAvailabilityResp,
 } from "../types/duels/duels";
+
+/**
+ * NOTA:
+ * Se usa fetch directo con token explícito para aislar la
+ * capa de Duelos del interceptor global (útil cuando el WS/servicio
+ * está publicado en dominio distinto o detrás de otro gateway).
+ * Si prefieres Axios + interceptores, se puede migrar fácilmente.
+ */
 
 const BASE = "/api/duels";
 
@@ -21,6 +29,7 @@ export async function createMatch(req: CreateMatchReq, token: string) {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
+      // El body va como JSON; si se cambia a FormData, quitar este header:
       "Content-Type": "application/json",
     },
     body: JSON.stringify(req),
@@ -114,7 +123,7 @@ export async function getMyDuelHistory(token: string, limit = 20) {
   >(r);
 }
 
-/** NUEVO: disponibilidad por objetivo (server-side) */
+/** Disponibilidad por objetivo (server-side) */
 export async function getObjectiveAvailability(
   objectiveId: string,
   token: string,

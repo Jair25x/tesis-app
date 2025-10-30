@@ -1,6 +1,7 @@
+// src/types/user/JwtResponse.ts
 export interface JwtResponse {
-  token: string;
-  refreshToken: string;
+  token: string; // access token (JWT)
+  refreshToken: string; // refresh token
   type: string; // normalmente 'Bearer'
   id: number;
   username: string;

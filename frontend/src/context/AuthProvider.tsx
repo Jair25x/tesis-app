@@ -1,3 +1,4 @@
+// src/context/AuthProvider.tsx
 import React, { useState, useEffect } from "react";
 import { AuthContext, type User } from "./AuthContext";
 import {
@@ -154,8 +155,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     storage.setItem("user", JSON.stringify(userData));
     setUser(userData);
     setIsAuthenticated(true);
-    // (Opcional) sembrar caché de perfil si lo tienes mapeado
-    // qc.setQueryData(["me"], profileMap);
   };
 
   const hardLogout = () => {
@@ -187,7 +186,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Limpia caché (todo) para evitar fugas de datos entre sesiones
     try {
-      // React Query v4: removeQueries() sin filtros remueve todo
       qc.removeQueries();
     } catch {
       /* noop */

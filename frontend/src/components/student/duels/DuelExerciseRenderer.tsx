@@ -1,135 +1,236 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { TemplateType } from "../../../types/exercise/TemplateSchemaResponse";
-import { runtimeRegistry } from "../../../features/exercises/runtime/registry";
+import { registry } from "../../../features/assessments/exam/registry";
 
-/** Valor serializado que enviamos al WS (objeto json plano). */
-type WireAnswer = Record<string, unknown>;
-
+/**
+ * Renderer de ejercicios para DUEL que reutiliza el mismo registry de EXAM.
+ * Envía la respuesta con el shape { value: ... } hacia el padre.
+ */
 type Props = {
   templateType: TemplateType;
   params: unknown;
-  submissionKey: string; // p.ej. duel:<matchId>:r<round>
-  onSubmit: (answer: WireAnswer) => void;
+  statementHtml?: string | null;
   disabled?: boolean;
-  statementHtml?: string | null; // opcional si en params no viene renderizado
+  submissionKey: string; // clave única por ronda/pregunta para persistencia ligera
+  onSubmit: (answer: Record<string, unknown>) => void;
 };
 
-/** Type guard útil para trabajar como objeto indexable sin usar `any`. */
-function isRecordUnknown(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
-
-/**
- * Normaliza la forma del wire para el servidor de duelo:
- * - Si viene un campo "template", lo elimina.
- * - Si además queda una única clave útil (p.ej. "filled", "answers" o "value"),
- *   devuelve un objeto con solo esa clave.
- */
-function normalizeWireForDuel(
-  w: Record<string, unknown>
-): Record<string, unknown> {
-  if ("template" in w) {
-    const keys = Object.keys(w).filter((k) => k !== "template");
-    if (keys.length === 1) {
-      const key = keys[0];
-      const result: Record<string, unknown> = {};
-      result[key] = w[key];
-      return result;
-    }
-  }
-  return w;
-}
-
-const DuelExerciseRenderer: React.FC<Props> = ({
+export default function DuelExerciseRenderer({
   templateType,
   params,
+  statementHtml,
+  disabled,
   submissionKey,
   onSubmit,
-  disabled,
-  statementHtml,
-}) => {
-  const mod = runtimeRegistry[templateType];
-
-  const guardedParams = useMemo(
+}: Props) {
+  // 1) Resolver módulo del registro
+  const mod = registry[templateType];
+  const guarded = useMemo(
     () => (mod ? mod.guard(params) : null),
     [mod, params]
   );
 
-  const [value, setValue] = useState<unknown>(() =>
-    mod ? mod.read(undefined) : null
-  );
+  // 2) Estado de valor según módulo (persistencia ligera local)
+  const [value, setValue] = useState<unknown>(() => {
+    try {
+      const raw = localStorage.getItem(`duel:ans:${submissionKey}`);
+      if (raw) {
+        // Si hay módulo y soporta read(), úsalo para reconstruir desde el "wire"
+        if (mod && typeof mod.read === "function") {
+          return mod.read(raw);
+        }
+        // Caso fallback: intenta parsear
+        return JSON.parse(raw);
+      }
+    } catch {
+      /* noop */
+    }
+    return mod ? mod.read(undefined) : null;
+  });
 
+  // Persistencia ligera en localStorage (guardamos el wire que espera el BE)
   useEffect(() => {
-    if (mod) setValue(mod.read(undefined));
-  }, [mod, submissionKey]);
+    try {
+      const wire = mod ? mod.write(value) : { value };
+      localStorage.setItem(`duel:ans:${submissionKey}`, JSON.stringify(wire));
+    } catch {
+      /* noop */
+    }
+  }, [value, submissionKey, mod]);
 
-  if (!mod || !guardedParams) {
+  // 3) Render según disponibilidad del módulo
+  if (!mod || !guarded) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-        <div className="mb-2 font-medium text-gray-800 dark:text-gray-100">
-          Plantilla no soportada aún ({templateType})
-        </div>
-        <div className="text-sm text-gray-600 dark:text-gray-300">
-          No se pudo renderizar este ejercicio.
-        </div>
-      </div>
+      <JsonFallback
+        statementHtml={statementHtml ?? null}
+        disabled={disabled}
+        submissionKey={submissionKey}
+        value={value}
+        setValue={setValue}
+        onSubmit={onSubmit}
+      />
     );
   }
 
-  const isValid =
-    typeof mod.isValid === "function"
-      ? mod.isValid(value as never, guardedParams as never)
-      : value != null;
+  return (
+    <ModBlock
+      mod={mod}
+      guarded={guarded}
+      value={value}
+      setValue={setValue}
+      statementHtml={statementHtml ?? null}
+      disabled={disabled}
+      submissionKey={submissionKey}
+      onSubmit={onSubmit}
+    />
+  );
+}
 
-  const doSubmit = () => {
-    if (disabled) return;
+/* ============================
+   Subcomponentes SIN hooks condicionales
+   ============================ */
+
+type JsonFallbackProps = {
+  statementHtml: string | null;
+  disabled?: boolean;
+  submissionKey: string;
+  value: unknown;
+  setValue: (v: unknown) => void;
+  onSubmit: (answer: Record<string, unknown>) => void;
+};
+
+/** Fallback JSON (sin módulo) */
+function JsonFallback({
+  statementHtml,
+  disabled,
+  submissionKey,
+  value,
+  setValue,
+  onSubmit,
+}: JsonFallbackProps) {
+  // Estado local del textarea (solo aquí, sin condicionales)
+  const [text, setText] = useState<string>(() => {
     try {
-      const wireRaw = mod.write(value as never);
-      // Aseguramos que sea un objeto indexable y normalizamos sin usar `any`.
-      const wireObject: Record<string, unknown> = isRecordUnknown(wireRaw)
-        ? (wireRaw as Record<string, unknown>)
-        : { value: wireRaw as unknown };
-      const normalized = normalizeWireForDuel(wireObject);
-      console.log("[DUEL renderer doSubmit]", { wire: wireObject, normalized });
-      onSubmit(normalized);
-    } catch (e) {
-      console.error("[DUEL renderer doSubmit ERROR]", e);
+      const raw = localStorage.getItem(`duel:ans:${submissionKey}`);
+      if (!raw) return "";
+      const parsed = JSON.parse(raw);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return "";
     }
-  };
+  });
+
+  // Sincroniza `text` si cambia submissionKey (pregunta nueva)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`duel:ans:${submissionKey}`);
+      if (!raw) {
+        setText("");
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setText(JSON.stringify(parsed, null, 2));
+    } catch {
+      setText("");
+    }
+  }, [submissionKey]);
 
   return (
-    <div className="space-y-4">
-      <div
-        className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900"
-        onKeyDown={(e) => {
-          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "enter") {
-            e.preventDefault();
-            if (!disabled && isValid) doSubmit();
-          }
-        }}
-      >
-        <div className="prose prose-sm max-w-none text-gray-800 dark:prose-invert dark:text-gray-100">
-          <mod.Render
-            params={guardedParams as never}
-            value={value as never}
-            onChange={(next) => setValue(next)}
-            statementHtml={statementHtml ?? null}
-            submissionItemId={submissionKey}
-          />
-        </div>
+    <div className="rounded-md border p-3 dark:border-gray-700 dark:bg-gray-900">
+      {statementHtml ? (
+        <div
+          className="prose prose-sm max-w-none dark:prose-invert mb-3"
+          dangerouslySetInnerHTML={{ __html: statementHtml }}
+        />
+      ) : null}
+
+      <div className="text-xs opacity-70 mb-2">
+        Tipo no soportado o configuración inválida. Puedes responder con JSON.
       </div>
 
-      <div className="flex items-center justify-end">
+      <textarea
+        className="w-full rounded border px-3 py-2 font-mono text-xs dark:border-gray-700 dark:bg-gray-900"
+        rows={8}
+        placeholder='Ej.: {"selected":"A"}  — se enviará como { "value": ... }'
+        value={text}
+        onChange={(e) => {
+          const t = e.target.value;
+          setText(t);
+          try {
+            const parsed = JSON.parse(t);
+            setValue(parsed); // esto actualiza el "value" global para persistencia
+          } catch {
+            // ignora parse inválido
+          }
+        }}
+        disabled={disabled}
+        aria-label="Respuesta en formato JSON"
+      />
+
+      <div className="mt-2">
         <button
-          onClick={doSubmit}
-          disabled={!!disabled || !isValid}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+          className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white disabled:opacity-50"
+          onClick={() => onSubmit({ value })}
+          disabled={disabled}
+          title="Enviar respuesta"
         >
           Enviar
         </button>
       </div>
     </div>
   );
+}
+
+type ModBlockProps = {
+  mod: (typeof registry)[TemplateType];
+  guarded: unknown; // tipo ya validado por mod.guard
+  value: unknown;
+  setValue: (v: unknown) => void;
+  statementHtml: string | null;
+  disabled?: boolean;
+  submissionKey: string;
+  onSubmit: (answer: Record<string, unknown>) => void;
 };
 
-export default DuelExerciseRenderer;
+/** Render con módulo del registry */
+function ModBlock({
+  mod,
+  guarded,
+  value,
+  setValue,
+  statementHtml,
+  disabled,
+  submissionKey,
+  onSubmit,
+}: ModBlockProps) {
+  const canSubmit =
+    typeof mod.isValid === "function" ? mod.isValid(value, guarded) : true;
+
+  return (
+    <div className="rounded-md border p-3 dark:border-gray-700">
+      {/* Los cores renderizan su propio statement; no duplicamos statementHtml aquí */}
+      <mod.Render
+        params={guarded}
+        value={value}
+        onChange={(next: unknown) => setValue(next)}
+        statementHtml={statementHtml}
+        submissionItemId={submissionKey}
+      />
+
+      <div className="mt-3">
+        <button
+          className="rounded bg-indigo-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+          onClick={() => {
+            const wire = mod.write(value);
+            onSubmit({ value: wire });
+          }}
+          disabled={disabled || !canSubmit}
+          title={!canSubmit ? "Completa la respuesta para enviar" : "Enviar"}
+          aria-disabled={disabled || !canSubmit}
+        >
+          Enviar
+        </button>
+      </div>
+    </div>
+  );
+}

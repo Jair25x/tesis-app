@@ -1,14 +1,18 @@
 # app/models.py
 from __future__ import annotations
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Integer, Boolean, ForeignKey, TIMESTAMP, DateTime, func, text, Index
-from sqlalchemy.dialects.postgresql import UUID
-from uuid import uuid4
+
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import String, Integer, Boolean, ForeignKey, TIMESTAMP, DateTime, func, text, Index
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from uuid import uuid4
+
+
 class Base(DeclarativeBase):
     pass
+
 
 class Match(Base):
     __tablename__ = "matches"
@@ -42,7 +46,8 @@ class Match(Base):
     winner_id: Mapped[Optional[str]] = mapped_column(UUID(as_uuid=False), nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("now()"))
-    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)  # <- NUEVO
+    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
 
 class MatchPlayer(Base):
     __tablename__ = "match_players"
@@ -55,10 +60,9 @@ class MatchPlayer(Base):
     user_id: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
     joined_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("now()"))
 
+
 class Round(Base):
-    """
-    Legacy: ejercicio de q=1 por ronda (compatibilidad).
-    """
+    """Legacy: ejercicio de q=1 por ronda (compatibilidad)."""
     __tablename__ = "rounds"
 
     match_id: Mapped[str] = mapped_column(
@@ -72,11 +76,11 @@ class Round(Base):
     started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     ended_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
 
+
 class RoundConfig(Base):
-    """
-    Config por ronda (cantidad de preguntas y dificultad).
-    """
+    """Config por ronda (cantidad de preguntas y dificultad)."""
     __tablename__ = "round_configs"
+
     match_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     n: Mapped[int] = mapped_column(Integer, primary_key=True)
     questions: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
@@ -86,11 +90,11 @@ class RoundConfig(Base):
         Index("ix_round_configs_match_n", "match_id", "n"),
     )
 
+
 class RoundPick(Base):
-    """
-    Picks exactos por sub-pregunta.
-    """
+    """Picks exactos por sub-pregunta."""
     __tablename__ = "round_picks"
+
     match_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     n: Mapped[int] = mapped_column(Integer, primary_key=True)
     q_index: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -100,17 +104,30 @@ class RoundPick(Base):
         Index("ix_round_picks_match_n_q", "match_id", "n", "q_index"),
     )
 
+
 class Answer(Base):
     __tablename__ = "answers"
 
     match_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     n: Mapped[int] = mapped_column(Integer, primary_key=True)
     q_index: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    student_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, index=True)
+    # ⬇️ AHORA texto (UUID en string); compatible con sub del JWT
+    student_id: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
 
     correct: Mapped[bool] = mapped_column(Boolean, default=False)
     time_ms: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("now()"))
+
+    # NUEVOS (opcionales)
+    payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    raw_payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    exercise_id: Mapped[Optional[str]] = mapped_column(UUID(as_uuid=False), nullable=True)
+
+    __table_args__ = (
+        Index("ix_answers_match_n_q_student", "match_id", "n", "q_index", "student_id"),
+        Index("ix_answers_match_student", "match_id", "student_id"),
+    )
+
 
 class DuelRating(Base):
     __tablename__ = "duel_ratings"
