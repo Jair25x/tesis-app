@@ -1,10 +1,11 @@
-// pages/student/duels/DuelNew.tsx
+// src/pages/student/duels/DuelNew.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { CreateMatchReq, Difficulty } from "../../../types/duels/duels";
 import {
   createMatch,
   getObjectiveAvailability,
+  ApiError,
 } from "../../../services/duelsService";
 import { useAuth } from "../../../context/useAuth";
 import {
@@ -46,7 +47,7 @@ const DEFAULT_QPR = 3;
 const QPR_MIN = 1;
 const QPR_MAX = 10;
 
-/** —— Type guards para evitar any —— */
+/** —— Type guards —— */
 type MaybeActiveFlags = {
   active?: boolean;
   isActive?: boolean;
@@ -64,13 +65,13 @@ function isActiveExercise(ex: ExerciseLeaf): boolean {
   return true;
 }
 
-// Mapea UI (EASY|MEDIUM|HARD) -> BD (BASIC|INTERMEDIATE|ADVANCED) para el fallback local
+// Mapea UI (EASY|MEDIUM|HARD) -> BD (BASIC|INTERMEDIATE|ADVANCED)
 function exerciseMatchesDifficulty(
   ex: ExerciseLeaf,
   d: Difficulty | ""
 ): boolean {
   if (!d) return true;
-  const exDiff = String(ex.difficulty ?? "").toUpperCase(); // BASIC|INTERMEDIATE|ADVANCED
+  const exDiff = String(ex.difficulty ?? "").toUpperCase();
   const mapUiToDb: Record<Difficulty, "BASIC" | "INTERMEDIATE" | "ADVANCED"> = {
     EASY: "BASIC",
     MEDIUM: "INTERMEDIATE",
@@ -89,7 +90,6 @@ function availableExercises(
   );
 }
 
-// Encuentra el primer OA con ejercicios (filtrando por dificultad si aplica)
 function pickFirstObjectiveWithExercises(
   full: CurriculumFullResponse | null,
   difficulty: Difficulty | ""
@@ -124,7 +124,7 @@ const DuelNew: React.FC = () => {
   const [, /* error */ setError] = useState<string | null>(null);
   const [loadingFull, setLoadingFull] = useState<boolean>(false);
 
-  // Duelo rápido (wizard)
+  // Duelo rápido
   const [quickOpen, setQuickOpen] = useState<boolean>(true);
   const [quickDifficulty, setQuickDifficulty] = useState<Difficulty | "">("");
   const [quickQPR, setQuickQPR] = useState<number>(DEFAULT_QPR);
@@ -137,7 +137,7 @@ const DuelNew: React.FC = () => {
 
   const toastError = useToastError(setError);
 
-  // ===== Bootstrap: currículo por defecto + lista de activos =====
+  // ===== Bootstrap =====
   useEffect(() => {
     let canceled = false;
     const ctrl = new AbortController();
@@ -160,7 +160,7 @@ const DuelNew: React.FC = () => {
     };
   }, []);
 
-  // ===== Cargar estructura completa al cambiar de currículo =====
+  // ===== Cargar estructura completa =====
   useEffect(() => {
     if (!curriculumId) {
       setFull(null);
@@ -220,12 +220,13 @@ const DuelNew: React.FC = () => {
     [selectedObjective, quickDifficulty]
   );
 
-  // Disponibilidad final que usaremos (server si llegó, si no local)
+  // Disponibilidad final
   const effectiveAvailable = serverAvailable ?? localAvailableCount;
   const requiredQuestions = useMemo(
     () => Math.max(QPR_MIN, Math.min(QPR_MAX, quickQPR)),
     [quickQPR]
   );
+
   // ===== Server availability fetch =====
   useEffect(() => {
     setServerAvailable(null);
@@ -237,13 +238,19 @@ const DuelNew: React.FC = () => {
     if (!token) return;
 
     let mounted = true;
+    const ctrl = new AbortController();
     (async () => {
       try {
-        const resp = await getObjectiveAvailability(objectiveId, token, {
-          difficulty: quickDifficulty || undefined,
-          minRequired: requiredQuestions,
-          maxAllowed: requiredQuestions,
-        });
+        const resp = await getObjectiveAvailability(
+          objectiveId,
+          token,
+          {
+            difficulty: quickDifficulty || undefined,
+            minRequired: requiredQuestions,
+            maxAllowed: requiredQuestions,
+          },
+          { signal: ctrl.signal, timeoutMs: 10_000 }
+        );
         if (!mounted) return;
         const safe =
           Number.isFinite(resp.available) && resp.available >= 0
@@ -252,16 +259,17 @@ const DuelNew: React.FC = () => {
         setServerAvailable(safe);
         setServerSource(resp.source);
       } catch {
-        // Silencioso: fallback local (ya cubierto por effectiveAvailable)
+        /* fallback local */
       }
     })();
 
     return () => {
       mounted = false;
+      ctrl.abort();
     };
   }, [objectiveId, quickDifficulty, requiredQuestions, isAuthenticated]);
 
-  // Sugerir OA inicial si no se ha elegido (según dificultad seleccionada)
+  // Sugerir OA inicial
   useEffect(() => {
     if (!objectiveId && full) {
       const pick = pickFirstObjectiveWithExercises(full, quickDifficulty);
@@ -277,7 +285,6 @@ const DuelNew: React.FC = () => {
     }
   }, [effectiveAvailable, requiredQuestions]);
 
-  // ===== helpers =====
   const fmtNode = (n: IdName) => (n.code ? `${n.code} — ${n.name}` : n.name);
 
   // ===== Crear duelo rápido =====
@@ -301,20 +308,56 @@ const DuelNew: React.FC = () => {
     if (!curriculumId) return toastError("Elige un currículo.");
     if (!objectiveId) return toastError("Elige un objetivo.");
 
-    if (effectiveAvailable < requiredQuestions) {
-      return toastError(
-        `Este objetivo no tiene suficientes ejercicios activos${
-          quickDifficulty ? ` (${quickDifficulty.toLowerCase()})` : ""
-        }. Disponibles: ${effectiveAvailable} · Requeridos: ${requiredQuestions}.`
+    // Revalidación silenciosa justo antes de enviar (reduce 422)
+    try {
+      const quickCheck = await getObjectiveAvailability(
+        objectiveId,
+        token,
+        {
+          difficulty: quickDifficulty || undefined,
+          minRequired: requiredQuestions,
+          maxAllowed: requiredQuestions,
+        },
+        { timeoutMs: 6_000 }
       );
+      const ok =
+        Number.isFinite(quickCheck.available) &&
+        quickCheck.available >= requiredQuestions;
+      if (!ok) {
+        return toastError(
+          `Este objetivo no tiene suficientes ejercicios activos${
+            quickDifficulty ? ` (${quickDifficulty.toLowerCase()})` : ""
+          }. Disponibles: ${
+            quickCheck.available ?? 0
+          } · Requeridos: ${requiredQuestions}.`
+        );
+      }
+    } catch {
+      // si falla el check final, usamos effectiveAvailable
+      if (effectiveAvailable < requiredQuestions) {
+        return toastError(
+          `No hay suficientes ejercicios activos para ${requiredQuestions}.`
+        );
+      }
     }
 
     try {
       setBusy(true);
       const req = buildQuickReq(objectiveId);
-      const resp = await createMatch(req, token);
+      const resp = await createMatch(req, token, { timeoutMs: 20_000 });
       nav(`/student/duels/room?code=${encodeURIComponent(resp.shortCode)}`);
     } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 422) {
+          return toastError(
+            e.message ||
+              "Validación del duelo inválida (422). Revisa los datos."
+          );
+        }
+        if (e.status === 400) {
+          return toastError(e.message || "Solicitud inválida (400).");
+        }
+      }
       toastError(e, "No se pudo crear el duelo rápido.");
     } finally {
       setBusy(false);
@@ -343,6 +386,7 @@ const DuelNew: React.FC = () => {
             type="button"
             onClick={() => setQuickOpen((p) => !p)}
             className="rounded-md border px-3 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700/40"
+            disabled={busy}
           >
             {quickOpen ? "Ocultar" : "Mostrar"}
           </button>
@@ -359,6 +403,7 @@ const DuelNew: React.FC = () => {
                 className="w-full rounded-md border px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
                 value={curriculumId}
                 onChange={(e) => setCurriculumId(e.target.value)}
+                disabled={busy}
               >
                 <option value="">Selecciona…</option>
                 {curricula.map((c) => (
@@ -391,7 +436,7 @@ const DuelNew: React.FC = () => {
                   setStandardId("");
                   setObjectiveId("");
                 }}
-                disabled={!full}
+                disabled={!full || busy}
               >
                 <option value="">Selecciona…</option>
                 {competencies.map((n) => (
@@ -414,7 +459,7 @@ const DuelNew: React.FC = () => {
                   setStandardId(e.target.value);
                   setObjectiveId("");
                 }}
-                disabled={!competencyId}
+                disabled={!competencyId || busy}
               >
                 <option value="">Selecciona…</option>
                 {standards.map((n) => (
@@ -434,7 +479,7 @@ const DuelNew: React.FC = () => {
                 className="w-full rounded-md border px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
                 value={objectiveId}
                 onChange={(e) => setObjectiveId(e.target.value)}
-                disabled={!standardId}
+                disabled={!standardId || busy}
               >
                 <option value="">Selecciona…</option>
                 {objectives.map((n) => (
@@ -444,7 +489,7 @@ const DuelNew: React.FC = () => {
                 ))}
               </select>
 
-              {/* Indicador de disponibles (server si hay, o local) */}
+              {/* Indicador de disponibles */}
               <div className="mt-2 text-xs">
                 {objectiveId ? (
                   effectiveAvailable > 0 ? (
@@ -483,11 +528,12 @@ const DuelNew: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setQuickDifficulty("")}
+                  disabled={busy}
                   className={`rounded-md border px-3 py-1.5 text-sm dark:border-gray-700 ${
                     quickDifficulty === ""
                       ? "bg-emerald-600 text-white"
                       : "hover:bg-gray-100 dark:hover:bg-gray-800"
-                  }`}
+                  } ${busy ? "opacity-60" : ""}`}
                 >
                   Cualquiera
                 </button>
@@ -496,11 +542,12 @@ const DuelNew: React.FC = () => {
                     key={opt.value}
                     type="button"
                     onClick={() => setQuickDifficulty(opt.value)}
+                    disabled={busy}
                     className={`rounded-md border px-3 py-1.5 text-sm dark:border-gray-700 ${
                       quickDifficulty === opt.value
                         ? "bg-emerald-600 text-white"
                         : "hover:bg-gray-100 dark:hover:bg-gray-800"
-                    }`}
+                    } ${busy ? "opacity-60" : ""}`}
                   >
                     {opt.label}
                   </button>
@@ -523,6 +570,7 @@ const DuelNew: React.FC = () => {
                     const v = Number(e.target.value) || QPR_MIN;
                     setQuickQPR(Math.max(QPR_MIN, Math.min(QPR_MAX, v)));
                   }}
+                  disabled={busy}
                   className="w-24 rounded-md border px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900"
                 />
                 <span className="text-xs opacity-70">
@@ -534,8 +582,8 @@ const DuelNew: React.FC = () => {
                 {objectiveId && effectiveAvailable < requiredQuestions && (
                   <div className="mb-2 text-xs text-amber-600">
                     No hay suficientes ejercicios activos para{" "}
-                    {requiredQuestions} preguntas. Reduce el número, cambia la
-                    dificultad o el objetivo.
+                    {requiredQuestions}. Reduce el número, cambia la dificultad
+                    o el objetivo.
                   </div>
                 )}
                 <button

@@ -7,145 +7,333 @@ import type {
 } from "../types/duels/duels";
 
 /**
- * NOTA:
- * Se usa fetch directo con token explícito para aislar la
- * capa de Duelos del interceptor global (útil cuando el WS/servicio
- * está publicado en dominio distinto o detrás de otro gateway).
- * Si prefieres Axios + interceptores, se puede migrar fácilmente.
+ * Capa fetch con:
+ * - Timeouts configurables (AbortController limpio, sin props ad-hoc)
+ * - Reintentos seguros en GET ante 0/502/503/504 (backoff)
+ * - ApiError tipado con message/code/details/raw
+ * - Respuestas fuertemente tipadas (sin any)
  */
 
 const BASE = "/api/duels";
+const DEFAULT_TIMEOUT_MS = 20_000;
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
 
-async function json<T>(r: Response): Promise<T> {
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`${r.status} ${r.statusText} ${txt}`);
+/* =========================
+   Tipos exportables de apoyo
+   ========================= */
+
+export type MatchBasicInfo = {
+  matchId: string;
+  shortCode: string;
+  bestOf: number;
+  status?: string;
+};
+
+export type OpenMatchItem = {
+  matchId: string;
+  shortCode: string;
+  bestOf: number;
+  createdAt: string; // ISO
+  createdBy?: string;
+  maxPlayers: number;
+};
+
+export type DuelSummary = {
+  played: number;
+  wins: number;
+  losses: number;
+  rating: number;
+  lastPlayedAt?: string | null; // ISO
+};
+
+export type DuelHistoryItem = {
+  matchId: string;
+  finishedAt?: string | null; // ISO
+  bestOf: number;
+  winnerId?: string | null;
+  shortCode?: string | null;
+};
+
+/* =========================
+   Errores y helpers
+   ========================= */
+
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  details?: unknown;
+  raw?: string;
+
+  constructor(args: {
+    status: number;
+    message: string;
+    code?: string;
+    details?: unknown;
+    raw?: string;
+  }) {
+    super(args.message);
+    this.name = "ApiError";
+    this.status = args.status;
+    this.code = args.code;
+    this.details = args.details;
+    this.raw = args.raw;
   }
-  return r.json() as Promise<T>;
 }
 
-export async function createMatch(req: CreateMatchReq, token: string) {
-  const r = await fetch(`${BASE}/matches`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      // El body va como JSON; si se cambia a FormData, quitar este header:
-      "Content-Type": "application/json",
+export type FetchOpts = {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+};
+
+function authHeaders(token: string): HeadersInit {
+  return { Authorization: `Bearer ${token}` };
+}
+
+function isAbortError(err: unknown): boolean {
+  // DOMException AbortError (navegador) o Error.name === 'AbortError'
+  if (typeof err !== "object" || err === null) return false;
+  const anyErr = err as { name?: unknown };
+  return anyErr?.name === "AbortError";
+}
+
+function createTimeoutSignal(
+  external: AbortSignal | undefined,
+  timeoutMs: number
+): { signal: AbortSignal; clear: () => void } {
+  if (!timeoutMs || timeoutMs <= 0) {
+    return {
+      signal: external ?? new AbortController().signal,
+      clear: () => {
+        /* noop */
+      },
+    };
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(
+    () => ctrl.abort(new DOMException("Timeout", "AbortError")),
+    timeoutMs
+  );
+  if (external) {
+    const onAbort = () => ctrl.abort(external.reason);
+    external.addEventListener("abort", onAbort, { once: true });
+  }
+  return {
+    signal: ctrl.signal,
+    clear: () => clearTimeout(timer),
+  };
+}
+
+async function parseProblemDetails(
+  r: Response
+): Promise<{
+  message: string;
+  code?: string;
+  details?: unknown;
+  raw?: string;
+}> {
+  const text = await r.text().catch(() => "");
+  let message = text || `${r.status} ${r.statusText}`;
+  let code: string | undefined;
+  let details: unknown;
+
+  if (text) {
+    try {
+      const json = JSON.parse(text) as Record<string, unknown>;
+      const m =
+        json.message ?? json.error ?? json.detail ?? json.title ?? message;
+      message = String(m);
+      if (typeof json.code === "string") code = json.code;
+      details =
+        (json as { errors?: unknown; details?: unknown }).errors ??
+        json.details;
+    } catch {
+      // texto plano
+    }
+  }
+  return { message, code, details, raw: text };
+}
+
+async function fetchJson<T>(
+  input: RequestInfo | URL,
+  init: RequestInit & FetchOpts,
+  retryableGet: boolean,
+  maxRetries: number
+): Promise<T> {
+  const timeoutMs = init.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const { signal, clear } = createTimeoutSignal(init.signal, timeoutMs);
+
+  try {
+    const res = await fetch(input, { ...init, signal });
+    if (!res.ok) {
+      const { message, code, details, raw } = await parseProblemDetails(res);
+      throw new ApiError({ status: res.status, message, code, details, raw });
+    }
+
+    // JSON esperado; si 204 o content-type no JSON, devolvemos undefined como T si procede
+    const ct = res.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) {
+      return undefined as T;
+    }
+    const data = (await res.json()) as unknown;
+    return data as T;
+  } catch (err: unknown) {
+    // Reintentos seguros: GET/HEAD idempotentes -> aquí usamos flag explícito
+    if (retryableGet && maxRetries > 0) {
+      const status = err instanceof ApiError ? err.status : 0;
+      const retryable =
+        !isAbortError(err) && (status === 0 || RETRYABLE_STATUSES.has(status));
+      if (retryable) {
+        const backoffMs =
+          (3 - maxRetries) * 400 + Math.floor(Math.random() * 200);
+        await new Promise((r) => setTimeout(r, backoffMs));
+        return fetchJson<T>(input, init, retryableGet, maxRetries - 1);
+      }
+    }
+    if (err instanceof ApiError) throw err;
+    const msg =
+      typeof (err as { message?: unknown })?.message === "string"
+        ? String((err as { message?: unknown }).message)
+        : "Network error";
+    throw new ApiError({ status: 0, message: msg, raw: String(err) });
+  } finally {
+    clear();
+  }
+}
+
+/* =========================
+   Wrappers de endpoints
+   ========================= */
+
+export async function createMatch(
+  req: CreateMatchReq,
+  token: string,
+  opts?: FetchOpts
+): Promise<CreateMatchResp> {
+  return fetchJson<CreateMatchResp>(
+    `${BASE}/matches`,
+    {
+      method: "POST",
+      headers: {
+        ...authHeaders(token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(req),
+      ...opts,
     },
-    body: JSON.stringify(req),
-  });
-  return json<CreateMatchResp>(r);
+    /* retryableGet */ false,
+    /* maxRetries */ 0
+  );
 }
 
-export async function getMatch(matchId: string, token: string) {
-  const r = await fetch(`${BASE}/matches/${encodeURIComponent(matchId)}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return json<{
-    matchId: string;
-    shortCode: string;
-    bestOf: number;
-    status?: string;
-  }>(r);
+export async function getMatch(
+  matchId: string,
+  token: string,
+  opts?: FetchOpts
+): Promise<MatchBasicInfo> {
+  return fetchJson<MatchBasicInfo>(
+    `${BASE}/matches/${encodeURIComponent(matchId)}`,
+    { headers: authHeaders(token), ...opts },
+    /* retryableGet */ true,
+    /* maxRetries */ 2
+  );
 }
 
-export async function listOpenMatches(token: string, curriculumId?: string) {
-  const url = new URL(`${location.origin}${BASE}/open`);
+export async function listOpenMatches(
+  token: string,
+  curriculumId?: string,
+  opts?: FetchOpts
+): Promise<OpenMatchItem[]> {
+  const url = new URL(`${BASE}/open`, globalThis.location.origin);
   if (curriculumId) url.searchParams.set("curriculumId", curriculumId);
-  const r = await fetch(url.toString().replace(location.origin, ""), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return json<
-    Array<{
-      matchId: string;
-      shortCode: string;
-      bestOf: number;
-      createdAt: string;
-      createdBy?: string;
-      maxPlayers: number;
-    }>
-  >(r);
+  const relative = url.pathname + url.search;
+
+  return fetchJson<OpenMatchItem[]>(
+    relative,
+    { headers: authHeaders(token), ...opts },
+    /* retryableGet */ true,
+    /* maxRetries */ 2
+  );
 }
 
 /**
  * Valida un código corto y devuelve el matchId.
  * - 404 => "Código no encontrado"
- * - otros errores => "No se pudo validar el código" (con detalle)
  */
-export async function resolveCode(code: string, token: string) {
-  const res = await fetch(`${BASE}/resolve/${encodeURIComponent(code)}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status === 404) {
-    throw new Error("Código no encontrado");
-  }
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(
-      `No se pudo validar el código: ${res.status} ${res.statusText} ${txt}`
+export async function resolveCode(
+  code: string,
+  token: string,
+  opts?: FetchOpts
+): Promise<{ matchId: string }> {
+  try {
+    return await fetchJson<{ matchId: string }>(
+      `${BASE}/resolve/${encodeURIComponent(code)}`,
+      { headers: authHeaders(token), ...opts },
+      /* retryableGet */ true,
+      /* maxRetries */ 2
     );
+  } catch (e: unknown) {
+    if (e instanceof ApiError && e.status === 404) {
+      throw new ApiError({ status: 404, message: "Código no encontrado" });
+    }
+    throw e;
   }
-  return (await res.json()) as { matchId: string };
 }
 
-// Alias opcional
-export const resolveShortCode = resolveCode;
-
-/** Resumen de mis duelos (wins/losses/rating) */
-export async function getMyDuelSummary(token: string) {
-  const r = await fetch(`${BASE}/me/summary`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return json<{
-    played: number;
-    wins: number;
-    losses: number;
-    rating: number;
-    lastPlayedAt?: string | null;
-  }>(r);
+export async function getMyDuelSummary(
+  token: string,
+  opts?: FetchOpts
+): Promise<DuelSummary> {
+  return fetchJson<DuelSummary>(
+    `${BASE}/me/summary`,
+    { headers: authHeaders(token), ...opts },
+    /* retryableGet */ true,
+    /* maxRetries */ 2
+  );
 }
 
-/** Historial de mis duelos */
-export async function getMyDuelHistory(token: string, limit = 20) {
-  const url = new URL(`${location.origin}${BASE}/me/history`);
+export async function getMyDuelHistory(
+  token: string,
+  limit = 20,
+  opts?: FetchOpts
+): Promise<DuelHistoryItem[]> {
+  const url = new URL(`${BASE}/me/history`, globalThis.location.origin);
   url.searchParams.set("limit", String(limit));
-  const r = await fetch(url.toString().replace(location.origin, ""), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return json<
-    Array<{
-      matchId: string;
-      finishedAt?: string | null;
-      bestOf: number;
-      winnerId?: string | null;
-      shortCode?: string | null;
-    }>
-  >(r);
+  const relative = url.pathname + url.search;
+
+  return fetchJson<DuelHistoryItem[]>(
+    relative,
+    { headers: authHeaders(token), ...opts },
+    /* retryableGet */ true,
+    /* maxRetries */ 2
+  );
 }
 
-/** Disponibilidad por objetivo (server-side) */
 export async function getObjectiveAvailability(
   objectiveId: string,
   token: string,
-  opts?: {
+  params?: {
     difficulty?: Difficulty;
-    minRequired?: number; // default BE = 1
-    maxAllowed?: number; // default BE = 10
-  }
-) {
+    minRequired?: number;
+    maxAllowed?: number;
+  },
+  opts?: FetchOpts
+): Promise<ObjectiveAvailabilityResp> {
   const url = new URL(
-    `${location.origin}${BASE}/objectives/${encodeURIComponent(
-      objectiveId
-    )}/availability`
+    `${BASE}/objectives/${encodeURIComponent(objectiveId)}/availability`,
+    globalThis.location.origin
   );
-  if (opts?.difficulty) url.searchParams.set("difficulty", opts.difficulty);
-  if (opts?.minRequired != null)
-    url.searchParams.set("min_required", String(opts.minRequired));
-  if (opts?.maxAllowed != null)
-    url.searchParams.set("max_allowed", String(opts.maxAllowed));
+  if (params?.difficulty) url.searchParams.set("difficulty", params.difficulty);
+  if (params?.minRequired != null)
+    url.searchParams.set("min_required", String(params.minRequired));
+  if (params?.maxAllowed != null)
+    url.searchParams.set("max_allowed", String(params.maxAllowed));
 
-  const r = await fetch(url.toString().replace(location.origin, ""), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return json<ObjectiveAvailabilityResp>(r);
+  const relative = url.pathname + url.search;
+
+  return fetchJson<ObjectiveAvailabilityResp>(
+    relative,
+    { headers: authHeaders(token), ...opts },
+    /* retryableGet */ true,
+    /* maxRetries */ 2
+  );
 }

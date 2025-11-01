@@ -8,7 +8,7 @@ import {
   getCurriculumFull,
   setCurrentCurriculumId,
 } from "../../../services/curriculumService";
-import { createMatch } from "../../../services/duelsService";
+import { createMatch, ApiError } from "../../../services/duelsService";
 import type {
   CurriculumFullResponse,
   CompetencyNode,
@@ -23,10 +23,6 @@ import type {
   RoundPlan,
   DuelMode,
 } from "../../../types/duels/duels";
-
-/* =========================
-   Helpers
-   ========================= */
 
 function getAccessToken(): string | null {
   try {
@@ -52,18 +48,13 @@ const MAX_PLAYERS = 8;
 const MIN_Q_PER_ROUND = 1;
 const MAX_Q_PER_ROUND = 10;
 
-// Mostrar etiqueta de dificultad del ejercicio (si viene del árbol)
 function fmtExerciseDifficulty(ex: ExerciseLeaf): string {
-  const raw = String(ex.difficulty ?? "").toUpperCase(); // BASIC | INTERMEDIATE | ADVANCED | ...
+  const raw = String(ex.difficulty ?? "").toUpperCase();
   if (raw === "BASIC") return "Fácil";
   if (raw === "INTERMEDIATE") return "Medio";
   if (raw === "ADVANCED") return "Difícil";
   return raw || "—";
 }
-
-/* =========================
-   Componente
-   ========================= */
 
 const DuelNewAdvanced: React.FC = () => {
   const nav = useNavigate();
@@ -95,13 +86,13 @@ const DuelNewAdvanced: React.FC = () => {
 
   // Modos/timers globales
   const [mode, setMode] = useState<DuelMode>("bestOf");
-  const [questionTimeSec, setQuestionTimeSec] = useState<number>(30); // solo aplica si el BE lo usa
-  const [winTarget, setWinTarget] = useState<number>(0); // solo para firstToAll (0 = deshabilitado)
+  const [questionTimeSec, setQuestionTimeSec] = useState<number>(30);
+  const [winTarget, setWinTarget] = useState<number>(0);
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  /* ========== Bootstrap: currículo por defecto + lista de activos ========== */
+  /* ========== Bootstrap ========== */
   useEffect(() => {
     let canceled = false;
     const ctrl = new AbortController();
@@ -125,7 +116,7 @@ const DuelNewAdvanced: React.FC = () => {
     };
   }, []);
 
-  /* ========== Cargar estructura completa al cambiar de currículo ========== */
+  /* ========== Cargar estructura completa ========== */
   useEffect(() => {
     if (!curriculumId) {
       setFull(null);
@@ -158,7 +149,7 @@ const DuelNewAdvanced: React.FC = () => {
     };
   }, [curriculumId]);
 
-  /* ========== Derivados de la cascada ========== */
+  /* ========== Derivados ========== */
   const competencies = useMemo<CompetencyNode[]>(
     () => full?.competencies ?? [],
     [full]
@@ -185,12 +176,12 @@ const DuelNewAdvanced: React.FC = () => {
     setRounds((prev) =>
       prev.map((r) => ({
         ...r,
-        exerciseIds: r.exerciseIds && r.exerciseIds.length ? [] : [],
+        exerciseIds: r.exerciseIds?.length ? [] : [],
       }))
     );
   }, [allExercises]);
 
-  /* ========== Ajustar longitud del array de rondas cuando cambie roundsCount ========== */
+  /* ========== Ajustar longitud del array de rondas ========== */
   useEffect(() => {
     setRounds((prev) => {
       const next = [...prev];
@@ -216,7 +207,6 @@ const DuelNewAdvanced: React.FC = () => {
         return false;
 
       const picks = r.exerciseIds?.length || 0;
-      // si hay picks manuales, no pueden exceder las preguntas (aunque ajustamos automático)
       if (picks > q) return false;
     }
 
@@ -246,7 +236,7 @@ const DuelNewAdvanced: React.FC = () => {
     winTarget,
   ]);
 
-  /* ========== Toggle de picks por ronda (aplica regla: questions = picks cuando hay picks) ========== */
+  /* ========== Toggle picks ========== */
   const toggleExerciseForRound = (roundIdx: number, exId: string) => {
     setRounds((prev) => {
       const next = [...prev];
@@ -257,7 +247,6 @@ const DuelNewAdvanced: React.FC = () => {
 
       const picksCount = set.size;
 
-      // Regla UX/servidor: si hay picks manuales, ignoramos dificultad y ajustamos questions = picks
       r.exerciseIds = Array.from(set);
       if (picksCount > 0) {
         r.questions = Math.min(
@@ -266,7 +255,6 @@ const DuelNewAdvanced: React.FC = () => {
         );
         r.difficulty = undefined;
       } else {
-        // sin picks → dejamos questions como estaba (respetando límites)
         r.questions = Math.min(
           MAX_Q_PER_ROUND,
           Math.max(MIN_Q_PER_ROUND, Number(r.questions) || MIN_Q_PER_ROUND)
@@ -278,7 +266,7 @@ const DuelNewAdvanced: React.FC = () => {
     });
   };
 
-  /* ========== Cambio de preguntas por ronda (recorta picks si exceden) ========== */
+  /* ========== Cambio preguntas ========== */
   const onChangeQuestions = (roundIdx: number, value: number) => {
     setRounds((prev) => {
       const next = [...prev];
@@ -288,7 +276,6 @@ const DuelNewAdvanced: React.FC = () => {
         Math.max(MIN_Q_PER_ROUND, value || MIN_Q_PER_ROUND)
       );
 
-      // si hay picks y superan q, recorta
       const picks = r.exerciseIds?.length || 0;
       if (picks > q) {
         r.exerciseIds = (r.exerciseIds || []).slice(0, q);
@@ -299,13 +286,12 @@ const DuelNewAdvanced: React.FC = () => {
     });
   };
 
-  /* ========== Cambio de dificultad por ronda (deshabilitado si hay picks) ========== */
+  /* ========== Cambio dificultad (ignora si hay picks) ========== */
   const setRoundDifficulty = (roundIdx: number, d?: Difficulty) => {
     setRounds((prev) => {
       const next = [...prev];
       const r = { ...next[roundIdx] };
       const hasPicks = (r.exerciseIds?.length || 0) > 0;
-      // si hay picks, ignoramos cambios (UI ya la deshabilita, esto es un seguro)
       if (!hasPicks) {
         r.difficulty = d;
       }
@@ -315,6 +301,29 @@ const DuelNewAdvanced: React.FC = () => {
   };
 
   const token = getAccessToken() || "";
+
+  // Payload normalizado que realmente enviaremos
+  const normalizedRounds: RoundPlan[] = useMemo(() => {
+    return rounds.map((r) => {
+      const picks = r.exerciseIds?.length || 0;
+      if (picks > 0) {
+        return {
+          questions: Math.min(
+            MAX_Q_PER_ROUND,
+            Math.max(MIN_Q_PER_ROUND, picks)
+          ),
+          exerciseIds: r.exerciseIds,
+        };
+      }
+      return {
+        questions: Math.min(
+          MAX_Q_PER_ROUND,
+          Math.max(MIN_Q_PER_ROUND, Number(r.questions) || MIN_Q_PER_ROUND)
+        ),
+        difficulty: r.difficulty,
+      };
+    });
+  }, [rounds]);
 
   /* ========== Submit ========== */
   const submit = async () => {
@@ -330,39 +339,14 @@ const DuelNewAdvanced: React.FC = () => {
 
     try {
       setBusy(true);
-
-      // Mapear rondas aplicando la regla de picks → questions = picks y sin difficulty
-      const roundsPayload: RoundPlan[] = rounds.map((r) => {
-        const picks = r.exerciseIds?.length || 0;
-        if (picks > 0) {
-          return {
-            questions: Math.min(
-              MAX_Q_PER_ROUND,
-              Math.max(MIN_Q_PER_ROUND, picks)
-            ),
-            exerciseIds: r.exerciseIds,
-            // 👇 sin difficulty cuando hay picks
-          };
-        }
-        return {
-          questions: Math.min(
-            MAX_Q_PER_ROUND,
-            Math.max(MIN_Q_PER_ROUND, Number(r.questions) || MIN_Q_PER_ROUND)
-          ),
-          difficulty: r.difficulty,
-          // sin picks
-        };
-      });
-
       const req: CreateMatchReq = {
         curriculumId,
         bestOf: Math.min(MAX_ROUNDS, Math.max(MIN_ROUNDS, rounds.length)),
         objectiveId,
-        rounds: roundsPayload,
+        rounds: normalizedRounds,
         maxPlayers: Math.min(MAX_PLAYERS, Math.max(MIN_PLAYERS, maxPlayers)),
         isPublic: true,
 
-        // modos y timers globales
         mode,
         questionTimeSec:
           mode === "timePerQuestion"
@@ -374,11 +358,21 @@ const DuelNewAdvanced: React.FC = () => {
             : undefined,
       };
 
-      const resp = await createMatch(req, token);
+      const resp = await createMatch(req, token, { timeoutMs: 25_000 });
       nav(`/student/duels/room?code=${encodeURIComponent(resp.shortCode)}`);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "No se pudo crear el duelo.";
-      setError(msg);
+      if (e instanceof ApiError) {
+        if (e.status === 422) {
+          return setError(
+            e.message ||
+              "La configuración del duelo no es válida (422). Revisa picks, pertenencia y estado de ejercicios."
+          );
+        }
+        if (e.status === 400) {
+          return setError(e.message || "Solicitud inválida (400).");
+        }
+      }
+      setError(e instanceof Error ? e.message : "No se pudo crear el duelo.");
     } finally {
       setBusy(false);
     }
@@ -386,7 +380,7 @@ const DuelNewAdvanced: React.FC = () => {
 
   /* ========== UI ========== */
   return (
-    <div className="mx-auto w-full max-w-5xl p-4">
+    <div className="mx-auto w/full max-w-5xl p-4">
       <h1 className="mb-1 text-2xl font-bold">Duelo avanzado (por rondas)</h1>
       <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
         Define cuántas rondas habrá y configura preguntas y dificultad por
@@ -408,6 +402,7 @@ const DuelNewAdvanced: React.FC = () => {
             value={curriculumId}
             onChange={(e) => setCurriculumId(e.target.value)}
             aria-label="Selecciona un currículo"
+            disabled={busy}
           >
             <option value="">Selecciona…</option>
             {curricula.map((c) => (
@@ -441,7 +436,7 @@ const DuelNewAdvanced: React.FC = () => {
               setObjectiveId("");
               setExercises([]);
             }}
-            disabled={!full}
+            disabled={!full || busy}
             aria-label="Selecciona una competencia"
           >
             <option value="">Selecciona…</option>
@@ -463,7 +458,7 @@ const DuelNewAdvanced: React.FC = () => {
               setObjectiveId("");
               setExercises([]);
             }}
-            disabled={!competencyId}
+            disabled={!competencyId || busy}
             aria-label="Selecciona un estándar"
           >
             <option value="">Selecciona…</option>
@@ -481,7 +476,7 @@ const DuelNewAdvanced: React.FC = () => {
             className="w-full rounded-md border px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
             value={objectiveId}
             onChange={(e) => setObjectiveId(e.target.value)}
-            disabled={!standardId}
+            disabled={!standardId || busy}
             aria-label="Selecciona un objetivo de aprendizaje"
           >
             <option value="">Selecciona…</option>
@@ -508,6 +503,7 @@ const DuelNewAdvanced: React.FC = () => {
                 const v = Number(e.target.value) || MIN_ROUNDS;
                 setRoundsCount(Math.max(MIN_ROUNDS, Math.min(MAX_ROUNDS, v)));
               }}
+              disabled={busy}
               className="w-24 rounded-md border px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900"
               aria-label="Número de rondas"
             />
@@ -529,6 +525,7 @@ const DuelNewAdvanced: React.FC = () => {
                 const v = Number(e.target.value) || MIN_PLAYERS;
                 setMaxPlayers(Math.max(MIN_PLAYERS, Math.min(MAX_PLAYERS, v)));
               }}
+              disabled={busy}
               className="w-24 rounded-md border px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900"
               aria-label="Jugadores máximos"
             />
@@ -553,6 +550,7 @@ const DuelNewAdvanced: React.FC = () => {
                 name="mode"
                 checked={mode === "bestOf"}
                 onChange={() => setMode("bestOf")}
+                disabled={busy}
               />
               Mejor de N (por rondas)
             </label>
@@ -568,6 +566,7 @@ const DuelNewAdvanced: React.FC = () => {
                 name="mode"
                 checked={mode === "timePerQuestion"}
                 onChange={() => setMode("timePerQuestion")}
+                disabled={busy}
               />
               Tiempo por pregunta
             </label>
@@ -583,12 +582,12 @@ const DuelNewAdvanced: React.FC = () => {
                 name="mode"
                 checked={mode === "firstToAll"}
                 onChange={() => setMode("firstToAll")}
+                disabled={busy}
               />
               Primero en llegar a meta
             </label>
           </div>
 
-          {/* Controles condicionales */}
           {mode === "timePerQuestion" && (
             <div className="mt-3 flex items-center gap-2">
               <label className="text-sm">Segundos por pregunta</label>
@@ -601,6 +600,7 @@ const DuelNewAdvanced: React.FC = () => {
                   const v = Number(e.target.value) || 30;
                   setQuestionTimeSec(Math.max(5, Math.min(300, v)));
                 }}
+                disabled={busy}
                 className="w-24 rounded-md border px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900"
                 aria-label="Segundos por pregunta"
               />
@@ -620,6 +620,7 @@ const DuelNewAdvanced: React.FC = () => {
                   const v = Number(e.target.value) || 1;
                   setWinTarget(Math.max(1, Math.min(50, v)));
                 }}
+                disabled={busy}
                 className="w-24 rounded-md border px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900"
                 aria-label="Meta de aciertos"
               />
@@ -669,12 +670,12 @@ const DuelNewAdvanced: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setRoundDifficulty(idx, undefined)}
-                        disabled={difficultyDisabled}
+                        disabled={difficultyDisabled || busy}
                         className={`rounded-md border px-3 py-1.5 text-sm dark:border-gray-700 ${
                           !r.difficulty
                             ? "bg-emerald-600 text-white"
                             : "hover:bg-gray-100 dark:hover:bg-gray-800"
-                        } ${difficultyDisabled ? "opacity-50" : ""}`}
+                        } ${difficultyDisabled || busy ? "opacity-50" : ""}`}
                         title={
                           difficultyDisabled
                             ? "Hay picks: se ignora dificultad"
@@ -688,12 +689,12 @@ const DuelNewAdvanced: React.FC = () => {
                           key={opt.value}
                           type="button"
                           onClick={() => setRoundDifficulty(idx, opt.value)}
-                          disabled={difficultyDisabled}
+                          disabled={difficultyDisabled || busy}
                           className={`rounded-md border px-3 py-1.5 text-sm dark:border-gray-700 ${
                             r.difficulty === opt.value
                               ? "bg-emerald-600 text-white"
                               : "hover:bg-gray-100 dark:hover:bg-gray-800"
-                          } ${difficultyDisabled ? "opacity-50" : ""}`}
+                          } ${difficultyDisabled || busy ? "opacity-50" : ""}`}
                           title={
                             difficultyDisabled
                               ? "Hay picks: se ignora dificultad"
@@ -721,6 +722,7 @@ const DuelNewAdvanced: React.FC = () => {
                             Number(e.target.value) || MIN_Q_PER_ROUND
                           )
                         }
+                        disabled={busy}
                         className="w-24 rounded-md border px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900"
                         aria-label={`Preguntas en la ronda ${idx + 1}`}
                       />
@@ -750,9 +752,10 @@ const DuelNewAdvanced: React.FC = () => {
                     exercises.map((ex) => {
                       const checked = (r.exerciseIds || []).includes(ex.id);
                       const disabled =
-                        !checked &&
-                        (r.exerciseIds?.length || 0) >=
-                          (r.questions || MIN_Q_PER_ROUND);
+                        busy ||
+                        (!checked &&
+                          (r.exerciseIds?.length || 0) >=
+                            (r.questions || MIN_Q_PER_ROUND));
 
                       return (
                         <label
@@ -801,6 +804,27 @@ const DuelNewAdvanced: React.FC = () => {
         </div>
       </section>
 
+      {/* Resumen de normalización */}
+      {objectiveId && (
+        <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-200">
+          <div className="mb-1 font-semibold">Resumen antes de crear</div>
+          <ul className="list-inside list-disc space-y-1">
+            {normalizedRounds.map((r, i) => (
+              <li key={i}>
+                Ronda {i + 1}:{" "}
+                {r.exerciseIds?.length
+                  ? `usará ${r.exerciseIds.length} picks exactos (dificultad ignorada)`
+                  : `preguntas = ${r.questions}${
+                      r.difficulty
+                        ? ` · dificultad = ${r.difficulty}`
+                        : " · dificultad cualquiera"
+                    }`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {error && (
         <div
           className="mb-3 rounded-md border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-700 dark:bg-rose-900/20 dark:text-rose-100"
@@ -820,7 +844,8 @@ const DuelNewAdvanced: React.FC = () => {
         </button>
         <button
           onClick={() => nav("/student/duels/hub")}
-          className="rounded-xl border px-4 py-2 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+          disabled={busy}
+          className="rounded-xl border px-4 py-2 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 disabled:opacity-50"
         >
           Volver al Hub
         </button>

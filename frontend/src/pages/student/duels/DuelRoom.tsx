@@ -38,7 +38,9 @@ type WsOpts =
   | { token: string; matchId?: undefined; code: string };
 
 /** Ejercicio completo (ya con templateType/params) */
-function isCompleteExercise(ex: DuelExercise): ex is DuelExercise & {
+function isCompleteExercise(
+  ex: DuelExercise
+): ex is DuelExercise & {
   templateType: TemplateType;
   params: Record<string, unknown>;
 } {
@@ -140,6 +142,16 @@ const DuelRoom: React.FC = () => {
   const inFlightRef = useRef<Record<string, boolean>>({});
   const fetchAbortRef = useRef<AbortController | null>(null);
 
+  // Montado (evitar setState tras unmount)
+  const mountedRef = useRef<boolean>(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Habilitar WS hasta que haya resultados
   const wsEnabled = useMemo(
     () =>
       isAuthenticated &&
@@ -184,9 +196,9 @@ const DuelRoom: React.FC = () => {
       if (shortCode || !matchIdParam || !token) return;
       try {
         const m = await getMatch(matchIdParam, token);
-        if (m?.shortCode) setShortCode(m.shortCode);
+        if (mountedRef.current && m?.shortCode) setShortCode(m.shortCode);
       } catch {
-        /* noop */
+        /* noop silencioso */
       }
     };
     void run();
@@ -206,6 +218,18 @@ const DuelRoom: React.FC = () => {
       }
     };
   }, []);
+
+  const normalizeStatus = (s: unknown):
+    | "WAITING"
+    | "COUNTDOWN"
+    | "ROUND"
+    | "RESULTS" => {
+    const v = typeof s === "string" ? s.toUpperCase() : "";
+    if (v === "WAITING" || v === "COUNTDOWN" || v === "ROUND" || v === "RESULTS")
+      return v;
+    // fallback seguro
+    return "WAITING";
+  };
 
   const mergePlayersInfo = (list?: PlayerInfo[]) => {
     if (!list || list.length === 0) return;
@@ -269,6 +293,7 @@ const DuelRoom: React.FC = () => {
 
     getExerciseForExam(exercise.id, fetchAbortRef.current.signal)
       .then((meta) => {
+        if (!mountedRef.current) return;
         setExercise({
           id: exercise.id,
           templateType: meta.templateType,
@@ -277,15 +302,15 @@ const DuelRoom: React.FC = () => {
         setExerciseHtml(meta.statementRendered ?? null);
       })
       .catch((err: unknown) => {
-        if (
-          (err as { name?: string })?.name === "CanceledError" ||
-          (err as { name?: string })?.name === "AbortError"
-        ) {
-          return; // petición cancelada
-        }
+        if (!mountedRef.current) return;
+        const name = (err as { name?: string })?.name;
+        if (name === "CanceledError" || name === "AbortError") return;
         setExerciseLoadErr("No se pudo cargar el enunciado del ejercicio.");
       })
-      .finally(() => setLoadingExerciseMeta(false));
+      .finally(() => {
+        if (!mountedRef.current) return;
+        setLoadingExerciseMeta(false);
+      });
   }, [exercise?.id]);
 
   // Auto “ready” al reconectar si ya estabas listo
@@ -315,7 +340,7 @@ const DuelRoom: React.FC = () => {
 
       case "state": {
         const st = lastMsg as ServerStateMsgWithExtras;
-        setStatus(st.status);
+        setStatus(normalizeStatus(st.status));
         if (typeof st.round === "number") setRound(st.round);
         if (typeof st.code === "string" && !shortCode) setShortCode(st.code);
         setReadyCount(typeof st.ready === "number" ? st.ready : undefined);
@@ -335,6 +360,7 @@ const DuelRoom: React.FC = () => {
         setCountdown(lastMsg.sec);
         setIAmReady(false);
         setSent(false);
+        setError(null);
         autoSubmittedRef.current = false;
         deadlineRef.current = null;
         if (timerRef.current != null) {
@@ -351,6 +377,7 @@ const DuelRoom: React.FC = () => {
         setStatus("ROUND");
         setRound(lastMsg.round);
         setSent(false);
+        setError(null);
         autoSubmittedRef.current = false;
         setIAmReady(false);
         setQIndex(lastMsg.qIndex ?? 1);
@@ -429,6 +456,7 @@ const DuelRoom: React.FC = () => {
         setLoadingExerciseMeta(true);
         getExerciseForExam(exId, fetchAbortRef.current.signal)
           .then((meta) => {
+            if (!mountedRef.current) return;
             if (lastExerciseKeyRef.current !== key) return; // llegó otra pregunta antes
             setExercise({
               id: exId,
@@ -438,18 +466,16 @@ const DuelRoom: React.FC = () => {
             setExerciseHtml(meta.statementRendered ?? null);
           })
           .catch((err: unknown) => {
+            if (!mountedRef.current) return;
             if (lastExerciseKeyRef.current !== key) return;
-            if (
-              (err as { name?: string })?.name === "CanceledError" ||
-              (err as { name?: string })?.name === "AbortError"
-            ) {
-              return;
-            }
+            const name = (err as { name?: string })?.name;
+            if (name === "CanceledError" || name === "AbortError") return;
             setExercise({ id: exId });
             setExerciseHtml(null);
             setExerciseLoadErr("No se pudo cargar el enunciado del ejercicio.");
           })
           .finally(() => {
+            if (!mountedRef.current) return;
             if (lastExerciseKeyRef.current === key) {
               setLoadingExerciseMeta(false);
             }
@@ -525,7 +551,7 @@ const DuelRoom: React.FC = () => {
         break;
       }
     }
-  }, [lastMsg, shortCode, submitAnswer, qIndex, round, matchIdParam]); // (exercise) no es necesario en deps
+  }, [lastMsg, shortCode, submitAnswer, qIndex, round, matchIdParam]); // (exercise) intencionalmente fuera
 
   const onReady = () => {
     if (iAmReady) return;
@@ -566,9 +592,9 @@ const DuelRoom: React.FC = () => {
   const submissionKey = useMemo(
     () =>
       exercise
-        ? `duel:${
-            shortCode || matchIdParam || "code"
-          }:r${round}:q${qIndex}:ex:${exercise.id}`
+        ? `duel:${shortCode || matchIdParam || "code"}:r${round}:q${qIndex}:ex:${
+            exercise.id
+          }`
         : `duel:pending`,
     [shortCode, matchIdParam, round, qIndex, exercise]
   );
@@ -613,7 +639,7 @@ const DuelRoom: React.FC = () => {
   return (
     <div className="mx-auto max-w-3xl p-4">
       <header className="mb-3 flex items-center justify-between gap-3">
-        <h1 className="text-xl sm:text-2xl font-bold">⚔️ Duelo</h1>
+        <h1 className="text-xl font-bold sm:text-2xl">⚔️ Duelo</h1>
         <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
           <span
             className={`rounded-full px-2.5 py-1 ${
@@ -636,7 +662,7 @@ const DuelRoom: React.FC = () => {
         </div>
       </header>
 
-      <p className="mb-2 text-xs sm:text-sm opacity-70">{matchLabel}</p>
+      <p className="mb-2 text-xs opacity-70 sm:text-sm">{matchLabel}</p>
 
       {!!error && (
         <div
@@ -680,7 +706,7 @@ const DuelRoom: React.FC = () => {
         <div className="rounded-xl border bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="mb-2 text-base">Esperando jugadores…</div>
           {(playersCount || readyCount || maxPlayers) && (
-            <div className="mb-2 text-xs sm:text-sm opacity-80">
+            <div className="mb-2 text-xs opacity-80 sm:text-sm">
               Conectados:{" "}
               <b>{playersCount ?? Object.keys(playersMap).length}</b>
               {typeof maxPlayers === "number" ? (
@@ -737,12 +763,10 @@ const DuelRoom: React.FC = () => {
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <input
                     readOnly
-                    className="w-full rounded border px-2 py-2 text-xs sm:text-sm dark:border-gray-700 dark:bg-gray-900"
+                    className="w-full rounded border px-2 py-2 text-xs dark:border-gray-700 dark:bg-gray-900 sm:text-sm"
                     value={
                       shortCode
-                        ? `${
-                            window.location.origin
-                          }/student/duels/join?code=${encodeURIComponent(
+                        ? `${window.location.origin}/student/duels/join?code=${encodeURIComponent(
                             shortCode
                           )}`
                         : ""
@@ -755,9 +779,7 @@ const DuelRoom: React.FC = () => {
                       onClick={async () => {
                         try {
                           await navigator.clipboard.writeText(
-                            `${
-                              window.location.origin
-                            }/student/duels/join?code=${encodeURIComponent(
+                            `${window.location.origin}/student/duels/join?code=${encodeURIComponent(
                               shortCode ?? ""
                             )}`
                           );
@@ -772,9 +794,7 @@ const DuelRoom: React.FC = () => {
                       className="rounded bg-indigo-600 px-3 py-2 text-xs text-white hover:bg-indigo-700"
                       onClick={async () => {
                         const link = shortCode
-                          ? `${
-                              window.location.origin
-                            }/student/duels/join?code=${encodeURIComponent(
+                          ? `${window.location.origin}/student/duels/join?code=${encodeURIComponent(
                               shortCode
                             )}`
                           : null;
@@ -846,7 +866,7 @@ const DuelRoom: React.FC = () => {
           )}
 
           {sent && (
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs sm:text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200">
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200 sm:text-sm">
               Respuesta enviada — esperando al resto…
             </div>
           )}
@@ -876,7 +896,7 @@ const DuelRoom: React.FC = () => {
 
           {/* Fin de tiempo */}
           {timeLeftMs <= 0 && deadlineRef.current && !sent && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs sm:text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200 sm:text-sm">
               Se acabó el tiempo para esta pregunta.
             </div>
           )}
@@ -897,7 +917,7 @@ const DuelRoom: React.FC = () => {
                     {exerciseLoadErr}
                   </div>
                   <button
-                    className="rounded bg-rose-600 px-3 py-1.5 text-white hover:bg-rose-700 text-xs"
+                    className="rounded bg-rose-600 px-3 py-1.5 text-xs text-white hover:bg-rose-700"
                     onClick={retryExerciseMeta}
                   >
                     Reintentar
