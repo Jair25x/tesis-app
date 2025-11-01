@@ -1,6 +1,5 @@
-# app/schemas.py
 from __future__ import annotations
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Dict, Set
 from pydantic import BaseModel, Field, model_validator
 
 # ===== Tipos base =====
@@ -9,15 +8,11 @@ Difficulty = Literal["EASY", "MEDIUM", "HARD"]
 
 # ===== Config avanzado por ronda (opcional) =====
 class RoundConfig(BaseModel):
-    # Número de la ronda (1..N)
     roundNo: int = Field(ge=1, description="Número de la ronda (1..N)")
-    # Preguntas en esta ronda
     questions: int = Field(ge=1, le=10, description="Preguntas en la ronda (1..10)")
-    # Dificultad específica para esta ronda (opcional)
     difficulty: Optional[Difficulty] = Field(default=None, description="Dificultad para esta ronda")
 
 class RoundPick(BaseModel):
-    # Selección exacta de ejercicio para una sub-pregunta concreta
     round: int = Field(ge=1)
     qIndex: int = Field(ge=1)
     exerciseId: str
@@ -28,7 +23,6 @@ class RoundPlan(BaseModel):
     difficulty: Optional[Difficulty] = None
     exerciseIds: Optional[List[str]] = None
 
-# ---------- Create ----------
 class CreateMatchRequest(BaseModel):
     curriculumId: str
     opponentId: Optional[str] = None
@@ -53,50 +47,85 @@ class CreateMatchRequest(BaseModel):
     roundConfigs: Optional[List[RoundConfig]] = None
     roundPicks: Optional[List[RoundPick]] = None
 
-    # (Legacy opcional) rounds para clientes antiguos
+    # (Legacy) rounds por ronda
     rounds: Optional[List[RoundPlan]] = None
 
     @model_validator(mode="after")
     def _validate_and_normalize(self) -> "CreateMatchRequest":
-        """
-        Reglas mínimas:
-        - Debe venir al menos una fuente de ítems:
-          objectiveId | exerciseIds | roundConfigs | roundPicks
-        - Si vienen roundConfigs[], bestOf debe coincidir o se infiere.
-        - Si vienen roundPicks junto con roundConfigs, validar límites de (round, qIndex).
-        - El chequeo de inventario (cantidad mínima de ejercicios) lo hace el servicio.
-        """
         has_objective = bool(self.objectiveId)
         has_ex_ids = bool(self.exerciseIds and len(self.exerciseIds) > 0)
         has_cfgs = bool(self.roundConfigs and len(self.roundConfigs) > 0)
         has_picks = bool(self.roundPicks and len(self.roundPicks) > 0)
+        has_legacy_rounds = bool(self.rounds and len(self.rounds) > 0)
 
-        if not (has_objective or has_ex_ids or has_cfgs or has_picks):
-            raise ValueError("Provide at least one of: objectiveId, exerciseIds[], roundConfigs[], roundPicks[]")
+        if not (has_objective or has_ex_ids or has_cfgs or has_picks or has_legacy_rounds):
+            raise ValueError("Provide at least one of: objectiveId, exerciseIds[], roundConfigs[], roundPicks[] or rounds[]")
 
-        # Si hay plan por ronda, sincroniza bestOf
+        # --- Reglas de modo ---
+        mode = self.mode or "bestOf"
+
+        if mode == "timePerQuestion":
+            if self.questionTimeSec is None:
+                raise ValueError("questionTimeSec is required in timePerQuestion mode")
+            # winTarget no aplica aquí
+            self.winTarget = None
+        elif mode == "firstToAll":
+            if self.winTarget is None or self.winTarget < 1:
+                raise ValueError("winTarget >= 1 is required in firstToAll mode")
+            # questionTimeSec opcionalmente ignorado (no aplica)
+            self.questionTimeSec = None
+        else:
+            # bestOf por defecto: limpiar parámetros de otros modos
+            self.questionTimeSec = None
+            self.winTarget = None
+
+        # --- Plan avanzado por ronda ---
         if has_cfgs:
+            # bestOf debe coincidir con # de roundConfigs
             if self.bestOf is not None and self.bestOf != len(self.roundConfigs or []):
                 raise ValueError("bestOf debe coincidir con la cantidad de roundConfigs definidos")
             self.bestOf = len(self.roundConfigs or [])
 
-        # Validación suave del uniforme (solo si NO hay plan por ronda)
+            # Si hay roundPicks, deben caer en rango (round, qIndex)
+            if has_picks:
+                q_by_round: Dict[int, int] = {rc.roundNo: rc.questions for rc in (self.roundConfigs or [])}
+                max_round = len(self.roundConfigs or [])
+                for pick in self.roundPicks or []:
+                    if pick.round < 1 or pick.round > max_round:
+                        raise ValueError(f"roundPicks: round={pick.round} fuera de rango (1..{max_round})")
+                    qmax = q_by_round.get(pick.round, 0)
+                    if pick.qIndex < 1 or pick.qIndex > qmax:
+                        raise ValueError(f"roundPicks: qIndex={pick.qIndex} fuera de rango para round={pick.round} (1..{qmax})")
+
+        # --- Modo uniforme (legacy sin roundConfigs) ---
         if not has_cfgs:
             qpr = self.questionsPerRound or 1
             if qpr < 1 or qpr > 10:
                 raise ValueError("questionsPerRound fuera de rango (1..10)")
 
-        # Coherencia picks vs config (si ambos vienen)
-        if has_cfgs and has_picks:
-            # Mapear roundNo -> questions
-            q_by_round = {rc.roundNo: rc.questions for rc in (self.roundConfigs or [])}
-            max_round = len(self.roundConfigs or [])
-            for pick in self.roundPicks or []:
-                if pick.round < 1 or pick.round > max_round:
-                    raise ValueError(f"roundPicks: round={pick.round} fuera de rango (1..{max_round})")
-                qmax = q_by_round.get(pick.round, 0)
-                if pick.qIndex < 1 or pick.qIndex > qmax:
-                    raise ValueError(f"roundPicks: qIndex={pick.qIndex} fuera de rango para round={pick.round} (1..{qmax})")
+            # Reglas de picks en uniforme:
+            # a) exerciseIds a nivel request ⇒ difficulty ignorada + questionsPerRound = len(exerciseIds)
+            if has_ex_ids:
+                # normalizar: difficulty no aplica cuando hay picks exactos
+                self.difficulty = None
+                self.questionsPerRound = max(1, min(10, len(self.exerciseIds or [])))
+
+            # b) rounds (legacy) ⇒ por cada round: si hay exerciseIds ⇒ questions=len(picks), difficulty=None
+            if has_legacy_rounds:
+                normalized: List[RoundPlan] = []
+                for r in self.rounds or []:
+                    picks = r.exerciseIds or []
+                    if len(picks) > 0:
+                        normalized.append(
+                            RoundPlan(
+                                questions=max(1, min(10, len(picks))),
+                                difficulty=None,
+                                exerciseIds=picks
+                            )
+                        )
+                    else:
+                        normalized.append(r)
+                self.rounds = normalized
 
         return self
 
@@ -104,7 +133,6 @@ class CreateMatchResponse(BaseModel):
     matchId: str
     shortCode: str
 
-# ---------- Lobby / Open ----------
 class OpenMatch(BaseModel):
     matchId: str
     shortCode: str
@@ -113,11 +141,9 @@ class OpenMatch(BaseModel):
     createdBy: Optional[str] = None
     maxPlayers: int
 
-# ---------- Resolve code ----------
 class ResolveResponse(BaseModel):
     matchId: str
 
-# ---------- Summary / History (para el Hub) ----------
 class DuelSummaryResponse(BaseModel):
     played: int
     wins: int
@@ -132,7 +158,6 @@ class DuelHistoryItem(BaseModel):
     finishedAt: Optional[str] = None
     shortCode: Optional[str] = None
 
-# ---------- Availability (nuevo endpoint público) ----------
 class ObjectiveAvailabilityResp(BaseModel):
     objectiveId: str = Field(..., description="UUID del OA")
     difficulty: Optional[Difficulty] = Field(None, description="Dificultad filtrada (si aplica)")

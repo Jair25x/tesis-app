@@ -11,30 +11,43 @@ from sqlalchemy.orm import Session
 from ..deps import SessionLocal
 from ..services.duel_manager import ws_lobby, resolve_short_code
 from ..config import JWT_KEY_BYTES, JWT_ALGS
+from ..metrics import duels_ws_connections  # métricas de conexiones
 
 router = APIRouter()
 log = logging.getLogger("duels.ws")
 
+
 def _extract_token(headers: Dict[str, Any], query_params: Dict[str, Any]) -> Optional[str]:
+    """
+    Extrae bearer token del header Authorization o de query params (token|access_token).
+    """
     auth = headers.get("authorization") or headers.get("Authorization")
     if auth and isinstance(auth, str) and auth.lower().startswith("bearer "):
         return auth[7:].strip()
-    if "token" in query_params:
-        return str(query_params["token"])
+    for k in ("token", "access_token"):
+        if k in query_params:
+            return str(query_params[k])
     return None
+
 
 def _parse_user(token: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Devuelve (user_id, username_mostrable).
-    Busca varios claims comunes para nombre: username, preferred_username, name,
-    o compone given_name + family_name. Si no hay, devuelve None para username.
+    - userId | sub
+    - username | preferred_username | name | given_name + family_name
+    Valida expiración con pequeña tolerancia de reloj.
     """
     if not token or not JWT_KEY_BYTES:
         return None, None
     try:
-        claims = jwt.decode(token, key=JWT_KEY_BYTES, algorithms=JWT_ALGS, options={"verify_aud": False})
+        claims = jwt.decode(
+            token,
+            key=JWT_KEY_BYTES,
+            algorithms=JWT_ALGS,
+            options={"verify_aud": False, "verify_exp": True},
+            leeway=10,  # 10s de tolerancia
+        )
         uid = claims.get("userId") or claims.get("sub")
-        # Orden de preferencia de nombre
         uname = (
             claims.get("username")
             or claims.get("preferred_username")
@@ -50,6 +63,7 @@ def _parse_user(token: str) -> Tuple[Optional[str], Optional[str]]:
     except Exception as e:
         log.warning("JWT decode error: %s", e)
         return None, None
+
 
 def _resolve_match_id_and_code(ws: WebSocket) -> tuple[Optional[str], Optional[str]]:
     qp = dict(ws.query_params)
@@ -67,12 +81,14 @@ def _resolve_match_id_and_code(ws: WebSocket) -> tuple[Optional[str], Optional[s
             db.close()
     return None, None
 
+
 async def _safe_send_json(ws: WebSocket, payload: dict) -> None:
     if ws.client_state == WebSocketState.CONNECTED:
         try:
             await ws.send_json(payload)
         except RuntimeError:
             pass
+
 
 async def _safe_close(ws: WebSocket, code: int) -> None:
     if ws.client_state != WebSocketState.DISCONNECTED:
@@ -81,9 +97,11 @@ async def _safe_close(ws: WebSocket, code: int) -> None:
         except RuntimeError:
             pass
 
+
 @router.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
+    duels_ws_connections.labels(state="open").inc()
     try:
         token = _extract_token(websocket.headers, dict(websocket.query_params))
         user_id, username = _parse_user(token) if token else (None, None)
@@ -115,3 +133,5 @@ async def ws_endpoint(websocket: WebSocket):
         await _safe_send_json(websocket, {"type": "error", "message": "internal"})
         await _safe_close(websocket, 1011)
         return
+    finally:
+        duels_ws_connections.labels(state="closed").inc()

@@ -1,108 +1,204 @@
 package com.tesis.gateway_service.config;
 
 import com.tesis.gateway_service.security.filter.JwtGatewayFilter;
+import org.springframework.cloud.gateway.filter.ratelimit.RedisRateLimiter;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
+import reactor.core.publisher.Mono;
 
-/**
- * Configuración de rutas para el API Gateway.
- */
+import java.util.UUID;
+
 @Configuration
 public class GatewayConfig {
 
-        private final JwtGatewayFilter jwtFilter;
+    /** Limiter “general”: 20 req/s con burst 50 */
+    @Bean
+    public RedisRateLimiter standardLimiter() {
+        return new RedisRateLimiter(20, 50);
+    }
 
-        public GatewayConfig(JwtGatewayFilter jwtFilter) {
-                this.jwtFilter = jwtFilter;
+    /** Limiter para duels HTTP: 30 req/s con burst 60 */
+    @Bean
+    public RedisRateLimiter duelsLimiter() {
+        return new RedisRateLimiter(30, 60);
+    }
+
+    @Bean
+    public RouteLocator customRouteLocator(
+            RouteLocatorBuilder b,
+            JwtGatewayFilter jwtFilter,
+            UserOrIpKeyResolver userOrIpKeyResolver,
+            RedisRateLimiter standardLimiter,
+            RedisRateLimiter duelsLimiter
+    ) {
+        return b.routes()
+
+            // Bloqueo duro /internal/** y /_debug/**
+            .route("block-internal", r -> r
+                .path("/internal/**", "/_debug/**")
+                .filters(f -> f.setStatus(403))
+                .uri("no://op")
+            )
+
+            // Infra
+            .route("eureka-server", r -> r
+                .path("/eureka/**")
+                .filters(f -> f.filter(this::attachRequestId))
+                .uri("lb://EUREKA-SERVER")
+            )
+            .route("admin-monitoring-service", r -> r
+                .path("/admin/**")
+                .filters(f -> f.filter(this::attachRequestId))
+                .uri("lb://ADMIN-MONITORING-SERVICE")
+            )
+            .route("config-service", r -> r
+                .path("/config/**")
+                .filters(f -> f.filter(this::attachRequestId))
+                .uri("lb://CONFIG-SERVICE")
+            )
+
+            // Auth (público)
+            .route("auth-service", r -> r
+                .path("/api/auth/**")
+                .filters(f -> f.filter(this::attachRequestId))
+                .uri("lb://AUTH-SERVICE")
+            )
+
+            // ======================
+            // Servicios HTTP con RL
+            // ======================
+            .route("curriculum-service", r -> r
+                .path("/api/curricula/**")
+                .filters(f -> f
+                    .filter(this::attachRequestId)
+                    .filter(jwtFilter)
+                    .addRequestHeader("X-Internal-Call", "gateway")
+                    .requestRateLimiter(rl -> rl
+                        .setKeyResolver(userOrIpKeyResolver)
+                        .setRateLimiter(standardLimiter)
+                    )
+                    // CB opcional (ejemplo), puedes quitarlo si no quieres aquí
+                    .circuitBreaker(c -> c
+                        .setName("curriculum-cb")
+                        .setFallbackUri("forward:/__fallback")
+                    )
+                )
+                .uri("lb://CURRICULUM-SERVICE")
+            )
+            .route("progress-service", r -> r
+                .path("/api/progress/**")
+                .filters(f -> f
+                    .filter(this::attachRequestId)
+                    .filter(jwtFilter)
+                    .addRequestHeader("X-Internal-Call", "gateway")
+                    .requestRateLimiter(rl -> rl
+                        .setKeyResolver(userOrIpKeyResolver)
+                        .setRateLimiter(standardLimiter)
+                    )
+                )
+                .uri("lb://PROGRESS-SERVICE")
+            )
+            .route("classroom-service", r -> r
+                .path("/api/classrooms/**")
+                .filters(f -> f
+                    .filter(this::attachRequestId)
+                    .filter(jwtFilter)
+                    .addRequestHeader("X-Internal-Call", "gateway")
+                    .requestRateLimiter(rl -> rl
+                        .setKeyResolver(userOrIpKeyResolver)
+                        .setRateLimiter(standardLimiter)
+                    )
+                )
+                .uri("lb://CLASSROOM-SERVICE")
+            )
+            .route("assessment-service", r -> r
+                .path("/api/assessments/**")
+                .filters(f -> f
+                    .filter(this::attachRequestId)
+                    .filter(jwtFilter)
+                    .addRequestHeader("X-Internal-Call", "gateway")
+                    .requestRateLimiter(rl -> rl
+                        .setKeyResolver(userOrIpKeyResolver)
+                        .setRateLimiter(standardLimiter)
+                    )
+                )
+                .uri("lb://ASSESSMENT-SERVICE")
+            )
+            .route("ai-advisor-service", r -> r
+                .path("/api/ai/**")
+                .filters(f -> f
+                    .filter(this::attachRequestId)
+                    .filter(jwtFilter)
+                    .addRequestHeader("X-Internal-Call", "gateway")
+                    .requestRateLimiter(rl -> rl
+                        .setKeyResolver(userOrIpKeyResolver)
+                        .setRateLimiter(standardLimiter)
+                    )
+                    // ✅ CB recomendado aquí
+                    .circuitBreaker(c -> c
+                        .setName("advisor-cb")
+                        .setFallbackUri("forward:/__fallback")
+                    )
+                )
+                .uri("lb://AI-ADVISOR-SERVICE")
+            )
+
+            // DUELS — WS (regex case-insensitive para "websocket")
+            .route("duels-service-ws", r -> r
+                .path("/api/duels/ws")
+                .and()
+                .header("Upgrade", "(?i)websocket")
+                .filters(f -> f
+                    .filter(this::attachRequestId)
+                    .rewritePath("/api/duels/ws", "/ws")
+                    .addRequestHeader("X-Internal-Call", "gateway")
+                    .removeRequestHeader("Cookie")
+                    .removeRequestHeader("Set-Cookie")
+                )
+                .uri("lb:ws://DUELS-SERVICE")
+            )
+
+            // DUELS — HTTP (rate-limit específico + CB)
+            .route("duels-service-http", r -> r
+                .path("/api/duels/**")
+                .filters(f -> f
+                    .filter(this::attachRequestId)
+                    .filter(jwtFilter)
+                    .addRequestHeader("X-Internal-Call", "gateway")
+                    .removeRequestHeader("Cookie")
+                    .removeRequestHeader("Set-Cookie")
+                    .requestRateLimiter(rl -> rl
+                        .setKeyResolver(userOrIpKeyResolver)
+                        .setRateLimiter(duelsLimiter)
+                    )
+                    // ✅ CB recomendado aquí
+                    .circuitBreaker(c -> c
+                        .setName("duels-cb")
+                        .setFallbackUri("forward:/__fallback")
+                    )
+                )
+                .uri("lb://DUELS-SERVICE")
+            )
+
+            .build();
+    }
+
+    /** Inyecta X-Request-Id si falta */
+    private Mono<Void> attachRequestId(
+            org.springframework.web.server.ServerWebExchange ex,
+            org.springframework.cloud.gateway.filter.GatewayFilterChain chain) {
+
+        HttpHeaders headers = ex.getRequest().getHeaders();
+        if (!headers.containsKey("X-Request-Id")) {
+            return chain.filter(ex.mutate().request(
+                ex.getRequest().mutate()
+                    .headers(h -> h.add("X-Request-Id", UUID.randomUUID().toString()))
+                    .build()
+            ).build());
         }
-
-        @Bean
-        public RouteLocator customRouteLocator(RouteLocatorBuilder builder) {
-                return builder.routes()
-
-                                // ==============================
-                                // Infra
-                                // ==============================
-                                .route("eureka-server", r -> r
-                                                .path("/eureka/**")
-                                                .uri("lb://EUREKA-SERVER"))
-                                .route("admin-monitoring-service", r -> r
-                                                .path("/admin/**")
-                                                .uri("lb://ADMIN-MONITORING-SERVICE"))
-                                .route("config-service", r -> r
-                                                .path("/config/**")
-                                                .uri("lb://CONFIG-SERVICE"))
-
-                                // ==============================
-                                // Auth
-                                // ==============================
-                                .route("auth-service", r -> r
-                                                .path("/api/auth/**")
-                                                .filters(f -> f.filter(jwtFilter)) // el filtro libera /api/auth/**
-                                                .uri("lb://AUTH-SERVICE"))
-
-                                // ==============================
-                                // Curriculum / Progress / Classrooms / Assessments / Advisor
-                                // ==============================
-                                .route("curriculum-service", r -> r
-                                                .path("/api/curricula/**")
-                                                .filters(f -> f
-                                                                .filter(jwtFilter)
-                                                                .addRequestHeader("X-Internal-Call", "gateway"))
-                                                .uri("lb://CURRICULUM-SERVICE"))
-                                .route("progress-service", r -> r
-                                                .path("/api/progress/**")
-                                                .filters(f -> f
-                                                                .filter(jwtFilter)
-                                                                .addRequestHeader("X-Internal-Call", "gateway"))
-                                                .uri("lb://PROGRESS-SERVICE"))
-                                .route("classroom-service", r -> r
-                                                .path("/api/classrooms/**")
-                                                .filters(f -> f
-                                                                .filter(jwtFilter)
-                                                                .addRequestHeader("X-Internal-Call", "gateway"))
-                                                .uri("lb://CLASSROOM-SERVICE"))
-                                .route("assessment-service", r -> r
-                                                .path("/api/assessments/**")
-                                                .filters(f -> f
-                                                                .filter(jwtFilter)
-                                                                .addRequestHeader("X-Internal-Call", "gateway"))
-                                                .uri("lb://ASSESSMENT-SERVICE"))
-                                .route("ai-advisor-service", r -> r
-                                                .path("/api/ai/**")
-                                                .filters(f -> f
-                                                                .filter(jwtFilter)
-                                                                .addRequestHeader("X-Internal-Call", "gateway"))
-                                                .uri("lb://AI-ADVISOR-SERVICE"))
-
-                                // ==============================
-                                // DUELS — WS (antes que la HTTP)
-                                // - sin jwtFilter (el duels-service valida ?token=)
-                                // - rewrite /api/duels/ws -> /ws
-                                // ==============================
-                                .route("duels-service-ws", r -> r
-                                                .path("/api/duels/ws")
-                                                .filters(f -> f
-                                                                .rewritePath("/api/duels/ws", "/ws")
-                                                                .addRequestHeader("X-Internal-Call", "gateway")
-                                                                .removeRequestHeader("Cookie")
-                                                                .removeRequestHeader("Set-Cookie"))
-                                                .uri("lb:ws://DUELS-SERVICE"))
-
-                                // ==============================
-                                // DUELS — HTTP
-                                // ==============================
-                                .route("duels-service-http", r -> r
-                                                .path("/api/duels/**")
-                                                .filters(f -> f
-                                                                .filter(jwtFilter)
-                                                                .addRequestHeader("X-Internal-Call", "gateway")
-                                                                .removeRequestHeader("Cookie")
-                                                                .removeRequestHeader("Set-Cookie"))
-                                                .uri("lb://DUELS-SERVICE"))
-
-                                .build();
-        }
+        return chain.filter(ex);
+    }
 }

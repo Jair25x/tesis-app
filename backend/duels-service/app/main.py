@@ -1,4 +1,3 @@
-# app/main.py
 from __future__ import annotations
 
 import os
@@ -13,19 +12,22 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .routers import http as http_router, ws as ws_router
 from .routers import reports
-# =========================
-#  App base
-# =========================
+from .config import (
+    ALLOWED_ORIGINS, EUREKA_SERVER, EUREKA_APP_NAME, DUELS_HOST, PORT,
+    HEALTH_URL, HOME_URL, EUREKA_PREFER_IP, EUREKA_RENEWAL, EUREKA_DURATION,
+    EUREKA_DATACENTER,
+)
+
+# --- Sweeper imports ---
+from .tasks.waiting_cleanup import waiting_sweeper
+from .deps import SessionLocal  # factory de sesiones
+
 APP_NAME = "duels-service"
 APP_VERSION = "0.1.0"
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
 
-# =========================
-#  CORS (útil en local)
-#  Si vas siempre por Gateway, lo puedes dejar igual sin problema.
-# =========================
-ALLOWED_ORIGINS = [o.strip() for o in (os.getenv("ALLOWED_ORIGINS", "http://localhost:5173") or "").split(",") if o.strip()]
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -34,16 +36,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# =========================
-#  Routers
-# =========================
+# Routers
 app.include_router(http_router.router)
 app.include_router(ws_router.router)
 app.include_router(reports.router)
 
-# =========================
-#  Health & Metrics
-# =========================
+# Health & Metrics
 @app.get("/healthz", include_in_schema=False)
 async def healthz():
     return {"status": "ok"}
@@ -52,24 +50,7 @@ async def healthz():
 async def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-# =========================
-#  Eureka (opcional pero recomendado para homogeneidad)
-#  Compat: intenta init_registry_client y si no existe, usa init.
-# =========================
-EUREKA_SERVER = os.getenv("EUREKA_SERVER", "")  # ej: http://eureka-server:8761/eureka/
-EUREKA_APP_NAME = os.getenv("EUREKA_APP_NAME", "DUELS-SERVICE")
-
-DUELS_HOST = os.getenv("DUELS_HOST", "duels-service")
-PORT = int(os.getenv("PORT", "8087"))
-HEALTH_URL = os.getenv("HEALTH_URL", f"http://{DUELS_HOST}:{PORT}/healthz")
-HOME_URL = os.getenv("HOME_URL", f"http://{DUELS_HOST}:{PORT}/docs")
-
-EUREKA_PREFER_IP = (os.getenv("EUREKA_PREFER_IP", "false").lower() in ("1", "true", "yes"))
-EUREKA_RENEWAL = int(os.getenv("EUREKA_RENEWAL_INTERVAL", "10"))
-EUREKA_DURATION = int(os.getenv("EUREKA_DURATION", "30"))
-EUREKA_DATACENTER = os.getenv("EUREKA_DATACENTER", "MyOwn")
-EUREKA_METADATA = {"env": os.getenv("ENV", "dev"), "version": APP_VERSION}
-
+# Eureka (opcional)
 try:
     import py_eureka_client.eureka_client as ec  # type: ignore
 except Exception:
@@ -86,7 +67,6 @@ async def _register_eureka():
         return
 
     def _do_register():
-        # Compat: usa la función disponible y filtra kwargs por firma.
         fn = getattr(ec, "init_registry_client", None)
         if fn is None:
             fn = getattr(ec, "init", None)
@@ -96,18 +76,17 @@ async def _register_eureka():
         kwargs = dict(
             eureka_server=EUREKA_SERVER,
             app_name=EUREKA_APP_NAME,
-            # nombres de parámetros varían entre versiones; filtramos con la firma real
             instance_host=DUELS_HOST,
             instance_port=PORT,
             status_page_url=HEALTH_URL,
             health_check_url=HEALTH_URL,
             home_page_url=HOME_URL,
-            prefer_ip=EUREKA_PREFER_IP,              # algunas versiones usan 'prefer_ip'
-            prefer_ip_address=EUREKA_PREFER_IP,      # otras usan 'prefer_ip_address'
+            prefer_ip=EUREKA_PREFER_IP,
+            prefer_ip_address=EUREKA_PREFER_IP,
             renewal_interval_in_secs=EUREKA_RENEWAL,
             duration_in_secs=EUREKA_DURATION,
             data_center_name=EUREKA_DATACENTER,
-            metadata=EUREKA_METADATA,
+            metadata={"version": APP_VERSION},
         )
 
         import inspect
@@ -121,16 +100,32 @@ async def _register_eureka():
     except Exception as e:
         logger.warning("Eureka: no se pudo registrar: %s", e)
 
-# =========================
-#  Lifecycle
-# =========================
+# ====== BACKGROUND: waiting sweeper ======
+app.state._duels_stop_event = asyncio.Event()
+app.state._duels_bg_task = None
+
+def _db_factory():
+    return SessionLocal()
+
 @app.on_event("startup")
 async def on_startup():
-    # Registro Eureka (no bloquea el arranque)
+    # Eureka
     await _register_eureka()
+    # Sweeper (no bloquea el arranque)
+    async def _runner():
+        await waiting_sweeper(_db_factory, app.state._duels_stop_event)
+    app.state._duels_bg_task = asyncio.create_task(_runner())
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    # Detener sweeper
+    try:
+        app.state._duels_stop_event.set()
+        if app.state._duels_bg_task:
+            await asyncio.wait_for(app.state._duels_bg_task, timeout=5)
+    except Exception:
+        pass
+    # Detener eureka
     with contextlib.suppress(Exception):
-        if ec is not None:
+        if 'ec' in globals() and ec is not None:
             ec.stop()  # type: ignore

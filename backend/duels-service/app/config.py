@@ -1,4 +1,3 @@
-# app/config.py
 import os
 import base64
 import logging
@@ -23,11 +22,17 @@ DATABASE_URL = os.getenv(
 _raw_redis = (os.getenv("REDIS_URL", "") or "").strip()
 REDIS_URL = _raw_redis or None
 
+# --------- NUEVO: rate limit (defaults seguros) ----------
+RATE_LIMIT_MATCHES_PER_MIN = int(os.getenv("RATE_LIMIT_MATCHES_PER_MIN", "10"))
+RATE_LIMIT_RESOLVE_PER_MIN = int(os.getenv("RATE_LIMIT_RESOLVE_PER_MIN", "30"))
+
+# --------- NUEVO: política de uso de Redis en prod --------
+APP_ENV = os.getenv("APP_ENV", "dev").strip()  # dev|test|prod
+REQUIRE_REDIS_IN_PROD = _env_bool("REQUIRE_REDIS_IN_PROD", "false")
+
 # ---------------------------
 # JWT de usuarios (WS y HTTP)
 # ---------------------------
-# NOTA: En auth-service, jwt.secret-key viene como Base64. Aquí
-# lo soportamos de forma robusta para validar con HS512.
 JWT_SECRET = os.getenv("JWT_SECRET", "changeme").strip()
 JWT_ALGS = [a.strip() for a in (os.getenv("JWT_ALGS", "HS512,HS384,HS256") or "").split(",") if a.strip()]
 
@@ -40,11 +45,9 @@ def _best_effort_hmac_key(secret_raw: str) -> bytes:
         raise RuntimeError("JWT_SECRET vacío en entorno")
 
     candidates = {secret_raw}
-    # rellenos por si el secreto vino sin '='
     for pad in ("", "=", "==", "==="):
         candidates.add(secret_raw + pad)
 
-    # Base64 estándar
     for s in list(candidates):
         try:
             b = base64.b64decode(s, validate=True)
@@ -53,7 +56,6 @@ def _best_effort_hmac_key(secret_raw: str) -> bytes:
         except Exception:
             pass
 
-    # Base64 urlsafe
     for s in list(candidates):
         try:
             b = base64.urlsafe_b64decode(s + "===")
@@ -95,8 +97,17 @@ EUREKA_DATACENTER  = os.getenv("EUREKA_DATACENTER", "MyOwn")
 # Gateway / CORS (tests sin gateway)
 # ---------------------------
 BEHIND_GATEWAY = _env_bool("BEHIND_GATEWAY", "true")
+ALLOWED_ORIGINS = [o.strip() for o in (os.getenv("ALLOWED_ORIGINS", "http://localhost:5173") or "").split(",") if o.strip()]
 
 # ---------------------------
 # Prometheus
 # ---------------------------
-METRICS_PATH = "/metrics"
+METRICS_PATH = os.getenv("METRICS_PATH", "/metrics")
+
+# ---------------------------
+# NUEVO: TTL de WAITING y availability cache
+# ---------------------------
+DUELS_WAITING_TTL_MIN = max(5, int(os.getenv("DUELS_WAITING_TTL_MIN", "120")))
+DUELS_WAITING_SWEEP_INTERVAL_SEC = max(30, int(os.getenv("DUELS_WAITING_SWEEP_INTERVAL_SEC", "60")))
+DUELS_AVAILABILITY_CACHE_TTL_SEC = float(os.getenv("DUELS_AVAILABILITY_CACHE_TTL_SEC", "180"))
+DUELS_AVAILABILITY_TIMEOUT_SEC = float(os.getenv("DUELS_AVAILABILITY_TIMEOUT_SEC", "2.5"))

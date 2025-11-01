@@ -1,10 +1,9 @@
-# app/routers/http.py
 from __future__ import annotations
 import os, time
 from collections import deque
 from typing import Deque, Dict, Optional, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Path
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, exists, and_
 
@@ -30,6 +29,7 @@ from ..services.exercise_picker import available_count_for_objective
 # Rate limit (Redis opcional)
 REDIS_URL = os.getenv("RATE_LIMIT_REDIS_URL", "").strip()
 MATCHES_PER_MIN = int(os.getenv("RATE_LIMIT_MATCHES_PER_MIN", "10"))
+RESOLVE_PER_MIN = int(os.getenv("RATE_LIMIT_RESOLVE_PER_MIN", "30"))
 
 try:
     import redis  # type: ignore
@@ -39,6 +39,7 @@ except Exception:
 
 # Fallback in-memory (para dev / single worker)
 _inmem_bucket: Dict[str, Deque[float]] = {}
+_inmem_bucket_resolve: Dict[str, Deque[float]] = {}
 
 def db_session():
     db = SessionLocal()
@@ -47,24 +48,31 @@ def db_session():
     finally:
         db.close()
 
-def rate_limit_create_match(user_id: str):
+def _rate_limit(bucket: Dict[str, Deque[float]], key: str, limit_per_min: int):
     now = time.time()
     window = 60
     if _r:
-        key = f"rl:duels:matches:{user_id}:{int(now//window)}"
-        cnt = _r.incr(key)
+        rkey = f"rl:{key}:{int(now//window)}"
+        cnt = _r.incr(rkey)
         if cnt == 1:
-            _r.expire(key, window + 5)
-        if cnt > MATCHES_PER_MIN:
-            raise HTTPException(status_code=429, detail="Too many match creations")
+            _r.expire(rkey, window + 5)
+        if cnt > limit_per_min:
+            raise HTTPException(status_code=429, detail="Too many requests")
     else:
-        dq = _inmem_bucket.setdefault(user_id, deque())
-        # purge
+        dq = bucket.setdefault(key, deque())
         while dq and now - dq[0] > window:
-            dq.popleft()
-        if len(dq) >= MATCHES_PER_MIN:
-            raise HTTPException(status_code=429, detail="Too many match creations")
+            dq.pop() if False else dq.popleft()
+        if len(dq) >= limit_per_min:
+            raise HTTPException(status_code=429, detail="Too many requests")
         dq.append(now)
+
+def rate_limit_create_match(user_id: str):
+    _rate_limit(_inmem_bucket, f"duels:matches:{user_id}", MATCHES_PER_MIN)
+
+def rate_limit_resolve(user_id: str, ip: str):
+    # por usuario e IP
+    _rate_limit(_inmem_bucket_resolve, f"duels:resolve:user:{user_id}", RESOLVE_PER_MIN)
+    _rate_limit(_inmem_bucket_resolve, f"duels:resolve:ip:{ip}", RESOLVE_PER_MIN)
 
 router = APIRouter(prefix="/api/duels", tags=["duels"])
 
@@ -77,14 +85,15 @@ def create_match(
 ):
     rate_limit_create_match(user_id)
 
-    # Validación amigable extra
+    # Validación amigable extra (además del validador de Pydantic)
     if not (
         (req.exerciseIds and len(req.exerciseIds) > 0)
         or req.objectiveId
         or (req.roundConfigs and len(req.roundConfigs) > 0)
         or (req.roundPicks and len(req.roundPicks) > 0)
+        or (req.rounds and len(req.rounds) > 0)
     ):
-        raise HTTPException(status_code=400, detail="Provide exerciseIds[]/roundConfigs[]/roundPicks[] or objectiveId")
+        raise HTTPException(status_code=400, detail="Provide exerciseIds[]/roundConfigs[]/roundPicks[]/rounds[] or objectiveId")
 
     m = svc_create_match(db, creator_id=user_id, req=req)
     db.commit()
@@ -115,10 +124,14 @@ def list_open(
 # ---------- Resolver código corto ----------
 @router.get("/resolve/{code}", response_model=ResolveResponse)
 def resolve_code(
+    request: Request,
     code: str,
     user_id: str = Depends(current_user),
     db: Session = Depends(db_session),
 ):
+    client_ip = request.client.host if request and request.client else "0.0.0.0"
+    rate_limit_resolve(user_id, client_ip)
+
     mid = resolve_short_code(db, code)
     if not mid:
         raise HTTPException(status_code=404, detail="Code not found")
@@ -135,9 +148,15 @@ def get_match(
     if not m:
         raise HTTPException(status_code=404, detail="Not found")
 
-    # Autorización básica: creador/ oponente o público en WAITING
-    if (user_id not in (m.creator_id, m.opponent_id)) and (not m.is_public):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    # Autorización básica: creador / participante o público y en WAITING
+    is_participant = bool(db.scalar(
+        select(func.count()).select_from(MatchPlayer)
+        .where(MatchPlayer.match_id == m.id, MatchPlayer.user_id == user_id)
+    ))
+    if not is_participant and not (m.is_public and m.status == "WAITING"):
+        # permitir creador explícitamente
+        if user_id != m.creator_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
 
     return {
         "matchId": m.id,
@@ -228,7 +247,7 @@ def my_history(
         )
     return out
 
-# ---------- Availability por objetivo (nuevo) ----------
+# ---------- Availability por objetivo (source real) ----------
 def _norm_difficulty(d: Optional[str]) -> Optional[Difficulty]:
     if not d:
         return None
@@ -247,26 +266,21 @@ def _norm_difficulty(d: Optional[str]) -> Optional[Difficulty]:
 def get_objective_availability(
     objective_id: str = Path(..., description="UUID del objetivo"),
     difficulty: Optional[str] = Query(None, description="EASY|MEDIUM|HARD"),
-    # Límites de negocio; mantener en sync con los validadores de creación
     min_required: int = Query(1, ge=1, le=10),
     max_allowed: int = Query(10, ge=1, le=50),
     user_id: str = Depends(current_user),
 ):
     """
-    Devuelve cuántos ejercicios **activos y elegibles** hay para un OA,
+    Devuelve cuántos ejercicios activos hay para un OA,
     opcionalmente filtrando por dificultad. Se alinea con la validación del POST /matches.
     """
     diff_norm = _norm_difficulty(difficulty)
-    # K de muestreo para el fallback cuando hay dificultad
     k = max_allowed
 
     try:
-        count = available_count_for_objective(objective_id, k, diff_norm or None)
+        count, source = available_count_for_objective(objective_id, k, diff_norm or None)
     except Exception as e:
-        # 503 comunica que el servicio de disponibilidad no está disponible (p.ej., error S2S)
         raise HTTPException(status_code=503, detail=f"availability unavailable: {e}")
-
-    source: Literal["server", "sample"] = "sample" if diff_norm else "server"
 
     return ObjectiveAvailabilityResp(
         objectiveId=objective_id,

@@ -109,4 +109,46 @@ public interface ExerciseRepository extends JpaRepository<Exercise, UUID> {
   List<Object[]> countByObjectiveIdsWithFilters(@Param("objectiveIds") Collection<UUID> objectiveIds,
       @Param("active") Boolean active,
       @Param("difficulty") String difficulty);
+
+  interface ExStatusRow {
+    UUID getId();
+
+    Boolean getActive();
+
+    String getDifficulty(); // BASIC|INTERMEDIATE|ADVANCED|null
+
+    UUID getLearningObjectiveId();
+
+    java.time.LocalDateTime getCreatedAt();
+
+    default String getDifficultyUi() {
+      String d = getDifficulty();
+      if (d == null)
+        return null;
+      return switch (d.toUpperCase()) {
+        case "BASIC" -> "EASY";
+        case "INTERMEDIATE" -> "MEDIUM";
+        case "ADVANCED" -> "HARD";
+        default -> null;
+      };
+    }
+  }
+
+  @Query(value = """
+      SELECT e.id as id, e.active as active, e.difficulty as difficulty,
+             e.learning_objective_id as learningObjectiveId, e.created_at as createdAt
+        FROM exercises e
+       WHERE e.id IN (:ids)
+      """, nativeQuery = true)
+  List<ExStatusRow> findStatusByIds(@Param("ids") List<UUID> ids);
+
+  @Query(value = """
+      SELECT e.id as id, e.active as active, e.difficulty as difficulty,
+             e.learning_objective_id as learningObjectiveId, e.created_at as createdAt
+        FROM exercises e
+       WHERE e.learning_objective_id = :objectiveId
+         AND e.id IN (:ids)
+      """, nativeQuery = true)
+  List<ExStatusRow> findStatusByObjectiveAndIds(@Param("objectiveId") UUID objectiveId,
+      @Param("ids") List<UUID> ids);
 }

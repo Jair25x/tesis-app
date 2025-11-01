@@ -1,0 +1,209 @@
+version: "3.9"
+
+services:
+  # === Externos expuestos ===
+  gateway-service:
+    image: ghcr.io/tuorg/gateway-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "8080:8080" # si pones proxy delante, quítalo y publica el proxy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
+    restart: unless-stopped
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "5" }
+
+  frontend:
+    image: ghcr.io/tuorg/tesis-frontend:1.0.0
+    ports:
+      - "80:80" # si usas proxy TLS: publica el proxy y deja esto interno
+    restart: unless-stopped
+    depends_on:
+      gateway-service:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
+  # === Infra / internos no expuestos ===
+  advisor-redis:
+    image: redis:7-alpine
+    command: >
+      sh -c "echo 'appendonly yes' > /etc/redis.conf
+      && echo 'save 60 1000' >> /etc/redis.conf
+      && echo 'requirepass ${REDIS_PASSWORD}' >> /etc/redis.conf
+      && redis-server /etc/redis.conf"
+    ports: []      # no expuesto
+    restart: unless-stopped
+    logging: { driver: "json-file", options: { max-size: "10m", max-file: "3" } }
+
+  # DBs Postgres — sin puertos
+  auth-profile-db:
+    ports: []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
+
+  content-db:
+    ports: []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_CONTENT_PASSWORD}
+
+  progress-db:
+    ports: []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PROGRESS_PASSWORD}
+
+  classroom-db:
+    ports: []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD}
+
+  assessment-db:
+    ports: []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ASSESSMENT_PASSWORD}
+
+  advisor-db:
+    ports: []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ADVISOR_PASSWORD}
+
+  duels-db:
+    ports: []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_DUELS_PASSWORD}
+
+  # Microservicios (imágenes versionadas)
+  auth-service:
+    image: ghcr.io/tuorg/auth-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+    ports: [] # interno
+    restart: unless-stopped
+    depends_on:
+      auth-profile-db:
+        condition: service_healthy
+
+  curriculum-service:
+    image: ghcr.io/tuorg/curriculum-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_CONTENT_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+    ports: []
+    restart: unless-stopped
+    depends_on:
+      content-db:
+        condition: service_healthy
+
+  progress-service:
+    image: ghcr.io/tuorg/progress-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PROGRESS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+    ports: []
+    restart: unless-stopped
+    depends_on:
+      progress-db:
+        condition: service_healthy
+
+  classroom-service:
+    image: ghcr.io/tuorg/classroom-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD}
+      JWT_SECRET_KEY: ${JWT_SECRET}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+    ports: []
+    restart: unless-stopped
+    depends_on:
+      classroom-db:
+        condition: service_healthy
+
+  assessment-service:
+    image: ghcr.io/tuorg/assessment-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_ASSESSMENT_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+    ports: []
+    restart: unless-stopped
+    depends_on:
+      assessment-db:
+        condition: service_healthy
+
+  ai-advisor-service:
+    image: ghcr.io/tuorg/ai-advisor-service:1.0.0
+    environment:
+      ENV: prod
+      REDIS_URL: redis://:${REDIS_PASSWORD}@advisor-redis:6379/0
+      RATE_LIMIT_REDIS_URL: redis://:${REDIS_PASSWORD}@advisor-redis:6379/0
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_ADVISOR_PASSWORD}@advisor-db:5432/advisordb
+      PUBLIC_JWT_SECRET: ${JWT_SECRET}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+      ALLOWED_ORIGINS: https://tu-dominio.com
+      CHAT_USE_LLM: "true"
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      BEHIND_GATEWAY: "true"
+    ports: []
+    restart: unless-stopped
+    depends_on:
+      advisor-db:
+        condition: service_healthy
+      advisor-redis:
+        condition: service_healthy
+
+  duels-service:
+    image: ghcr.io/tuorg/duels-service:1.0.0
+    environment:
+      PORT: 8087
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_DUELS_PASSWORD}@duels-db:5432/duelsdb
+      REDIS_URL: redis://:${REDIS_PASSWORD}@advisor-redis:6379/2
+      RATE_LIMIT_REDIS_URL: redis://:${REDIS_PASSWORD}@advisor-redis:6379/1
+      JWT_SECRET: ${JWT_SECRET}
+      CURRICULUM_BASE: http://curriculum-service:8082
+      PROGRESS_BASE: http://progress-service:8083
+      CLASSROOM_BASE: http://classroom-service:8084
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+      DUELS_PICK_RETRIES: 5
+      DUELS_FAIL_ON_EMPTY_ROUND: "false"
+      DUELS_OPEN_MAX_AGE_H: 24
+      LOG_LEVEL: INFO
+      UVICORN_LOG_LEVEL: info
+    ports: []
+    restart: unless-stopped
+    depends_on:
+      duels-db:
+        condition: service_healthy
+      advisor-redis:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    ports: ["9091:9090"]   # opcional en prod (restringe con firewall)
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    ports: ["3000:3000"]   # idem
+    restart: unless-stopped

@@ -17,6 +17,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -67,6 +68,7 @@ public class InternalExerciseController {
 
   @Operation(summary = "[INTERNAL] Detalle para RAG: enunciado plano + hints + pasos (S2S)")
   @PreAuthorize("hasRole('INTERNAL')")
+  @Transactional(readOnly = true)
   @GetMapping("/{exerciseId}/detail")
   public ResponseEntity<ExerciseDetailInternalResponse> detailInternal(
       @PathVariable UUID exerciseId) throws ResourceNotFoundException {

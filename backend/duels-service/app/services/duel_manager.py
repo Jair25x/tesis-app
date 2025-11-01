@@ -1,10 +1,10 @@
-# app/services/duel_manager.py
 from __future__ import annotations
 import os
 import json, time, uuid, asyncio, logging, contextlib
+import anyio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, List, Tuple, Set
+from typing import Optional, Dict, List, Tuple, Set, Any
 
 from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from sqlalchemy import select, func, exists, and_, text
@@ -14,8 +14,11 @@ from sqlalchemy.exc import IntegrityError
 from ..deps import SessionLocal
 from ..deps import redis as redis_client  # opcional (puede ser None)
 from ..models import Match, Round, RoundConfig, RoundPick, Answer, DuelRating, MatchPlayer
-from ..metrics import duels_round_duration_seconds, duels_answers_total
-from ..clients.curriculum import check_answer
+from ..metrics import (
+    duels_round_duration_seconds,
+    duels_answers_total,
+)
+from ..clients.curriculum import check_answer, validate_exercises
 from ..clients.progress import send_duel_result
 from .exercise_picker import (
     available_count_for_objective,
@@ -33,23 +36,21 @@ def _env_bool(name: str, default: str = "false") -> bool:
     return (os.getenv(name, default) or "").strip().lower() in {"1", "true", "yes", "y"}
 
 FAIL_ON_EMPTY_ROUND = _env_bool("DUELS_FAIL_ON_EMPTY_ROUND", "false")
-NO_PARTICIPATION_RETRY = 0 if FAIL_ON_EMPTY_ROUND else 1  # reintentos por ronda si nadie responde
-PICK_RETRIES = max(0, int(os.getenv("DUELS_PICK_RETRIES", "5") or "5"))  # reintentos para evitar duplicados
+NO_PARTICIPATION_RETRY = 0 if FAIL_ON_EMPTY_ROUND else 1
+PICK_RETRIES = max(0, int(os.getenv("DUELS_PICK_RETRIES", "5") or "5"))
 
 # -----------------------
 # Claves Redis (opcional)
 # -----------------------
-REDIS_TTL_SECONDS = 2 * 60 * 60  # 2h: suficiente para una sesión larga
+REDIS_TTL_SECONDS = 2 * 60 * 60  # 2h
 
 def _r_key_base(match_id: str, n: int, q_index: int) -> str:
     return f"duels:{match_id}:r{n}:q{q_index}"
 
 def _r_key_set(match_id: str, n: int, q_index: int) -> str:
-    # quiénes ya respondieron (SET)
     return _r_key_base(match_id, n, q_index) + ":responders"
 
 def _r_key_list(match_id: str, n: int, q_index: int) -> str:
-    # orden de llegada (LIST)
     return _r_key_base(match_id, n, q_index) + ":queue"
 
 # -------------------------------------------------------------------
@@ -82,16 +83,54 @@ def _distribute_top_level_picks(dedup_ids: List[str], best_of: int, questions_pe
         log.info("Provided exerciseIds (%d) < needed (%d). Remaining will be picked at runtime.", len(dedup_ids), total_needed)
     return mapping
 
+# ------------------------------------------------------------
+# Validación de picks contra Curriculum (belongs/active)
+# ------------------------------------------------------------
+async def _validate_all_picks(objective_id: Optional[str], bundles: List[Tuple[str, int, int, str]]) -> None:
+    """
+    bundles: lista de (scope, roundNo, qIndex, exerciseId)
+      - scope ∈ {'top', 'round', 'pickTop'}
+    Regla:
+      - Si hay objective_id: validar belongs y active
+      - Si NO hay objective_id: validar active (belongs = None)
+    'difficulty' no se valida: los picks la ignoran por diseño.
+    """
+    ids = [ex for (_scope, _n, _q, ex) in bundles]
+    dedup = list(dict.fromkeys(ids))
+    vmap = await validate_exercises(objective_id, dedup)
+
+    bad: List[Tuple[str,int,int,str,str]] = []
+    for scope, n, q, ex in bundles:
+        info = vmap.get(ex)
+        if not info:
+            bad.append((scope, n, q, ex, "notFound"))
+            continue
+        if info.get("active") is False:
+            bad.append((scope, n, q, ex, "inactive"))
+            continue
+        if objective_id and info.get("belongs") is False:
+            bad.append((scope, n, q, ex, "notBelongs"))
+
+    if bad:
+        parts = []
+        for scope, n, q, ex, cause in bad[:10]:
+            locus = f"{scope}#{n}:{q}" if n or q else scope
+            parts.append(f"{locus}:{ex}({cause})")
+        detail = " ; ".join(parts)
+        raise HTTPException(status_code=400, detail=f"Invalid exerciseIds (first issues): {detail}")
+
+# ------------------------------------------------------------
+# Crear Match
+# ------------------------------------------------------------
 def create_match(db: Session, *, creator_id: str, req) -> Match:
     """
     Crea el Match soportando:
-    - rounds[] (cada item: questions, difficulty?, exerciseIds? dedupe)
-    - roundConfigs[] (alias de rounds[], mismo shape)
-    - roundPicks[] top-level (cada item: round|n, qIndex, exerciseId) -> se congelan
-    - exerciseIds[] top-level uniforme (se reparte bestOf * questionsPerRound)
+    - rounds[] (cada item: questions, difficulty?, exerciseIds?)
+    - roundConfigs[] (alias)
+    - roundPicks[] top-level (round|qIndex|exerciseId)
+    - exerciseIds[] top-level uniforme
     - objectiveId + difficulty (global) con validación de stock
     """
-    # A) Normalización de insumos
     rounds_req = (
         getattr(req, "rounds", None)
         or getattr(req, "roundConfigs", None)
@@ -102,13 +141,12 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
     objective_id = getattr(req, "objectiveId", None)
     difficulty_global = getattr(req, "difficulty", None)
 
-    # Si rounds/roundConfigs vienen, bestOf = len()
     if rounds_req:
         best_of = len(rounds_req)
 
     provided_ids_top = [str(x) for x in (getattr(req, "exerciseIds", None) or [])]
     has_any_round_ids = any((getattr(r, "exerciseIds", None) or []) for r in rounds_req)
-    round_picks_top = getattr(req, "roundPicks", None) or []  # [{round|n, qIndex, exerciseId}]
+    round_picks_top = getattr(req, "roundPicks", None) or []
 
     if not objective_id and not provided_ids_top and not has_any_round_ids and not round_picks_top:
         raise HTTPException(
@@ -116,25 +154,25 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
             detail="Provide exerciseIds[]/rounds[].exerciseIds[]/roundPicks[] or objectiveId",
         )
 
-    # B) Validaciones de disponibilidad (cuando hay objectiveId)
+    # B) Disponibilidad por OA (cuando corresponde)
     if rounds_req:
         if objective_id:
             for idx, r in enumerate(rounds_req, start=1):
                 q_needed = int(getattr(r, "questions", 1) or 1)
                 diff_r = getattr(r, "difficulty", None)
                 if q_needed > 0:
-                    available = available_count_for_objective(
+                    count, _source = available_count_for_objective(
                         str(objective_id), q_needed, diff_r or difficulty_global
                     )
-                    if available < q_needed:
+                    if count < q_needed:
                         raise HTTPException(
                             status_code=400,
                             detail=(
-                                f"Ronda {idx}: OA tiene {available} ejercicios activos "
+                                f"Ronda {idx}: OA tiene {count} ejercicios activos "
                                 f"(dif={diff_r or difficulty_global}); se requieren {q_needed}."
                             ),
                         )
-        # Deduplicación y tamaño mínimo cuando envían exerciseIds por ronda
+        # Deduplicación mínima cuando envían exerciseIds por ronda
         for idx, r in enumerate(rounds_req, start=1):
             ids_r = [str(x) for x in (getattr(r, "exerciseIds", None) or [])]
             if ids_r and len(dict.fromkeys(ids_r)) < int(getattr(r, "questions", 1) or 1):
@@ -158,19 +196,46 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
                     ),
                 )
         elif objective_id:
-            available = available_count_for_objective(
+            count, _source = available_count_for_objective(
                 str(objective_id), total_needed, difficulty_global
             )
-            if available < total_needed:
+            if count < total_needed:
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"El OA seleccionado tiene {available} ejercicios activos; "
+                        f"El OA seleccionado tiene {count} ejercicios activos; "
                         f"se requieren {total_needed}."
                     ),
                 )
 
-    # C) Crear Match base
+    # C) VALIDACIÓN de picks contra Curriculum (belongs/active)
+    bundles: List[Tuple[str, int, int, str]] = []
+
+    # top-level exerciseIds → se distribuyen luego; valida todos
+    for ex in provided_ids_top:
+        bundles.append(("top", 0, 0, ex))
+
+    # rounds[].exerciseIds
+    for i, r in enumerate(rounds_req, start=1):
+        for ex in [str(x) for x in (getattr(r, "exerciseIds", None) or [])]:
+            bundles.append(("round", i, 0, ex))
+
+    # roundPicks top-level (prioridad)
+    for rp in round_picks_top:
+        try:
+            n = int(getattr(rp, "round", None) or getattr(rp, "n", None) or (rp.get("round") if isinstance(rp, dict) else None) or (rp.get("n") if isinstance(rp, dict) else None))
+            q_idx = int(getattr(rp, "qIndex", None) or (rp.get("qIndex") if isinstance(rp, dict) else None))
+            exid = str(getattr(rp, "exerciseId", None) or (rp.get("exerciseId") if isinstance(rp, dict) else None))
+        except Exception:
+            continue
+        if n and q_idx and exid:
+            bundles.append(("pickTop", n, q_idx, exid))
+
+    # Ejecutar validación (async) desde contexto sync usando anyio
+    if bundles:
+        anyio.from_thread.run(_validate_all_picks, objective_id, bundles)
+
+    # D) Crear Match base
     m = Match(
         id=str(uuid.uuid4()),
         creator_id=creator_id,
@@ -204,7 +269,7 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
         db.add(MatchPlayer(match_id=m.id, user_id=creator_id))
         db.flush()
 
-    # D) Persistir RoundConfig + RoundPick segun rama
+    # E) Persistir RoundConfig + RoundPick
     if rounds_req:
         for i, r in enumerate(rounds_req, start=1):
             q_count = int(getattr(r, "questions", 1) or 1)
@@ -215,63 +280,31 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
             if ids_r:
                 dedup_r = list(dict.fromkeys(ids_r))
                 for q_idx in range(1, min(q_count, len(dedup_r)) + 1):
-                    db.add(
-                        RoundPick(
-                            match_id=m.id, n=i, q_index=q_idx, exercise_id=dedup_r[q_idx - 1]
-                        )
-                    )
+                    db.add(RoundPick(match_id=m.id, n=i, q_index=q_idx, exercise_id=dedup_r[q_idx - 1]))
     else:
         if provided_ids_top:
             dedup = list(dict.fromkeys(provided_ids_top))
             mapping = _distribute_top_level_picks(dedup, best_of, qpr_uniform)
             for n in range(1, best_of + 1):
-                db.add(
-                    RoundConfig(
-                        match_id=m.id, n=n, questions=qpr_uniform, difficulty=difficulty_global
-                    )
-                )
+                db.add(RoundConfig(match_id=m.id, n=n, questions=qpr_uniform, difficulty=difficulty_global))
             for (n, q_idx), exid in mapping.items():
-                db.add(
-                    RoundPick(match_id=m.id, n=n, q_index=q_idx, exercise_id=str(exid))
-                )
+                db.add(RoundPick(match_id=m.id, n=n, q_index=q_idx, exercise_id=str(exid)))
         else:
-            # Sólo configs uniformes; picks se harán en runtime
             for n in range(1, best_of + 1):
-                db.add(
-                    RoundConfig(
-                        match_id=m.id, n=n, questions=qpr_uniform, difficulty=difficulty_global
-                    )
-                )
+                db.add(RoundConfig(match_id=m.id, n=n, questions=qpr_uniform, difficulty=difficulty_global))
 
-    # E) Si llegan roundPicks[] top-level, congélalos (tiene prioridad sobre runtime picks)
+    # Prioridad absoluta: roundPicks top-level
     if round_picks_top:
         for rp in round_picks_top:
             try:
-                # aceptar ambas formas por compatibilidad: round / n
-                n = int(
-                    getattr(rp, "round", None)
-                    or getattr(rp, "n", None)
-                    or (rp.get("round") if isinstance(rp, dict) else None)
-                    or (rp.get("n") if isinstance(rp, dict) else None)
-                )
-                q_idx = int(
-                    getattr(rp, "qIndex", None)
-                    or (rp.get("qIndex") if isinstance(rp, dict) else None)
-                )
-                exid = str(
-                    getattr(rp, "exerciseId", None)
-                    or (rp.get("exerciseId") if isinstance(rp, dict) else None)
-                )
+                n = int(getattr(rp, "round", None) or getattr(rp, "n", None) or (rp.get("round") if isinstance(rp, dict) else None) or (rp.get("n") if isinstance(rp, dict) else None))
+                q_idx = int(getattr(rp, "qIndex", None) or (rp.get("qIndex") if isinstance(rp, dict) else None))
+                exid = str(getattr(rp, "exerciseId", None) or (rp.get("exerciseId") if isinstance(rp, dict) else None))
             except Exception:
                 continue
             if not n or not q_idx or not exid:
                 continue
-            # upsert “amable”
-            existing = (
-                db.query(RoundPick)
-                .filter_by(match_id=m.id, n=n, q_index=q_idx)
-                .one_or_none()
-            )
+            existing = db.query(RoundPick).filter_by(match_id=m.id, n=n, q_index=q_idx).one_or_none()
             if existing:
                 existing.exercise_id = exid
             else:
@@ -280,13 +313,17 @@ def create_match(db: Session, *, creator_id: str, req) -> Match:
     db.flush()
     return m
 
+# ------------------------------------------------------------
+# (El resto del archivo)
+# ------------------------------------------------------------
 def list_open_matches(db: Session, *, curriculum_id: Optional[str] = None, limit: int = 50) -> list[Match]:
     try:
         max_age_h = int(os.getenv("DUELS_OPEN_MAX_AGE_H", "48"))
     except Exception:
         max_age_h = 48
     max_age_h = max(1, min(max_age_h, 336))
-    min_created_at = datetime.utcnow() - timedelta(hours=max_age_h)
+    # Tiempos en UTC con tzinfo
+    min_created_at = datetime.now(timezone.utc) - timedelta(hours=max_age_h)
 
     q = (
         select(Match)
@@ -320,12 +357,6 @@ def resolve_short_code(db: Session, code: str) -> Optional[str]:
     return m.id if m else None
 
 def _normalize_answer_payload(answer_obj):
-    """
-    Acepta:
-      - dict/valor plano -> lo retorna igual
-      - { "value": X }
-      - { "value": { "value": Y } } -> retorna { "value": Y }
-    """
     try:
         if isinstance(answer_obj, dict) and "value" in answer_obj:
             inner = answer_obj.get("value")
@@ -335,7 +366,6 @@ def _normalize_answer_payload(answer_obj):
         pass
     return answer_obj
 
-# Límite defensivo de tamaño para respuestas
 MAX_ANSWER_BYTES = 32_768
 def _byte_len(obj) -> int:
     try:
@@ -343,9 +373,6 @@ def _byte_len(obj) -> int:
     except Exception:
         return len(str(obj).encode("utf-8"))
 
-# -------------------------------------------------------------------
-# Elo rating (1v1)
-# -------------------------------------------------------------------
 def _get_rating(db: Session, user_id: str) -> int:
     r = db.get(DuelRating, user_id)
     if r:
@@ -372,9 +399,6 @@ def apply_elo(db: Session, winner_id: Optional[str], player_a: str, player_b: st
     _set_rating(db, player_a, round(ra + k * (sa - ea)))
     _set_rating(db, player_b, round(rb + k * (sb - eb)))
 
-# -------------------------------------------------------------------
-# Room registry (en memoria)
-# -------------------------------------------------------------------
 @dataclass
 class Room:
     match_id: str
@@ -398,10 +422,10 @@ class Room:
     closed: bool = False
     leader_id: Optional[str] = None
     keepalive_tasks: Dict[str, asyncio.Task] = field(default_factory=dict)
-    # NUEVO: total de participantes del match (preciso, no solo conectados)
     participants_total: int = 0
-    # Cache liviana para no spamear WS con payloads idénticos
     _last_progress_payload: Optional[str] = None
+    # rate limit simple por usuario (segundos perf_counter)
+    last_answer_map: Dict[str, float] = field(default_factory=dict)
 
 ROOMS: Dict[str, Room] = {}
 ROOMS_LOCK = asyncio.Lock()
@@ -446,7 +470,7 @@ def _players_info(room: Room) -> List[Dict[str, str]]:
 
 async def _broadcast(room: Room, payload: dict):
     drop: list[str] = []
-    for uid, ws in list(room.members.items()):
+    for uid, ws in list(room.members.items()):  # snapshot
         try:
             await ws.send_json(payload)
         except Exception:
@@ -470,9 +494,6 @@ async def _send_state(room: Room):
         "maxPlayers": room.max_players,
     })
 
-# -------------------------------------------------------------------
-# Heartbeat
-# -------------------------------------------------------------------
 async def _keepalive(ws: WebSocket, user_id: str):
     try:
         while True:
@@ -481,13 +502,8 @@ async def _keepalive(ws: WebSocket, user_id: str):
     except Exception:
         pass
 
-# -------------------------------------------------------------------
-# Progreso (DB/Redis)
-# -------------------------------------------------------------------
 async def _progress_clear(room: Room, n: int, q_index: int):
-    # limpia cache local
     room._last_progress_payload = None
-    # limpia redis si existe
     if redis_client is not None:
         try:
             kset = _r_key_set(room.match_id, n, q_index)
@@ -497,19 +513,16 @@ async def _progress_clear(room: Room, n: int, q_index: int):
             pass
 
 async def _progress_register_answer(room: Room, n: int, q_index: int, user_id: str):
-    """Registra en Redis (si existe) la respuesta para mantener orden y set únicos."""
     if redis_client is None:
         return
     try:
         pipe = redis_client.pipeline()  # type: ignore
         kset = _r_key_set(room.match_id, n, q_index)
         klist = _r_key_list(room.match_id, n, q_index)
-        # SADD devuelve 1 si se añadió; sólo en ese caso push a lista
         pipe.sadd(kset, user_id)
         pipe.expire(kset, REDIS_TTL_SECONDS)
         sadd_res, _ = await pipe.execute()
         if sadd_res == 1:
-            # new user in set -> anotar orden
             t_ms = 0
             if room.question_t0 is not None:
                 t_ms = max(0, int((time.perf_counter() - room.question_t0) * 1000))
@@ -525,11 +538,6 @@ def _user_name(room: Room, uid: str) -> str:
     return room.names.get(uid) or f"Jugador {uid[:4]}"
 
 async def _progress_snapshot(room: Room, n: int, q_index: int) -> Dict:
-    """
-    Devuelve {'responded': X, 'total': Y, 'queue': [{'id','name','tMs'}...]}
-    - Si Redis existe: lee SET/LIST y arma cola.
-    - Si no: consulta DB (Answer) ordenado por created_at y arma cola.
-    """
     total = room.participants_total or max(1, len(room.members))
     queue: List[Dict[str, str | int]] = []
     responded_ids: List[str] = []
@@ -538,7 +546,6 @@ async def _progress_snapshot(room: Room, n: int, q_index: int) -> Dict:
         try:
             kset = _r_key_set(room.match_id, n, q_index)
             klist = _r_key_list(room.match_id, n, q_index)
-            # leer lista (orden)
             entries = await redis_client.lrange(klist, 0, -1)  # type: ignore
             for e in entries or []:
                 try:
@@ -549,22 +556,18 @@ async def _progress_snapshot(room: Room, n: int, q_index: int) -> Dict:
                     queue.append({"id": uid, "name": _user_name(room, uid), "tMs": tms})
                 except Exception:
                     continue
-            # si por algún motivo lista vacía, usar el set
             if not queue:
                 s_ids = await redis_client.smembers(kset)  # type: ignore
                 for uid in s_ids or []:
                     responded_ids.append(uid)
-                    # sin tMs exacto; aproximar desde ahora si hay question_t0
                     tms = 0
                     if room.question_t0 is not None:
                         tms = max(0, int((time.perf_counter() - room.question_t0) * 1000))
                     queue.append({"id": uid, "name": _user_name(room, uid), "tMs": tms})
         except Exception:
-            # fallback a DB
             pass
 
     if not queue:
-        # Fallback sin Redis: DB
         dbp = SessionLocal()
         try:
             a_rows = (
@@ -592,17 +595,14 @@ async def _broadcast_progress(room: Room, n: int, q_index: int):
         "qIndex": q_index,
         **snap,
     }
-    # evitar spam con payload idéntico
     enc = json.dumps(payload, sort_keys=True)
     if room._last_progress_payload == enc:
         return
     room._last_progress_payload = enc
     await _broadcast(room, payload)
 
-# -------------------------------------------------------------------
-# WS readers por conexión
-# -------------------------------------------------------------------
 async def _reader_task(room: Room, user_id: str, ws: WebSocket):
+    RATE_LIMIT_SEC = 0.05  # 50ms (defensa anti-flood)
     while True:
         try:
             msg = await ws.receive_text()
@@ -627,6 +627,13 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
             continue
 
         if t == "answer":
+            nowp = time.perf_counter()
+            last = room.last_answer_map.get(user_id, 0.0)
+            if nowp - last < RATE_LIMIT_SEC:
+                # descartar spam
+                continue
+            room.last_answer_map[user_id] = nowp
+
             log.info("WS_ANSWER_RX match=%s user=%s keys=%s", room.match_id, user_id, list(data.keys()))
 
             n = int(data.get("round") or 0)
@@ -640,7 +647,6 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
                 log.debug("WS_ANSWER_IGNORED empty match=%s user=%s", room.match_id, user_id)
                 continue
 
-            # límite defensivo de tamaño
             if _byte_len(raw_answer) > MAX_ANSWER_BYTES:
                 log.info("ANSWER_TOO_LARGE match=%s user=%s", room.match_id, user_id)
                 continue
@@ -656,7 +662,6 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
 
             answer_obj = _normalize_answer_payload(raw_answer)
 
-            # Recuperar exercise_id REAL para (n, q_index)
             exercise_id_for_q: Optional[str] = None
             db_lookup = SessionLocal()
             try:
@@ -692,7 +697,6 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
 
             duels_answers_total.labels(correct="true" if correct else "false").inc()
 
-            # --- Asegura la fila de rounds para el FK (idempotente) ---
             db = SessionLocal()
             try:
                 db.execute(text("""
@@ -706,14 +710,13 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
             finally:
                 db.close()
 
-            # Persistir respuesta (+ payload/raw_payload/exercise_id si existen)
             db = SessionLocal()
             try:
                 a = Answer(
                     match_id=room.match_id,
                     n=n,
                     q_index=q_index,
-                    student_id=user_id,      # ⬅️ UUID/string del sub
+                    student_id=user_id,
                     correct=bool(correct),
                     time_ms=elapsed_ms,
                 )
@@ -740,22 +743,17 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
             finally:
                 db.close()
 
-            # Registrar progreso (Redis si hay, si no DB)
             try:
                 await _progress_register_answer(room, n, q_index, user_id)
             except Exception:
                 pass
 
-            # Telemetría X/Y (+ cola)
             try:
                 await _broadcast_progress(room, n, q_index)
             except Exception:
                 log.exception("answer_progress broadcast failed match=%s n=%s q=%s",
                               room.match_id, n, q_index)
 
-# -------------------------------------------------------------------
-# Helpers de fallo amable
-# -------------------------------------------------------------------
 async def _fail_and_close(room: Room, message: str):
     log.warning("MATCH_FAIL match=%s reason=%s", room.match_id, message)
     await _broadcast(room, {"type": "error", "message": message})
@@ -776,11 +774,8 @@ async def _fail_and_close(room: Room, message: str):
     async with ROOMS_LOCK:
         ROOMS.pop(room.match_id, None)
 
-# -------------------------------------------------------------------
-# Orquestador con sub-preguntas por ronda
-# -------------------------------------------------------------------
 async def _orchestrator(room: Room):
-    # Espera jugadores y registra MatchPlayer
+    # Esperar a que haya suficientes jugadores y registrarlos
     while True:
         if room.closed:
             return
@@ -803,7 +798,7 @@ async def _orchestrator(room: Room):
 
     await _send_state(room)
 
-    # Lobby: todos listos (mín: 2)
+    # Esperar “ready” de jugadores (al menos 2 y min(players, max_players))
     while True:
         if room.closed:
             return
@@ -815,7 +810,7 @@ async def _orchestrator(room: Room):
             break
         await asyncio.sleep(0.2)
 
-    # RUNNING
+    # Cambiar estado a RUNNING
     db = SessionLocal()
     try:
         m = db.get(Match, room.match_id)
@@ -827,14 +822,14 @@ async def _orchestrator(room: Room):
     finally:
         db.close()
 
-    # Countdown
+    # Pequeño countdown
     for sec in range(COUNTDOWN_SEC, 0, -1):
         if room.closed:
             return
         await _broadcast(room, {"type": "countdown", "sec": sec})
         await asyncio.sleep(1)
 
-    # Cargar datos del match + inferencias
+    # Cargar parámetros del match
     db = SessionLocal()
     try:
         m = db.get(Match, room.match_id)
@@ -855,7 +850,6 @@ async def _orchestrator(room: Room):
 
         room.questions_per_round = max(1, int(getattr(m, "questions_per_round", 1) or 1))
 
-        # Cargar ejercicios ya usados (para evitar repetidos)
         used_ids: Set[str] = set()
         try:
             already = db.query(RoundPick.exercise_id).filter_by(match_id=room.match_id).all()
@@ -884,10 +878,6 @@ async def _orchestrator(room: Room):
     )
 
     def _decide_round_winner(stats: Dict[str, Tuple[int, int, int, int]]) -> Tuple[Optional[str], bool]:
-        """
-        stats[user] = (correct_count, total_time, best_time, attempts)
-        Retorna (winnerId|None, noParticipation: bool)
-        """
         if not stats:
             return None, True
         total_attempts = sum(v[3] for v in stats.values())
@@ -896,12 +886,7 @@ async def _orchestrator(room: Room):
 
         ordered = sorted(
             stats.items(),
-            key=lambda kv: (
-                -kv[1][0],            # correctas
-                -kv[1][3],            # intentos
-                kv[1][1],             # tiempo total
-                kv[1][2] if kv[1][2] > 0 else 1_000_000_000
-            )
+            key=lambda kv: (-kv[1][0], -kv[1][3], kv[1][1], kv[1][2] if kv[1][2] > 0 else 1_000_000_000)
         )
 
         if len(ordered) == 1:
@@ -911,7 +896,6 @@ async def _orchestrator(room: Room):
         if (a[0], a[3], a[1], a[2]) != (b[0], b[3], b[1], b[2]):
             return ordered[0][0], False
 
-        # Earliest answer (created_at) entre empatados
         db2 = SessionLocal()
         try:
             users = [ordered[0][0], ordered[1][0]]
@@ -951,14 +935,8 @@ async def _orchestrator(room: Room):
         room.q_total = max(1, q_total)
         room.round_t0 = time.perf_counter()
 
-        log.info(
-            "ORCH start round n=%s q_total=%s participants=%s",
-            n,
-            room.q_total,
-            sorted(score.keys()),
-        )
+        log.info("ORCH start round n=%s q_total=%s participants=%s", n, room.q_total, sorted(score.keys()))
 
-        # ------ INICIO RONDA: upsert rounds (garantiza fila para FK) ------
         db_up = SessionLocal()
         try:
             db_up.execute(text("""
@@ -972,12 +950,10 @@ async def _orchestrator(room: Room):
         finally:
             db_up.close()
 
-        # ------ sub-preguntas de la ronda ------
         for q in range(1, room.q_total + 1):
             if room.closed:
                 return
 
-            # Obtener ejercicio para (n, q)
             db = SessionLocal()
             try:
                 exercise_id: Optional[str] = None
@@ -991,18 +967,15 @@ async def _orchestrator(room: Room):
                         if r:
                             exercise_id = r.exercise_id
 
-                    # Seleccionar evitando repetidos
                     if not exercise_id:
                         if not inferred_objective:
                             await _fail_and_close(room, f"no exercises available (objective={inferred_objective}, qIndex={q})")
                             return
                         candidate_last: Optional[str] = None
                         picked_unique: Optional[str] = None
-                        for attempt in range(max(1, PICK_RETRIES)):
+                        for _attempt in range(max(1, PICK_RETRIES)):
                             try:
-                                candidate = await pick_exercise_for_objective_async(
-                                    str(inferred_objective), diff_for_round
-                                )
+                                candidate = await pick_exercise_for_objective_async(str(inferred_objective), diff_for_round)
                             except Exception:
                                 candidate = None
                             if not candidate:
@@ -1011,20 +984,12 @@ async def _orchestrator(room: Room):
                             if candidate not in used_ids:
                                 picked_unique = candidate
                                 break
-                        if picked_unique:
-                            exercise_id = picked_unique
-                            log.info(
-                                "PICK_AVOIDED_DUP match=%s n=%s q=%s ex=%s attempts<=%s",
-                                room.match_id, n, q, exercise_id, PICK_RETRIES
-                            )
-                        else:
-                            exercise_id = candidate_last
-                            log.info(
-                                "PICK_FORCED_DUP match=%s n=%s q=%s ex=%s used_count=%d",
-                                room.match_id, n, q, exercise_id, len(used_ids)
-                            )
+                        exercise_id = picked_unique or candidate_last
 
-                # Persistir RoundPick si no existía
+                        if exercise_id:
+                            log.info("PICKED match=%s n=%s q=%s ex=%s unique=%s",
+                                     room.match_id, n, q, exercise_id, bool(picked_unique))
+
                 if exercise_id:
                     rp2 = db.query(RoundPick).filter_by(match_id=room.match_id, n=n, q_index=q).one_or_none()
                     if not rp2:
@@ -1047,16 +1012,10 @@ async def _orchestrator(room: Room):
             qtime_ms = room.question_time_ms or ROUND_MS_DEFAULT
             deadline_ms = int(time.time() * 1000) + qtime_ms
 
-            log.info(
-                "ROUND start match=%s n=%s q=%s deadline_ms=%s exercise_id=%s",
-                room.match_id,
-                n,
-                q,
-                deadline_ms,
-                exercise_id,
-            )
+            log.info("ROUND start match=%s n=%s q=%s deadline_ms=%s exercise_id=%s",
+                     room.match_id, n, q, deadline_ms, exercise_id)
 
-            await _progress_clear(room, n, q)  # 🧹 reset progreso (Redis + cache)
+            await _progress_clear(room, n, q)
             await _broadcast(room, {
                 "type": "round_start",
                 "round": n,
@@ -1065,17 +1024,15 @@ async def _orchestrator(room: Room):
                 "qIndex": q,
                 "qTotal": room.q_total,
             })
-            # Enviar progreso inicial vacío (0/total, cola=[])
             await _broadcast_progress(room, n, q)
 
             deadline = time.perf_counter() + (qtime_ms / 1000.0)
 
-            # Espera: todos contesten o timeout
             last_seen = -1
             while time.perf_counter() < deadline:
                 if room.closed:
                     return
-                # Si hay Redis no hace falta ir a DB cada 100 ms; sólo se compara responded para cortar
+
                 responded_now = None
                 if redis_client is not None:
                     try:
@@ -1085,35 +1042,23 @@ async def _orchestrator(room: Room):
                         responded_now = None
 
                 if responded_now is None:
-                    # Fallback DB para saber si todos ya respondieron
                     db = SessionLocal()
                     try:
                         a_rows = db.query(Answer).filter_by(match_id=room.match_id, n=n, q_index=q).all()
                         got = {str(a.student_id) for a in a_rows}
                         if len(got) != last_seen:
                             last_seen = len(got)
-                            log.debug(
-                                "ANSWERS match=%s n=%s q=%s received=%s of %s",
-                                room.match_id,
-                                n,
-                                q,
-                                last_seen,
-                                len(score),
-                            )
+                            log.debug("ANSWERS match=%s n=%s q=%s received=%s of %s", room.match_id, n, q, last_seen, len(score))
                         if got.issuperset(set(score.keys())):
                             log.info("Q_DONE_ALL match=%s n=%s q=%s total=%s", room.match_id, n, q, len(got))
                             break
                     finally:
                         db.close()
                 else:
-                    # Con Redis: si responded_now == total -> cortar
                     total_need = len(score)
                     if responded_now != last_seen:
                         last_seen = responded_now
-                        log.debug(
-                            "ANSWERS(REDIS) match=%s n=%s q=%s received=%s of %s",
-                            room.match_id, n, q, last_seen, total_need
-                        )
+                        log.debug("ANSWERS(REDIS) match=%s n=%s q=%s received=%s of %s", room.match_id, n, q, last_seen, total_need)
                     if responded_now >= total_need:
                         log.info("Q_DONE_ALL(REDIS) match=%s n=%s q=%s total=%s", room.match_id, n, q, responded_now)
                         break
@@ -1122,7 +1067,6 @@ async def _orchestrator(room: Room):
 
             await asyncio.sleep(0.15)
 
-        # ===== Fin de ronda n: decidir ganador =====
         start_perf = room.round_t0 or time.perf_counter()
         db = SessionLocal()
         try:
@@ -1171,14 +1115,7 @@ async def _orchestrator(room: Room):
             "winnerId": round_winner,
         })
 
-        log.info(
-            "ROUND_DECISION match=%s n=%s winner=%s score=%s no_participation=%s",
-            room.match_id,
-            n,
-            round_winner,
-            score,
-            no_participation,
-        )
+        log.info("ROUND_DECISION match=%s n=%s winner=%s score=%s no_participation=%s", room.match_id, n, round_winner, score, no_participation)
 
         if room.mode == "bestOf" and needed is not None:
             if any(v >= needed for v in score.values()):
@@ -1198,24 +1135,11 @@ async def _orchestrator(room: Room):
             if len(ordered) == 1 or ordered[0][1] > ordered[1][1]:
                 winner_id = ordered[0][0]
             else:
-                winner_id = None  # empate real
+                winner_id = None
 
-    await _broadcast(room, {
-        "type": "final",
-        "winnerId": winner_id,
-        "byRound": by_round,
-        "score": dict(score),
-        "playersInfo": _players_info(room),
-    })
+    await _broadcast(room, {"type": "final", "winnerId": winner_id, "byRound": by_round, "score": dict(score), "playersInfo": _players_info(room)})
 
-    log.info(
-        "MATCH_DECISION match=%s best_of=%s mode=%s winner=%s score=%s",
-        room.match_id,
-        best_of,
-        mode,
-        winner_id,
-        score,
-    )
+    log.info("MATCH_DECISION match=%s best_of=%s mode=%s winner=%s score=%s", room.match_id, best_of, mode, winner_id, score)
 
     db = SessionLocal()
     try:
@@ -1254,9 +1178,9 @@ async def _orchestrator(room: Room):
     async with ROOMS_LOCK:
         ROOMS.pop(room.match_id, None)
 
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
 # WS entrypoint
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
 async def ws_lobby(ws: WebSocket, user_id: str, user_name: Optional[str] = None):
     params = dict(ws.query_params)
     match_id = params.get("matchId")
@@ -1301,7 +1225,13 @@ async def ws_lobby(ws: WebSocket, user_id: str, user_name: Optional[str] = None)
         db.close()
 
     display_name = (user_name or "").strip() or f"Jugador {user_id[:4]}"
+
+    # Política: si ya existe una conexión para el mismo usuario, la reemplazamos
     async with room.lock:
+        old = room.members.get(user_id)
+        if old and old is not ws:
+            with contextlib.suppress(Exception):
+                await old.close(code=1000)
         room.members[user_id] = ws
         room.names[user_id] = display_name
         room.ready.discard(user_id)
@@ -1312,17 +1242,20 @@ async def ws_lobby(ws: WebSocket, user_id: str, user_name: Optional[str] = None)
 
     await _send_state(room)
 
-    # Si ya hay una sub-pregunta activa, emite progreso actual al nuevo cliente
     if room.round_no > 0 and room.q_index > 0:
-        try:
+        with contextlib.suppress(Exception):
             await _broadcast_progress(room, room.round_no, room.q_index)
-        except Exception:
-            pass
 
     reader = asyncio.create_task(_reader_task(room, user_id, ws))
 
+    # Arranque del orquestador: si el líder está o ya hay 2+ jugadores
     async with room.lock:
-        need_start = (not room.orchestrator_started) and (room.leader_id == user_id)
+        # Re-elección de líder si no está presente
+        if (room.leader_id and room.leader_id not in room.members) and room.members:
+            room.leader_id = next(iter(room.members.keys()))
+        need_start = (not room.orchestrator_started) and (
+            (room.leader_id in room.members) or (len(room.members) >= 2)
+        )
         if need_start:
             room.orchestrator_started = True
     if need_start:

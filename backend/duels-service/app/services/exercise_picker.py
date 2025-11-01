@@ -1,7 +1,9 @@
 from __future__ import annotations
 import logging
 import asyncio
-from typing import Optional, Dict, Any, List
+import os
+import time
+from typing import Optional, Dict, Any, List, Tuple, Literal
 
 from ..clients.curriculum import (
     count_exercises,
@@ -10,46 +12,88 @@ from ..clients.curriculum import (
 
 log = logging.getLogger("duels.exercise_picker")
 
+# Config por env (valores seguros por defecto)
+_AVAIL_TIMEOUT_SEC = float(os.getenv("DUELS_AVAILABILITY_TIMEOUT_SEC", "2.5"))
+_CACHE_TTL_SEC = float(os.getenv("DUELS_AVAILABILITY_CACHE_TTL_SEC", "180"))
+
+# Cache local simple (clave->(exp_ts, value))
+# value = (count:int, source: "server"|"sample")
+_cache: Dict[str, Tuple[float, Tuple[int, Literal["server","sample"]]]] = {}
+
+def _cache_key(objective_id: str, k: int, difficulty: Optional[str]) -> str:
+    d = (difficulty or "").upper()
+    return f"avail:{objective_id}:{k}:{d}"
+
+def _put_cache(key: str, value: Tuple[int, Literal["server","sample"]]):
+    _cache[key] = (time.time() + _CACHE_TTL_SEC, value)
+
+def _get_cache(key: str) -> Optional[Tuple[int, Literal["server","sample"]]]:
+    exp, val = _cache.get(key, (0.0, (0, "sample")))
+    if exp > time.time():
+        return val
+    _cache.pop(key, None)
+    return None
+
 # =========================================================
 # Async helpers (usan el cliente de curriculum)
 # =========================================================
 
-async def _async_available_count_for_objective(
+async def _async_available_count_for_objective_raw(
     objective_id: str,
     k: int,
     difficulty: Optional[str] = None,
-) -> int:
+) -> Tuple[int, Literal["server","sample"]]:
     """
-    1) Intenta conteo exacto via /internal/objectives/exercise-counts (acepta difficulty).
-    2) Si falla, hace fallback a first_exercises(objective_id, limit=k) y retorna len(items).
+    1) Intenta conteo exacto via /internal/objectives/exercise-counts (acepta difficulty) -> source=server.
+    2) Si falla, fallback a first_exercises(objective_id, limit=k) y retorna len(items) -> source=sample.
     """
     if not objective_id:
-        return 0
+        return 0, "sample"
 
-    # (1) Preciso (S2S)
+    # (1) Preciso (S2S) con timeout
     try:
-        counts = await count_exercises([objective_id], active=True, difficulty_ui=difficulty)
-        total = int(counts.get(objective_id, 0) or 0)
-        # Bound razonable por si BE devuelve algo raro
-        return max(0, min(total, 10_000))
+        async def _exact():
+            counts = await count_exercises([objective_id], active=True, difficulty_ui=difficulty)
+            total = int(counts.get(objective_id, 0) or 0)
+            return max(0, min(total, 10_000))
+
+        total = await asyncio.wait_for(_exact(), timeout=_AVAIL_TIMEOUT_SEC)
+        return total, "server"
     except Exception as e:
-        log.warning("S2S exact count failed, falling back. err=%s", e)
+        log.warning("S2S exact count failed (using fallback). objective=%s diff=%s err=%s", objective_id, difficulty, e)
 
     # (2) Fallback: pedir algunos y contar
     try:
-        items: List[Dict[str, Any]] = await first_exercises(
-            objective_id,
-            limit=max(1, int(k)),
-            active=True,
-            difficulty_ui=difficulty,
-            random=True,
-            order="desc",
-        )
-        return len(items)
-    except Exception as e:
-        log.exception("Error fallback first_exercises: %s", e)
-        return 0
+        async def _fallback():
+            items: List[Dict[str, Any]] = await first_exercises(
+                objective_id,
+                limit=max(1, int(k)),
+                active=True,
+                difficulty_ui=difficulty,
+                random=True,
+                order="desc",
+            )
+            return len(items)
 
+        total = await asyncio.wait_for(_fallback(), timeout=_AVAIL_TIMEOUT_SEC)
+        return total, "sample"
+    except Exception as e:
+        log.exception("Error fallback first_exercises objective=%s diff=%s err=%s", objective_id, difficulty, e)
+        return 0, "sample"
+
+
+async def available_count_for_objective_async(
+    objective_id: str,
+    k: int,
+    difficulty: Optional[str] = None,
+) -> Tuple[int, Literal["server","sample"]]:
+    key = _cache_key(objective_id, max(1, int(k)), (difficulty or "").upper() or None)
+    cached = _get_cache(key)
+    if cached is not None:
+        return cached
+    result = await _async_available_count_for_objective_raw(objective_id, k, difficulty)
+    _put_cache(key, result)
+    return result
 
 async def pick_exercise_for_objective_async(
     objective_id: str,
@@ -66,7 +110,6 @@ async def pick_exercise_for_objective_async(
         return None
 
     tries: List[Dict[str, Any]] = []
-
     base: Dict[str, Any] = {"limit": 1, "active": True}
     if difficulty:
         tries.append({**base, "random": True, "difficulty_ui": difficulty})
@@ -84,8 +127,6 @@ async def pick_exercise_for_objective_async(
                 order=str(params.get("order", "desc")),
             )
             if items:
-                # El cliente expone items con llave "id" (no "exerciseId")
-                # Normalizamos a string
                 exid = items[0].get("id") or items[0].get("exerciseId")
                 if exid:
                     return str(exid)
@@ -97,58 +138,30 @@ async def pick_exercise_for_objective_async(
     return None
 
 # =========================================================
-# API sincronizada (compat) — safe en contextos sync
+# Wrappers sync (para handlers sync). Evitan asyncio.run() dentro de loop activo.
 # =========================================================
-
-async def available_count_for_objective_async(
-    objective_id: str,
-    k: int,
-    difficulty: Optional[str] = None,
-) -> int:
-    return await _async_available_count_for_objective(objective_id, k, difficulty)
-
-
 
 def available_count_for_objective(
     objective_id: str,
     k: int,
     difficulty: Optional[str] = None,
-) -> int:
-    """
-    Wrapper síncrono sobre available_count_for_objective_async.
-    Sólo puede usarse cuando NO hay un event loop corriendo en el hilo actual.
-    """
+) -> Tuple[int, Literal["server","sample"]]:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
-
     if loop and loop.is_running():
-        raise RuntimeError(
-            "available_count_for_objective() no puede llamarse desde un contexto async; "
-            "usa available_count_for_objective_async()"
-        )
-
+        raise RuntimeError("available_count_for_objective(): usa la versión async dentro de contextos async")
     return asyncio.run(available_count_for_objective_async(objective_id, k, difficulty))
-
 
 def pick_exercise_for_objective(
     objective_id: str,
     difficulty: Optional[str] = None,
 ) -> Optional[str]:
-    """
-    Wrapper síncrono sobre pick_exercise_for_objective_async.
-    Se limita a contextos puramente síncronos para evitar asyncio.run() anidados.
-    """
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
-
     if loop and loop.is_running():
-        raise RuntimeError(
-            "pick_exercise_for_objective() no puede llamarse desde un contexto async; "
-            "usa pick_exercise_for_objective_async()"
-        )
-
+        raise RuntimeError("pick_exercise_for_objective(): usa la versión async dentro de contextos async")
     return asyncio.run(pick_exercise_for_objective_async(objective_id, difficulty))

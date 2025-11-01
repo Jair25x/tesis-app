@@ -1,23 +1,46 @@
+version: "3.9"
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-health-retry: &curl-health
+  test: ["CMD-SHELL", "curl -sf http://localhost:${PORT:-8080}/actuator/health || exit 1"]
+  interval: 15s
+  timeout: 5s
+  retries: 10
+  start_period: 20s
+
+networks:
+  tesis-network:
+    driver: bridge
+
+volumes:
+  auth-profile-db-data:
+  content-db-data:
+  progress-db-data:
+  classroom-db-data:
+  assessment-db-data:
+  advisor-db-data:
+  duels-db-data:
+  redis-data:
+
 services:
   eureka-server:
     build:
       context: .
       dockerfile: ./eureka-server/Dockerfile
     container_name: eureka-server
-    ports:
-      - "8761:8761"
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
+      SPRING_PROFILES_ACTIVE: dev
+    ports: ["8761:8761"]
     restart: on-failure
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.50"
-    networks:
-      - tesis-network
+    networks: [tesis-network]
+    logging: *default-logging
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8761/"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8761/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -27,45 +50,35 @@ services:
       context: .
       dockerfile: ./admin-monitoring-service/Dockerfile
     container_name: admin-monitoring-service
-    ports:
-      - "9090:9090"
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      SPRING_PROFILES_ACTIVE: dev
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    ports: ["9090:9090"]
     depends_on:
-      - eureka-server
+      eureka-server:
+        condition: service_healthy
     restart: on-failure
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: "0.30"
-    networks:
-      - tesis-network
+    networks: [tesis-network]
+    logging: *default-logging
 
   config-service:
     build:
       context: .
       dockerfile: ./config-service/Dockerfile
     container_name: config-service
-    ports:
-      - "8888:8888"
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      SPRING_PROFILES_ACTIVE: dev
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-""}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    ports: ["8888:8888"]
     depends_on:
-      - eureka-server
+      eureka-server:
+        condition: service_healthy
     restart: on-failure
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: "0.30"
-    networks:
-      - tesis-network
+    networks: [tesis-network]
+    logging: *default-logging
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8888/actuator/health"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8888/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -75,169 +88,238 @@ services:
       context: .
       dockerfile: ./gateway-service/Dockerfile
     container_name: gateway-service
-    ports:
-      - "8080:8080"
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
-      - CONFIG_SERVER_URL=http://config-service:8888
-      - JWT_SECRET=${JWT_SECRET}
+      SPRING_PROFILES_ACTIVE: dev
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      JWT_SECRET: ${JWT_SECRET}
+    ports: ["8080:8080"]
     depends_on:
-      - eureka-server
-      - config-service
+      eureka-server:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
     restart: on-failure
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.50"
-    networks:
-      - tesis-network
+    networks: [tesis-network]
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
-  # --- SERVICIO DE BASE DE DATOS PARA AUTH-PROFILE-SERVICE ---
-  auth-profile-db:
-    image: postgres:17.5-alpine3.22 # Imagen de PostgreSQL, versión 13, ligera
-    container_name: auth-profile-db # Nombre del contenedor para fácil identificación
-    ports:
-      - "5432:5432" # Mapea el puerto 5432 del host al contenedor
-    environment:
-      - POSTGRES_DB=tesisdb_auth # Nombre de la base de datos
-      - POSTGRES_USER=postgres # Usuario de la base de datos
-      - POSTGRES_PASSWORD=misan # Contraseña del usuario
+  # Redis (dev) — usa password simple para probar auth
+  advisor-redis:
+    image: redis:7-alpine
+    container_name: advisor-redis
+    command: >
+      sh -c "echo 'appendonly yes' > /etc/redis.conf
+      && echo 'save 60 1000' >> /etc/redis.conf
+      && echo 'requirepass ${REDIS_PASSWORD:-devredis}' >> /etc/redis.conf
+      && redis-server /etc/redis.conf"
+    ports: ["6380:6379"]
     volumes:
-      - auth-profile-db-data:/var/lib/postgresql/data # Volumen para persistir los datos de la BD
-    restart: always # Asegura que la BD siempre intente reiniciarse
-    networks:
-      - tesis-network # Conecta a la red de tus microservicios
+      - redis-data:/data
+    restart: unless-stopped
+    networks: [tesis-network]
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-devredis}", "PING"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # === Bases de datos ===
+  auth-profile-db:
+    image: postgres:17.5-alpine3.22
+    container_name: auth-profile-db
+    environment:
+      POSTGRES_DB: tesisdb_auth
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD:-misan}
+    ports: ["5432:5432"]
+    volumes: [ "auth-profile-db-data:/var/lib/postgresql/data" ]
+    restart: unless-stopped
+    networks: [tesis-network]
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d tesisdb_auth"]
       interval: 10s
       timeout: 3s
       retries: 10
-    # Opcional: Puedes añadir la sección deploy aquí si planeas usar Docker Swarm.
-    # Para desarrollo local con 'docker-compose up', esta sección será ignorada.
-    # deploy:
-    #   resources:
-    #     limits:
-    #       memory: 1024M # Las BDs suelen necesitar más memoria
-    #       cpus: '1.0'
-
-  # --- SERVICIO: Auth Service (Consolidación de Auth y User Profile) ---
-  auth-service:
-    build:
-      context: .
-      dockerfile: ./auth-service/Dockerfile
-    container_name: auth-service
-    ports:
-      - "8081:8081" # Mapea el puerto 8081
-    environment:
-      - SPRING_PROFILES_ACTIVE=dev
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
-      - CONFIG_SERVER_URL=http://config-service:8888
-      - SPRING_BOOT_ADMIN_CLIENT_URL=http://admin-monitoring-service:9090
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_NAME=admin
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_PASSWORD=admin
-      # --- Configuración de la Base de Datos para Auth-Profile Service ---
-      # La URL ahora apunta al nombre del servicio de la BD en Docker Compose
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://auth-profile-db:5432/tesisdb_auth
-      - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=misan
-      - S2S_JWT_SECRET=${S2S_JWT_SECRET}
-      - JWT_SECRET=${JWT_SECRET}
-    depends_on:
-      - eureka-server
-      - config-service
-      - admin-monitoring-service
-      - auth-profile-db # Ahora depende del servicio de base de datos
-    restart: on-failure
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.50"
-    networks:
-      - tesis-network
 
   content-db:
     image: postgres:17.5-alpine3.22
     container_name: content-db
     environment:
-      - POSTGRES_DB=contentdb
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=misan
-    volumes:
-      - content-db-data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432" # opcional, sólo si quieres exponerlo en el host
-    restart: always
-    networks:
-      - tesis-network
+      POSTGRES_DB: contentdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_CONTENT_PASSWORD:-misan}
+    ports: ["5433:5432"]
+    volumes: [ "content-db-data:/var/lib/postgresql/data" ]
+    restart: unless-stopped
+    networks: [tesis-network]
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d contentdb"]
       interval: 10s
       timeout: 3s
       retries: 10
 
+  progress-db:
+    image: postgres:17.5-alpine3.22
+    container_name: progress-db
+    environment:
+      POSTGRES_DB: progressdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PROGRESS_PASSWORD:-misan}
+    ports: ["5444:5432"]
+    volumes: [ "progress-db-data:/var/lib/postgresql/data" ]
+    restart: unless-stopped
+    networks: [tesis-network]
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d progressdb"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  classroom-db:
+    image: postgres:17.5-alpine3.22
+    container_name: classroom-db
+    environment:
+      POSTGRES_DB: classroomdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD:-misan}
+    ports: ["5445:5432"]
+    volumes: [ "classroom-db-data:/var/lib/postgresql/data" ]
+    restart: unless-stopped
+    networks: [tesis-network]
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d classroomdb"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  assessment-db:
+    image: postgres:17.5-alpine3.22
+    container_name: assessment-db
+    environment:
+      POSTGRES_DB: assessmentdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ASSESSMENT_PASSWORD:-misan}
+    ports: ["5446:5432"]
+    volumes: [ "assessment-db-data:/var/lib/postgresql/data" ]
+    restart: unless-stopped
+    networks: [tesis-network]
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d assessmentdb"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  advisor-db:
+    image: pgvector/pgvector:pg17
+    container_name: advisor-db
+    environment:
+      POSTGRES_DB: advisordb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADVISOR_PASSWORD:-misan}
+    ports: ["5447:5432"]
+    volumes: [ "advisor-db-data:/var/lib/postgresql/data" ]
+    restart: unless-stopped
+    networks: [tesis-network]
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d advisordb"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  duels-db:
+    image: postgres:17.5-alpine3.22
+    container_name: duels-db
+    environment:
+      POSTGRES_DB: duelsdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_DUELS_PASSWORD:-misan}
+    ports: ["5448:5432"]
+    volumes: [ "duels-db-data:/var/lib/postgresql/data" ]
+    restart: unless-stopped
+    networks: [tesis-network]
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d duelsdb"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # === Microservicios ===
+  auth-service:
+    build:
+      context: .
+      dockerfile: ./auth-service/Dockerfile
+    container_name: auth-service
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      SPRING_BOOT_ADMIN_CLIENT_URL: http://admin-monitoring-service:9090
+      SPRING_DATASOURCE_URL: jdbc:postgresql://auth-profile-db:5432/tesisdb_auth
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_AUTH_PASSWORD:-misan}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+    ports: ["8081:8081"]
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+      admin-monitoring-service:
+        condition: service_started
+      auth-profile-db:
+        condition: service_healthy
+    restart: on-failure
+    networks: [tesis-network]
+    logging: *default-logging
+    healthcheck: *curl-health
+
   curriculum-service:
     build:
       context: .
       dockerfile: ./curriculum-service/Dockerfile
     container_name: curriculum-service
-    ports:
-      - "8082:8082"
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
-      - CONFIG_SERVER_URL=http://config-service:8888
-      - SPRING_BOOT_ADMIN_CLIENT_URL=http://admin-monitoring-service:9090
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_SERVICE_BASE_URL=http://curriculum-service:8082
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_MANAGEMENT_BASE_URL=http://curriculum-service:8082
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_NAME=admin
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_PASSWORD=admin
-      # Conexión a la BD content-db
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://content-db:5432/contentdb
-      - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=misan
-      - JWT_SECRET=${JWT_SECRET}
-      - S2S_JWT_SECRET=${S2S_JWT_SECRET}
-      - S2S_JWT_ISSUER=ai-advisor-service
+      SPRING_PROFILES_ACTIVE: dev
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      SPRING_BOOT_ADMIN_CLIENT_URL: http://admin-monitoring-service:9090
+      SPRING_DATASOURCE_URL: jdbc:postgresql://content-db:5432/contentdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_CONTENT_PASSWORD:-misan}
+      JWT_SECRET: ${JWT_SECRET}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+      S2S_JWT_ISSUER: ai-advisor-service
+    ports: ["8082:8082"]
     depends_on:
-      - eureka-server
-      - config-service
-      - admin-monitoring-service
-      - content-db
+      eureka-server:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+      admin-monitoring-service:
+        condition: service_started
+      content-db:
+        condition: service_healthy
     restart: on-failure
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.50"
-    networks:
-      - tesis-network
+    networks: [tesis-network]
+    logging: *default-logging
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 10
-
-  progress-db:
-    image: postgres:17.5-alpine3.22
-    container_name: progress-db
-    environment:
-      - POSTGRES_DB=progressdb
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=misan
-    ports:
-      - "5444:5432" # opcional, expuesto en host
-    volumes:
-      - progress-db-data:/var/lib/postgresql/data
-    restart: always
-    networks:
-      - tesis-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d progressdb"]
-      interval: 10s
-      timeout: 3s
       retries: 10
 
   progress-service:
@@ -245,118 +327,63 @@ services:
       context: .
       dockerfile: ./progress-service/Dockerfile
     container_name: progress-service
-    ports:
-      - "8083:8083"
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
-      - CONFIG_SERVER_URL=http://config-service:8888
-      - SPRING_BOOT_ADMIN_CLIENT_URL=http://admin-monitoring-service:9090
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_SERVICE_BASE_URL=http://progress-service:8083
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_MANAGEMENT_BASE_URL=http://progress-service:8083
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_NAME=admin
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_PASSWORD=admin
-      # DB
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://progress-db:5432/progressdb
-      - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=misan
-      # Claves JWT
-      - JWT_SECRET=${JWT_SECRET}
-      - S2S_JWT_SECRET=${S2S_JWT_SECRET}
+      SPRING_PROFILES_ACTIVE: dev
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      SPRING_BOOT_ADMIN_CLIENT_URL: http://admin-monitoring-service:9090
+      SPRING_DATASOURCE_URL: jdbc:postgresql://progress-db:5432/progressdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PROGRESS_PASSWORD:-misan}
+      JWT_SECRET: ${JWT_SECRET}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+    ports: ["8083:8083"]
     depends_on:
-      - eureka-server
-      - config-service
-      - admin-monitoring-service
-      - progress-db
+      eureka-server:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+      progress-db:
+        condition: service_healthy
     restart: on-failure
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.50"
-    networks:
-      - tesis-network
+    networks: [tesis-network]
+    logging: *default-logging
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
-  classroom-db:
-    image: postgres:17.5-alpine3.22
-    container_name: classroom-db
-    environment:
-      - POSTGRES_DB=classroomdb
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=misan
-    volumes:
-      - classroom-db-data:/var/lib/postgresql/data
-    ports:
-      - "5445:5432" # opcional (exponer al host)
-    restart: always
-    networks:
-      - tesis-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d classroomdb"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
+
   classroom-service:
     build:
       context: .
       dockerfile: ./classroom-service/Dockerfile
     container_name: classroom-service
-    ports:
-      - "8084:8084"
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
-      - CONFIG_SERVER_URL=http://config-service:8888
-      - SPRING_BOOT_ADMIN_CLIENT_URL=http://admin-monitoring-service:9090
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_SERVICE_BASE_URL=http://classroom-service:8084
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_MANAGEMENT_BASE_URL=http://classroom-service:8084
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_NAME=admin
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_PASSWORD=admin
-      # DB (apunta a classroom-db)
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://classroom-db:5432/classroomdb
-      - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=misan
-      - S2S_JWT_SECRET=${S2S_JWT_SECRET}
-      - JWT_SECRET_KEY=${JWT_SECRET}
+      SPRING_PROFILES_ACTIVE: dev
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      SPRING_BOOT_ADMIN_CLIENT_URL: http://admin-monitoring-service:9090
+      SPRING_DATASOURCE_URL: jdbc:postgresql://classroom-db:5432/classroomdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD:-misan}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+      JWT_SECRET_KEY: ${JWT_SECRET}
+    ports: ["8084:8084"]
     depends_on:
-      - eureka-server
-      - config-service
-      - admin-monitoring-service
-      - classroom-db
+      eureka-server:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+      classroom-db:
+        condition: service_healthy
     restart: on-failure
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.50"
-    networks:
-      - tesis-network
+    networks: [tesis-network]
+    logging: *default-logging
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8084/actuator/health"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8084/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 10
-  assessment-db:
-    image: postgres:17.5-alpine3.22
-    container_name: assessment-db
-    environment:
-      - POSTGRES_DB=assessmentdb
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=misan
-    volumes:
-      - assessment-db-data:/var/lib/postgresql/data
-    ports:
-      - "5446:5432" # opcional, solo si quieres exponer al host
-    restart: always
-    networks: [tesis-network]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d assessmentdb"]
-      interval: 10s
-      timeout: 3s
       retries: 10
 
   assessment-service:
@@ -364,145 +391,91 @@ services:
       context: .
       dockerfile: ./assessment-service/Dockerfile
     container_name: assessment-service
-    ports:
-      - "8085:8085"
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
-      - CONFIG_SERVER_URL=http://config-service:8888
-      - SPRING_BOOT_ADMIN_CLIENT_URL=http://admin-monitoring-service:9090
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_SERVICE_BASE_URL=http://assessment-service:8085
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_MANAGEMENT_BASE_URL=http://assessment-service:8085
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_NAME=admin
-      - SPRING_BOOT_ADMIN_CLIENT_INSTANCE_METADATA_USER_PASSWORD=admin
-      # DB (apunta a assessment-db)
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://assessment-db:5432/assessmentdb
-      - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=misan
-      # JWT (si validas tokens dentro del servicio además del gateway)
-      - JWT_SECRET=${JWT_SECRET}
-      - S2S_JWT_SECRET=${S2S_JWT_SECRET}
+      SPRING_PROFILES_ACTIVE: dev
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      SPRING_BOOT_ADMIN_CLIENT_URL: http://admin-monitoring-service:9090
+      SPRING_DATASOURCE_URL: jdbc:postgresql://assessment-db:5432/assessmentdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_ASSESSMENT_PASSWORD:-misan}
+      JWT_SECRET: ${JWT_SECRET}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+    ports: ["8085:8085"]
     depends_on:
-      - eureka-server
-      - config-service
-      - admin-monitoring-service
-      - assessment-db
+      eureka-server:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+      assessment-db:
+        condition: service_healthy
     restart: on-failure
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.50"
     networks: [tesis-network]
+    logging: *default-logging
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8085/actuator/health"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8085/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
-  # --- DB del Advisor con pgvector ---
-  advisor-db:
-    image: pgvector/pgvector:pg17
-    container_name: advisor-db
-    environment:
-      - POSTGRES_DB=advisordb
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=misan
-    volumes:
-      - advisor-db-data:/var/lib/postgresql/data
-    ports:
-      - "5447:5432" # opcional, exponer al host
-    restart: always
-    networks: [tesis-network]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d advisordb"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
 
-  # --- Redis para caché de recomendaciones/chat ---
-  advisor-redis:
-    image: redis:7-alpine
-    container_name: advisor-redis
-    ports:
-      - "6380:6379"
-    restart: always
-    networks: [tesis-network]
-
-  # --- AI Advisor (FastAPI) ---
   ai-advisor-service:
     build:
       context: ./ai-advisor-service
       dockerfile: Dockerfile
     container_name: ai-advisor-service
-    ports:
-      - "8086:8086"
     environment:
-      - ENV=dev
-      - PORT=8086
-      - DATABASE_URL=postgresql+psycopg://postgres:misan@advisor-db:5432/advisordb
-      - REDIS_URL=redis://advisor-redis:6379/0
-      - CURRICULUM_BASE_URL=http://curriculum-service:8082
-      - PROGRESS_BASE_URL=http://progress-service:8083
-      - CHAT_PERSISTENCE_ENABLED=true
-      - STRICT_JSON_UTF8=false
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - S2S_JWT_SECRET=${S2S_JWT_SECRET}
-      - PUBLIC_JWT_SECRET=${JWT_SECRET}
-      - S2S_JWT_ISSUER=ai-advisor-service
-      - RAG_TOP_K=3
-      - RECO_K=8
-      - CACHE_TTL_SECONDS=1800
-      - ALLOWED_ORIGINS=http://localhost:5173
-      - UVICORN_WORKERS=2
-      - CHAT_USE_LLM=true
-      - CHAT_LLM_MODEL=gpt-4.1-mini-2025-04-14
-      - LLM_REQUEST_TIMEOUT=12
-      - LLM_MAX_TOKENS=320
-      - LLM_TEMPERATURE=0.3
-      - OPENAI_EMBED_MODEL=text-embedding-3-small
-      - EMB_REQUEST_TIMEOUT=12
-      - RATE_LIMIT_REDIS_URL=redis://advisor-redis:6379/0
-      - RATE_LIMIT_ENABLED=true
-      - EUREKA_SERVER=http://eureka-server:8761/eureka/
-      - EUREKA_APP_NAME=AI-ADVISOR-SERVICE
-      - EUREKA_PREFER_IP=false
-      - ADVISOR_HOST=ai-advisor-service
-      - HEALTH_URL=http://ai-advisor-service:8086/healthz
-      - HOME_URL=http://ai-advisor-service:8086/docs
-      # Para indicar que el gateway enruta conf en main.py revisar ahi
-      - BEHIND_GATEWAY=true
+      ENV: dev
+      PORT: 8086
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_ADVISOR_PASSWORD:-misan}@advisor-db:5432/advisordb
+      REDIS_URL: redis://:${REDIS_PASSWORD:-devredis}@advisor-redis:6379/0
+      CURRICULUM_BASE_URL: http://curriculum-service:8082
+      PROGRESS_BASE_URL: http://progress-service:8083
+      CHAT_PERSISTENCE_ENABLED: "true"
+      STRICT_JSON_UTF8: "false"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-""}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+      PUBLIC_JWT_SECRET: ${JWT_SECRET}
+      S2S_JWT_ISSUER: ai-advisor-service
+      RAG_TOP_K: 3
+      RECO_K: 8
+      CACHE_TTL_SECONDS: 1800
+      ALLOWED_ORIGINS: http://localhost:5173
+      UVICORN_WORKERS: 2
+      CHAT_USE_LLM: "true"
+      CHAT_LLM_MODEL: gpt-4.1-mini-2025-04-14
+      LLM_REQUEST_TIMEOUT: 12
+      LLM_MAX_TOKENS: 320
+      LLM_TEMPERATURE: 0.3
+      OPENAI_EMBED_MODEL: text-embedding-3-small
+      EMB_REQUEST_TIMEOUT: 12
+      RATE_LIMIT_REDIS_URL: redis://:${REDIS_PASSWORD:-devredis}@advisor-redis:6379/0
+      RATE_LIMIT_ENABLED: "true"
+      EUREKA_SERVER: http://eureka-server:8761/eureka/
+      EUREKA_APP_NAME: AI-ADVISOR-SERVICE
+      EUREKA_PREFER_IP: "false"
+      ADVISOR_HOST: ai-advisor-service
+      HEALTH_URL: http://ai-advisor-service:8086/healthz
+      HOME_URL: http://ai-advisor-service:8086/docs
+      BEHIND_GATEWAY: "true"
+    ports: ["8086:8086"]
     depends_on:
-      - advisor-db
-      - advisor-redis
+      advisor-db:
+        condition: service_healthy
+      advisor-redis:
+        condition: service_healthy
+      curriculum-service:
+        condition: service_healthy
+      progress-service:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     restart: on-failure
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.50"
     networks: [tesis-network]
+    logging: *default-logging
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8086/healthz"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8086/healthz || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 10
-  duels-db:
-    image: postgres:17.5-alpine3.22
-    container_name: duels-db
-    environment:
-      - POSTGRES_DB=duelsdb
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=misan
-    ports:
-      - "5448:5432" # opcional en host
-    volumes:
-      - duels-db-data:/var/lib/postgresql/data
-    restart: always
-    networks: [tesis-network]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d duelsdb"]
-      interval: 10s
-      timeout: 3s
       retries: 10
 
   duels-service:
@@ -510,46 +483,44 @@ services:
       context: ./duels-service
       dockerfile: Dockerfile
     container_name: duels-service
-    ports:
-      - "8087:8087"
     environment:
-      - PORT=8087
-      - DATABASE_URL=postgresql+psycopg://postgres:misan@duels-db:5432/duelsdb
-      - REDIS_URL=redis://advisor-redis:6379/2
-      # JWT de usuarios
-      - JWT_SECRET=${JWT_SECRET}
-      - JWT_ALGS=HS512,HS384,HS256
-      # Endpoints S2S
-      - CURRICULUM_BASE=http://curriculum-service:8082
-      - PROGRESS_BASE=http://progress-service:8083
-      - CLASSROOM_BASE=http://classroom-service:8084
-      # S2S JWT (duels -> progress)
-      - S2S_JWT_SECRET=${S2S_JWT_SECRET}
-      - S2S_JWT_ISSUER=ai-advisor-service
-      # Eureka
-      - EUREKA_SERVER=http://eureka-server:8761/eureka/
-      - EUREKA_APP_NAME=DUELS-SERVICE
-      - DUELS_HOST=duels-service
-      - LOG_LEVEL=DEBUG
-      - UVICORN_LOG_LEVEL=debug
-      - HEALTH_URL=http://duels-service:8087/healthz
-      - HOME_URL=http://duels-service:8087/docs
-      # Rate limit del Duels (ya lo tienes en /1) — lo dejamos tal cual:
-      - RATE_LIMIT_REDIS_URL=redis://advisor-redis:6379/1
-      - RATE_LIMIT_MATCHES_PER_MIN=10
-      # Evitar ejercicios repetidos y otras flags:
-      - DUELS_PICK_RETRIES=5
-      - DUELS_FAIL_ON_EMPTY_ROUND=false
-      - DUELS_OPEN_MAX_AGE_H=24
+      PORT: 8087
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_DUELS_PASSWORD:-misan}@duels-db:5432/duelsdb
+      REDIS_URL: redis://:${REDIS_PASSWORD:-devredis}@advisor-redis:6379/2
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGS: HS512,HS384,HS256
+      CURRICULUM_BASE: http://curriculum-service:8082
+      PROGRESS_BASE: http://progress-service:8083
+      CLASSROOM_BASE: http://classroom-service:8084
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+      S2S_JWT_ISSUER: ai-advisor-service
+      EUREKA_SERVER: http://eureka-server:8761/eureka/
+      EUREKA_APP_NAME: DUELS-SERVICE
+      DUELS_HOST: duels-service
+      LOG_LEVEL: INFO
+      UVICORN_LOG_LEVEL: info
+      HEALTH_URL: http://duels-service:8087/healthz
+      HOME_URL: http://duels-service:8087/docs
+      RATE_LIMIT_REDIS_URL: redis://:${REDIS_PASSWORD:-devredis}@advisor-redis:6379/1
+      RATE_LIMIT_MATCHES_PER_MIN: 10
+      DUELS_PICK_RETRIES: 5
+      DUELS_FAIL_ON_EMPTY_ROUND: "false"
+      DUELS_OPEN_MAX_AGE_H: 24
+    ports: ["8087:8087"]
     depends_on:
-      - duels-db
-      - advisor-redis
-      - curriculum-service
-      - eureka-server
+      duels-db:
+        condition: service_healthy
+      advisor-redis:
+        condition: service_healthy
+      curriculum-service:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     restart: on-failure
     networks: [tesis-network]
+    logging: *default-logging
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8087/healthz"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8087/healthz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -560,49 +531,37 @@ services:
       dockerfile: Dockerfile
     image: tesis-frontend:latest
     container_name: frontend
-    ports:
-      - "80:80"
-    restart: on-failure
-    networks:
-      - tesis-network
+    ports: ["80:80"]
     depends_on:
-      - gateway-service
+      gateway-service:
+        condition: service_healthy
+    restart: on-failure
+    networks: [tesis-network]
+    logging: *default-logging
 
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: prometheus
-    ports:
-      - "9091:9090"
+    ports: ["9091:9090"]
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     restart: on-failure
     networks: [tesis-network]
+    logging: *default-logging
     depends_on:
-      - ai-advisor-service
+      ai-advisor-service:
+        condition: service_healthy
 
   grafana:
     image: grafana/grafana:10.4.2
     container_name: grafana
-    ports:
-      - "3000:3000"
+    ports: ["3000:3000"]
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
     restart: on-failure
     networks: [tesis-network]
+    logging: *default-logging
     depends_on:
-      - prometheus
-
-# --- Definición de Volúmenes ---
-volumes:
-  auth-profile-db-data:
-  content-db-data:
-  progress-db-data:
-  classroom-db-data:
-  assessment-db-data:
-  advisor-db-data:
-  duels-db-data:
-# --- Definicion de Redes ---
-networks:
-  tesis-network:
-    driver: bridge
+      prometheus:
+        condition: service_started

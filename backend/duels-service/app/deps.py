@@ -1,13 +1,18 @@
-# app/deps.py
 from __future__ import annotations
 
-from typing import Optional, Tuple, Generator, List
+from typing import Optional, Tuple, Generator, List, Deque, Dict
+import time
+from collections import deque
 import jwt
 from fastapi import Header, HTTPException, status
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from .config import DATABASE_URL, REDIS_URL, JWT_KEY_BYTES, JWT_ALGS
+from .config import (
+    DATABASE_URL, REDIS_URL, JWT_KEY_BYTES, JWT_ALGS,
+    RATE_LIMIT_MATCHES_PER_MIN, RATE_LIMIT_RESOLVE_PER_MIN,
+    REQUIRE_REDIS_IN_PROD, APP_ENV,
+)
 
 # =======================
 # DB (SQLAlchemy, 2.x)
@@ -32,7 +37,7 @@ def get_db() -> Generator:
         db.close()
 
 # =======================
-# Redis (opcional)
+# Redis (opcional, asyncio)
 # =======================
 try:
     import redis.asyncio as aioredis  # redis>=4
@@ -44,7 +49,6 @@ if REDIS_URL and aioredis is not None:
     try:
         redis = aioredis.from_url(REDIS_URL, decode_responses=True)  # type: ignore
     except Exception:
-        # Si falla la creación, dejamos redis=None para no bloquear el servicio
         redis = None
 
 async def get_redis():
@@ -55,7 +59,6 @@ async def get_redis():
 # Auth / JWT helpers
 # =======================
 def _parse_roles(obj) -> List[str]:
-    """Normaliza roles a lista 'ROLE_*' en mayúsculas."""
     if obj is None:
         return []
     if isinstance(obj, str):
@@ -86,8 +89,8 @@ def decode_jwt_token(authorization: Optional[str]) -> Tuple[str, List[str]]:
     try:
         payload = jwt.decode(
             token,
-            JWT_KEY_BYTES,               # ⬅️ clave HMAC ya decodificada
-            algorithms=JWT_ALGS,         # ⬅️ por defecto incluye HS512
+            JWT_KEY_BYTES,
+            algorithms=JWT_ALGS,
             options={"verify_aud": False},
         )
         sub = str(payload.get("sub") or payload.get("userId") or "").strip()
@@ -102,51 +105,85 @@ def decode_jwt_token(authorization: Optional[str]) -> Tuple[str, List[str]]:
 # FastAPI dependencies
 # =======================
 async def current_user(
-    # Si vienes a través del gateway, ya tendrás estas cabeceras:
     x_user_id: Optional[str] = Header(None, alias="x-user-id"),
     x_auth_roles: Optional[str] = Header(None, alias="X-Auth-Roles"),
-    # Fallback para llamadas directas (sin gateway):
     authorization: Optional[str] = Header(None),
 ) -> str:
     """
     Devuelve el userId del alumno como string.
     Exige rol STUDENT (acepta USER como alternativa laxa).
     """
-    # 1) Camino preferido: gateway inyecta el userId
     if x_user_id:
         roles = _parse_roles(x_auth_roles)
-        # Si el gateway no envía roles, no bloqueamos; si los envía, validamos
         if roles and "ROLE_STUDENT" not in roles and "ROLE_USER" not in roles:
             raise HTTPException(status_code=403, detail="Requires student role")
         return x_user_id
 
-    # 2) Fallback: token directo
     sub, roles = decode_jwt_token(authorization)
     if "ROLE_STUDENT" not in roles and "ROLE_USER" not in roles:
         raise HTTPException(status_code=403, detail="Requires student role")
     return sub
 
-# === actor genérico (docente/admin) + validador de roles ===
 async def current_actor(
     authorization: Optional[str] = Header(None),
     x_user_id: Optional[str] = Header(None, alias="x-user-id"),
     x_auth_roles: Optional[str] = Header(None, alias="X-Auth-Roles"),
 ) -> Tuple[str, List[str]]:
-    """
-    Devuelve (userId, roles[]) sin exigir STUDENT.
-    Útil para endpoints de reportes (ROLE_TEACHER / ROLE_ADMIN).
-    """
     if x_user_id:
         return x_user_id, _parse_roles(x_auth_roles)
     sub, roles = decode_jwt_token(authorization)
     return sub, roles
 
 def require_roles(roles: List[str], required: List[str]) -> None:
-    """
-    Lanza 403 si 'roles' no contiene al menos uno de 'required'.
-    Acepta forma con o sin 'ROLE_'.
-    """
     ups = {r.upper() if r.upper().startswith("ROLE_") else f"ROLE_{r.upper()}" for r in roles}
     needs = {r.upper() if r.upper().startswith("ROLE_") else f"ROLE_{r.upper()}" for r in required}
     if ups.isdisjoint(needs):
         raise HTTPException(status_code=403, detail="Requires role: " + " or ".join(required))
+
+# =======================
+# (Opcional) Rate limit centralizado
+# =======================
+_inmem_buckets: Dict[str, Deque[float]] = {}
+
+def _rate_limit_inmem(key: str, limit_per_min: int):
+    now = time.time()
+    window = 60
+    dq = _inmem_buckets.setdefault(key, deque())
+    while dq and (now - dq[0] > window):
+        dq.popleft()
+    if len(dq) >= limit_per_min:
+        raise HTTPException(status_code=429, detail="Too many requests")
+    dq.append(now)
+
+async def _rate_limit_redis(key: str, limit_per_min: int):
+    if redis is None:
+        _rate_limit_inmem(key, limit_per_min)
+        return
+    bucket = int(time.time() // 60)
+    rkey = f"rl:{key}:{bucket}"
+    val = await redis.incr(rkey)  # type: ignore
+    if val == 1:
+        await redis.expire(rkey, 65)  # type: ignore
+    if val > limit_per_min:
+        raise HTTPException(status_code=429, detail="Too many requests")
+
+def _require_redis_or_ok():
+    if REQUIRE_REDIS_IN_PROD and APP_ENV == "prod" and redis is None:
+        raise RuntimeError("Redis is required in prod but REDIS_URL is empty")
+
+async def rate_limit_create_match(user_id: str):
+    _require_redis_or_ok()
+    key = f"duels:matches:{user_id}"
+    if redis:
+        await _rate_limit_redis(key, RATE_LIMIT_MATCHES_PER_MIN)
+    else:
+        _rate_limit_inmem(key, RATE_LIMIT_MATCHES_PER_MIN)
+
+async def rate_limit_resolve(user_id: str, ip: str):
+    _require_redis_or_ok()
+    keys = (f"duels:resolve:user:{user_id}", f"duels:resolve:ip:{ip}")
+    for key in keys:
+        if redis:
+            await _rate_limit_redis(key, RATE_LIMIT_RESOLVE_PER_MIN)
+        else:
+            _rate_limit_inmem(key, RATE_LIMIT_RESOLVE_PER_MIN)

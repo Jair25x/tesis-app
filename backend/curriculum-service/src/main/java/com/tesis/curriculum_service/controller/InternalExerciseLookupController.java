@@ -16,7 +16,8 @@ import java.util.stream.Collectors;
 
 @Hidden
 @RestController
-@RequestMapping("/internal/curricula/exercises")
+// ✅ Dos bases para compatibilidad: NO creamos otro controller
+@RequestMapping({ "/internal/curricula/exercises", "/internal/exercises" })
 @RequiredArgsConstructor
 public class InternalExerciseLookupController {
 
@@ -25,7 +26,13 @@ public class InternalExerciseLookupController {
   public record ExerciseLite(UUID id, String difficulty) {
   }
 
-  @Operation(summary = "[INTERNAL] Lookup de ejercicios por IDs (id + difficulty)")
+  /*
+   * ------------------------------------------------------------------
+   * GET /internal/curricula/exercises/lookup?ids=...
+   * (se mantiene para compatibilidad con llamadas previas)
+   * ------------------------------------------------------------------
+   */
+  @Operation(summary = "[INTERNAL] Lookup de ejercicios por IDs (id + difficulty) - Querystring")
   @PreAuthorize("hasRole('INTERNAL')")
   @GetMapping("/lookup")
   public ResponseEntity<List<ExerciseLite>> lookupByIds(@RequestParam @NotBlank String ids) {
@@ -44,9 +51,60 @@ public class InternalExerciseLookupController {
     List<Exercise> found = exerciseRepository.findAllById(list);
 
     List<ExerciseLite> out = found.stream()
-        .map(e -> new ExerciseLite(e.getId(), e.getDifficulty() == null ? null : e.getDifficulty().name()))
+        .map(e -> new ExerciseLite(
+            e.getId(),
+            e.getDifficulty() == null ? null : e.getDifficulty().name() // BASIC|INTERMEDIATE|ADVANCED
+        ))
         .collect(Collectors.toList());
 
     return ResponseEntity.ok(out);
+  }
+
+  /*
+   * ------------------------------------------------------------------
+   * POST /internal/exercises/lookup
+   * Body: { "ids": ["...", "..."] }
+   * Respuesta: { "items": [ { "id": "...", "active": true|false|null,
+   * "difficulty": "EASY|MEDIUM|HARD|null" }, ... ] }
+   * → Este es el contrato que usa duels-service
+   * ------------------------------------------------------------------
+   */
+  @PostMapping("/lookup")
+  @PreAuthorize("hasRole('INTERNAL')")
+  public ResponseEntity<Map<String, Object>> lookupByJson(@RequestBody Map<String, Object> body) {
+    @SuppressWarnings("unchecked")
+    List<String> rawIds = (List<String>) body.getOrDefault("ids", List.of());
+    List<UUID> ids = new ArrayList<>();
+    for (Object o : rawIds) {
+      if (o == null)
+        continue;
+      String s = o.toString().trim();
+      if (s.isEmpty())
+        continue;
+      try {
+        ids.add(UUID.fromString(s));
+      } catch (IllegalArgumentException ex) {
+        return ResponseEntity.badRequest().body(Map.of(
+            "error", "Invalid UUID in 'ids': " + s));
+      }
+    }
+    ids = ids.stream().distinct().limit(500).toList();
+
+    if (ids.isEmpty())
+      return ResponseEntity.ok(Map.of("items", List.of()));
+    var rows = exerciseRepository.findStatusByIds(ids);
+
+    Map<UUID, ExerciseRepository.ExStatusRow> byId = new HashMap<>();
+    for (var r : rows)
+      byId.put(r.getId(), r);
+
+    var items = new ArrayList<Map<String, Object>>(ids.size());
+    for (UUID id : ids) {
+      var r = byId.get(id);
+      items.add(r == null
+          ? Map.of("id", id, "active", null, "difficulty", null)
+          : Map.of("id", id, "active", r.getActive(), "difficulty", r.getDifficultyUi()));
+    }
+    return ResponseEntity.ok(Map.of("items", items));
   }
 }
