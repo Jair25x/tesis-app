@@ -1,24 +1,23 @@
-# Etapa 1: Compilación
+# ---------- build ----------
 FROM maven:3.9.6-eclipse-temurin-21-alpine AS builder
-
 WORKDIR /app
 COPY ../pom.xml ../
 COPY ../auth-service /app
 RUN mvn -f /app/pom.xml clean package -DskipTests
 
-# Etapa 2: Ejecución
+# ---------- runtime ----------
 FROM eclipse-temurin:21-jdk-alpine
-
 WORKDIR /app
 
-# Copiar el binario dockerize desde el contexto local
 COPY ../dockerize/dockerize /usr/local/bin/dockerize
 RUN chmod +x /usr/local/bin/dockerize
 
-# Copiar el JAR compilado
-COPY --from=builder /app/target/auth-service-0.0.1-SNAPSHOT.jar app.jar
+COPY --from=builder /app/target/auth-service-0.0.1-SNAPSHOT.jar /app/app.jar
+
+# scripts
+COPY ../auth-service/scripts/entrypoint.sh /scripts/entrypoint.sh
+COPY ../scripts/preflight-env.sh /scripts/preflight-env.sh
+RUN chmod +x /scripts/*.sh
 
 EXPOSE 8081
-
-# Esperar a que config-service y eureka estén listos
-ENTRYPOINT ["sh", "-c", "dockerize -wait http://config-service:8888/actuator/health -wait http://eureka-server:8761/eureka/apps -timeout 60s -- java -jar app.jar"]
+ENTRYPOINT ["/scripts/entrypoint.sh"]

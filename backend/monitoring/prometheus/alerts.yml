@@ -1,0 +1,26 @@
+groups:
+  - name: basic-alerts
+    rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Instance {{ $labels.instance }} down"
+          description: "{{ $labels.job }} no responde."
+
+      - alert: HighHttp5xx
+        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) > 0.5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Errores 5xx altos en {{ $labels.job }}"
+          description: "Tasa > 0.5 req/s con 5xx"
+
+      - alert: RedisEvictions
+        expr: increase(redis_evicted_keys_total[5m]) > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "Redis está expulsando claves"
+          description: "Revisa memoria/límites."

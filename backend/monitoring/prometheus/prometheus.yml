@@ -1,31 +1,77 @@
 global:
   scrape_interval: 15s
-  evaluation_interval: 15s
+  evaluation_interval: 30s
+  external_labels:
+    env: prod
+
+rule_files:
+  - /etc/prometheus/alerts.yml
 
 scrape_configs:
-  # FastAPI (AI Advisor)
-  - job_name: "ai-advisor"
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["ai-advisor-service:8086"]
-
-  # Opcional: microservicios Spring (si exponen /actuator/prometheus)
+  # Java via Actuator
   - job_name: "gateway-service"
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["gateway-service:8080"]
+        labels: { app: gateway, team: core }
 
   - job_name: "progress-service"
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["progress-service:8083"]
+        labels: { app: progress, team: core }
 
   - job_name: "curriculum-service"
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["curriculum-service:8082"]
+        labels: { app: curriculum, team: core }
+
+  - job_name: "classroom-service"
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["classroom-service:8084"]
+        labels: { app: classroom, team: core }
+
+  - job_name: "assessment-service"
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["assessment-service:8085"]
+        labels: { app: assessment, team: core }
+
+  # Infra Spring
+  - job_name: "eureka-server"
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["eureka-server:8761"]
+        labels: { app: eureka, team: core }
+
+  - job_name: "config-service"
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["config-service:8888"]
+        labels: { app: config, team: core }
+
+  # FastAPI (exponen /metrics nativo)
+  - job_name: "ai-advisor"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ai-advisor-service:8086"]
+        labels: { app: ai-advisor, team: core }
 
   - job_name: "duels-service"
     metrics_path: /metrics
     static_configs:
       - targets: ["duels-service:8087"]
+        labels: { app: duels, team: core }
+
+  # Exporters opcionales (cuando los agregues)
+  # - job_name: "redis"
+  #   static_configs:
+  #     - targets: ["redis-exporter:9121"]
+  #       labels: { app: redis }
+  #
+  # - job_name: "postgres"
+  #   static_configs:
+  #     - targets: ["pg-exporter-auth:9187", "pg-exporter-duels:9187"]
+  #       labels: { app: postgres }

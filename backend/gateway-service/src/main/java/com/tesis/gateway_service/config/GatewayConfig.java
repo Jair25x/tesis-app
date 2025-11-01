@@ -6,6 +6,7 @@ import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import reactor.core.publisher.Mono;
 
@@ -16,6 +17,7 @@ public class GatewayConfig {
 
     /** Limiter “general”: 20 req/s con burst 50 */
     @Bean
+    @Primary
     public RedisRateLimiter standardLimiter() {
         return new RedisRateLimiter(20, 50);
     }

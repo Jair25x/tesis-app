@@ -1,0 +1,14 @@
+# Fuerza LF en scripts shell
+*.sh text eol=lf
+
+# Trata el binario de dockerize como binario (sin conversión de fin de línea)
+backend/dockerize/** binary
+
+# Archivos de configuración sensibles a EOL
+*.yml text eol=lf
+*.yaml text eol=lf
+*.conf text eol=lf
+Caddyfile text eol=lf
+Dockerfile text eol=lf
+*.properties text eol=lf
+*.env text eol=lf

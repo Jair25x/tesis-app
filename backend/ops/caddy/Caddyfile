@@ -1,0 +1,64 @@
+{
+  # Opcional: email para Let's Encrypt
+  email almanzajair5@gmail.com
+  # Forzar HTTP/3 si quieres
+  servers {
+    protocols h1 h2 h3
+  }
+}
+
+# --------- Frontend (app) ----------
+app.capimath.net.pe {
+  encode zstd gzip
+
+  @static {
+    path_regexp ^/(assets/.*|favicon\.ico|manifest\.json)$
+  }
+
+  # Cabeceras de seguridad básicas
+  header {
+    X-Content-Type-Options nosniff
+    X-Frame-Options SAMEORIGIN
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+
+  reverse_proxy frontend:80 {
+    # Mantén upgrade para futuras necesidades (SSE lo maneja sin special headers)
+    header_up Host {host}
+    header_up X-Forwarded-For {remote}
+    header_up X-Forwarded-Proto {scheme}
+  }
+}
+
+# --------- API (gateway) ----------
+api.capimath.net.pe {
+  encode zstd gzip
+
+  # Importante para SSE y WebSockets (no buffers largos)
+  header {
+    X-Content-Type-Options nosniff
+    X-Frame-Options SAMEORIGIN
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+
+  @ws {
+    header Connection *Upgrade*
+    header Upgrade    *websocket*
+  }
+
+  reverse_proxy gateway-service:8080 {
+    # WS/SSE friendly
+    transport http {
+      read_buffer  4096
+      write_buffer 4096
+      # timeouts altos por SSE y WS
+      read_timeout  3700s
+      write_timeout 3700s
+      dial_timeout   5s
+    }
+    header_up Host {host}
+    header_up X-Forwarded-For {remote}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-Host {host}
+  }
+}

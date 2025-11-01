@@ -13,11 +13,12 @@ RUN apk add --no-cache wget
 COPY ./dockerize/dockerize /usr/local/bin/dockerize
 RUN chmod +x /usr/local/bin/dockerize
 
-COPY --from=builder /workspace/curriculum-service/target/curriculum-service-0.0.1-SNAPSHOT.jar app.jar
-EXPOSE 8082
+COPY --from=builder /workspace/curriculum-service/target/curriculum-service-0.0.1-SNAPSHOT.jar /app/app.jar
 
-ENTRYPOINT ["sh","-c","dockerize \
-  -wait http://config-service:8888/actuator/health \
-  -wait http://eureka-server:8761/eureka/apps \
-  -wait tcp://content-db:5432 \
-  -timeout 60s -- java -jar app.jar"]
+# scripts
+COPY ./curriculum-service/scripts/entrypoint.sh /scripts/entrypoint.sh
+COPY ./scripts/preflight-env.sh /scripts/preflight-env.sh
+RUN chmod +x /scripts/*.sh
+
+EXPOSE 8082
+ENTRYPOINT ["/scripts/entrypoint.sh"]

@@ -1,209 +1,472 @@
 version: "3.9"
+name: tesis-app
+
+networks:
+  tesis-network:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
+  backups:
+  auth-profile-db-data:
+  content-db-data:
+  progress-db-data:
+  classroom-db-data:
+  assessment-db-data:
+  advisor-db-data:
+  duels-db-data:
+  redis-data:
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
-  # === Externos expuestos ===
+  # === Reverse proxy TLS (único expuesto) ===
+  caddy:
+    image: caddy:2.8
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - gateway-service
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+
+  # === Frontend (interno; Caddy lo publica) ===
+  frontend:
+    image: ghcr.io/tuorg/tesis-frontend:prod-YYYYMMDD-HHMM   # <— usa tags inmutables
+    container_name: frontend
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: "256M"
+
+  # === Gateway (interno; Caddy lo publica en api.) ===
   gateway-service:
-    image: ghcr.io/tuorg/gateway-service:1.0.0
+    image: ghcr.io/tuorg/gateway-service:prod-YYYYMMDD-HHMM
+    container_name: gateway-service
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_HOST: advisor-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+    depends_on:
+      eureka-server:
+        condition: service_started
+      config-service:
+        condition: service_started
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: "512M"
+
+  # === Eureka (interno) ===
+  eureka-server:
+    image: ghcr.io/tuorg/eureka-server:prod-YYYYMMDD-HHMM
+    container_name: eureka-server
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+
+  # === Config Server (interno) ===
+  config-service:
+    image: ghcr.io/tuorg/config-service:prod-YYYYMMDD-HHMM
+    container_name: config-service
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+
+  # === Redis endurecido (interno) ===
+  advisor-redis:
+    image: redis:7-alpine
+    container_name: advisor-redis
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - ./ops/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+
+  # === Postgres por servicio (internos, sin puertos) ===
+  auth-profile-db:
+    image: postgres:17.5-alpine3.22
+    container_name: auth-profile-db
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
+      POSTGRES_DB: tesisdb_auth
+    volumes: [ "auth-profile-db-data:/var/lib/postgresql/data" ]
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tesisdb_auth"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  content-db:
+    image: postgres:17.5-alpine3.22
+    container_name: content-db
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_CONTENT_PASSWORD}
+      POSTGRES_DB: contentdb
+    volumes: [ "content-db-data:/var/lib/postgresql/data" ]
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d contentdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  progress-db:
+    image: postgres:17.5-alpine3.22
+    container_name: progress-db
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PROGRESS_PASSWORD}
+      POSTGRES_DB: progressdb
+    volumes: [ "progress-db-data:/var/lib/postgresql/data" ]
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d progressdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  classroom-db:
+    image: postgres:17.5-alpine3.22
+    container_name: classroom-db
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD}
+      POSTGRES_DB: classroomdb
+    volumes: [ "classroom-db-data:/var/lib/postgresql/data" ]
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d classroomdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  assessment-db:
+    image: postgres:17.5-alpine3.22
+    container_name: assessment-db
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ASSESSMENT_PASSWORD}
+      POSTGRES_DB: assessmentdb
+    volumes: [ "assessment-db-data:/var/lib/postgresql/data" ]
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d assessmentdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  advisor-db:
+    image: pgvector/pgvector:pg17
+    container_name: advisor-db
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ADVISOR_PASSWORD}
+      POSTGRES_DB: advisordb
+    volumes: [ "advisor-db-data:/var/lib/postgresql/data" ]
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d advisordb"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  duels-db:
+    image: postgres:17.5-alpine3.22
+    container_name: duels-db
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_DUELS_PASSWORD}
+      POSTGRES_DB: duelsdb
+    volumes: [ "duels-db-data:/var/lib/postgresql/data" ]
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d duelsdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # === Microservicios Java (internos; los ve el gateway) ===
+  auth-service:
+    image: ghcr.io/tuorg/auth-service:prod-YYYYMMDD-HHMM
+    container_name: auth-service
     environment:
       SPRING_PROFILES_ACTIVE: prod
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       CONFIG_SERVER_URL: http://config-service:8888
-      JWT_SECRET: ${JWT_SECRET}
-    ports:
-      - "8080:8080" # si pones proxy delante, quítalo y publica el proxy
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 768M
-    restart: unless-stopped
-    depends_on:
-      eureka-server:
-        condition: service_healthy
-      config-service:
-        condition: service_healthy
-    logging:
-      driver: "json-file"
-      options: { max-size: "10m", max-file: "5" }
-
-  frontend:
-    image: ghcr.io/tuorg/tesis-frontend:1.0.0
-    ports:
-      - "80:80" # si usas proxy TLS: publica el proxy y deja esto interno
-    restart: unless-stopped
-    depends_on:
-      gateway-service:
-        condition: service_healthy
-    logging:
-      driver: "json-file"
-      options: { max-size: "10m", max-file: "3" }
-
-  # === Infra / internos no expuestos ===
-  advisor-redis:
-    image: redis:7-alpine
-    command: >
-      sh -c "echo 'appendonly yes' > /etc/redis.conf
-      && echo 'save 60 1000' >> /etc/redis.conf
-      && echo 'requirepass ${REDIS_PASSWORD}' >> /etc/redis.conf
-      && redis-server /etc/redis.conf"
-    ports: []      # no expuesto
-    restart: unless-stopped
-    logging: { driver: "json-file", options: { max-size: "10m", max-file: "3" } }
-
-  # DBs Postgres — sin puertos
-  auth-profile-db:
-    ports: []
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
-
-  content-db:
-    ports: []
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_CONTENT_PASSWORD}
-
-  progress-db:
-    ports: []
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PROGRESS_PASSWORD}
-
-  classroom-db:
-    ports: []
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD}
-
-  assessment-db:
-    ports: []
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_ASSESSMENT_PASSWORD}
-
-  advisor-db:
-    ports: []
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_ADVISOR_PASSWORD}
-
-  duels-db:
-    ports: []
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_DUELS_PASSWORD}
-
-  # Microservicios (imágenes versionadas)
-  auth-service:
-    image: ghcr.io/tuorg/auth-service:1.0.0
-    environment:
-      SPRING_PROFILES_ACTIVE: prod
+      ADMIN_MONITORING_URL: http://admin-monitoring-service:9090
+      SPRING_DATASOURCE_URL: jdbc:postgresql://auth-profile-db:5432/tesisdb_auth
+      SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
       JWT_SECRET: ${JWT_SECRET}
-    ports: [] # interno
-    restart: unless-stopped
     depends_on:
       auth-profile-db:
         condition: service_healthy
+      config-service:
+        condition: service_started
+      eureka-server:
+        condition: service_started
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
 
   curriculum-service:
-    image: ghcr.io/tuorg/curriculum-service:1.0.0
+    image: ghcr.io/tuorg/curriculum-service:prod-YYYYMMDD-HHMM
+    container_name: curriculum-service
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      ADMIN_MONITORING_URL: http://admin-monitoring-service:9090
+      SPRING_DATASOURCE_URL: jdbc:postgresql://content-db:5432/contentdb
+      SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_CONTENT_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
-    ports: []
-    restart: unless-stopped
+      S2S_JWT_ISSUER: ai-advisor-service
     depends_on:
       content-db:
         condition: service_healthy
+      config-service:
+        condition: service_started
+      eureka-server:
+        condition: service_started
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
 
   progress-service:
-    image: ghcr.io/tuorg/progress-service:1.0.0
+    image: ghcr.io/tuorg/progress-service:prod-YYYYMMDD-HHMM
+    container_name: progress-service
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      ADMIN_MONITORING_URL: http://admin-monitoring-service:9090
+      SPRING_DATASOURCE_URL: jdbc:postgresql://progress-db:5432/progressdb
+      SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PROGRESS_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
-    ports: []
-    restart: unless-stopped
     depends_on:
       progress-db:
         condition: service_healthy
+      config-service:
+        condition: service_started
+      eureka-server:
+        condition: service_started
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
 
   classroom-service:
-    image: ghcr.io/tuorg/classroom-service:1.0.0
+    image: ghcr.io/tuorg/classroom-service:prod-YYYYMMDD-HHMM
+    container_name: classroom-service
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      ADMIN_MONITORING_URL: http://admin-monitoring-service:9090
+      SPRING_DATASOURCE_URL: jdbc:postgresql://classroom-db:5432/classroomdb
+      SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD}
       JWT_SECRET_KEY: ${JWT_SECRET}
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
-    ports: []
-    restart: unless-stopped
     depends_on:
       classroom-db:
         condition: service_healthy
+      config-service:
+        condition: service_started
+      eureka-server:
+        condition: service_started
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
 
   assessment-service:
-    image: ghcr.io/tuorg/assessment-service:1.0.0
+    image: ghcr.io/tuorg/assessment-service:prod-YYYYMMDD-HHMM
+    container_name: assessment-service
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      CONFIG_SERVER_URL: http://config-service:8888
+      ADMIN_MONITORING_URL: http://admin-monitoring-service:9090
+      SPRING_DATASOURCE_URL: jdbc:postgresql://assessment-db:5432/assessmentdb
+      SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_ASSESSMENT_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
-    ports: []
-    restart: unless-stopped
     depends_on:
       assessment-db:
         condition: service_healthy
+      config-service:
+        condition: service_started
+      eureka-server:
+        condition: service_started
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
 
+  # === FastAPI (internos) ===
   ai-advisor-service:
-    image: ghcr.io/tuorg/ai-advisor-service:1.0.0
+    image: ghcr.io/tuorg/ai-advisor-service:prod-YYYYMMDD-HHMM
+    container_name: ai-advisor-service
     environment:
       ENV: prod
+      PORT: 8086
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_ADVISOR_PASSWORD}@advisor-db:5432/advisordb
       REDIS_URL: redis://:${REDIS_PASSWORD}@advisor-redis:6379/0
       RATE_LIMIT_REDIS_URL: redis://:${REDIS_PASSWORD}@advisor-redis:6379/0
-      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_ADVISOR_PASSWORD}@advisor-db:5432/advisordb
-      PUBLIC_JWT_SECRET: ${JWT_SECRET}
-      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
-      ALLOWED_ORIGINS: https://tu-dominio.com
-      CHAT_USE_LLM: "true"
+      CURRICULUM_BASE_URL: http://curriculum-service:8082
+      PROGRESS_BASE_URL: http://progress-service:8083
+      CHAT_PERSISTENCE_ENABLED: "true"
+      STRICT_JSON_UTF8: "false"
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+      PUBLIC_JWT_SECRET: ${JWT_SECRET}
+      S2S_JWT_ISSUER: ai-advisor-service
+      RAG_TOP_K: 3
+      RECO_K: 8
+      CACHE_TTL_SECONDS: 1800
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      UVICORN_WORKERS: 2
+      CHAT_USE_LLM: "true"
+      LLM_REQUEST_TIMEOUT: 12
+      LLM_MAX_TOKENS: 320
+      LLM_TEMPERATURE: 0.3
+      OPENAI_EMBED_MODEL: text-embedding-3-small
+      EMB_REQUEST_TIMEOUT: 12
       BEHIND_GATEWAY: "true"
-    ports: []
-    restart: unless-stopped
     depends_on:
       advisor-db:
         condition: service_healthy
       advisor-redis:
-        condition: service_healthy
+        condition: service_started
+      curriculum-service:
+        condition: service_started
+      progress-service:
+        condition: service_started
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
 
   duels-service:
-    image: ghcr.io/tuorg/duels-service:1.0.0
+    image: ghcr.io/tuorg/duels-service:prod-YYYYMMDD-HHMM
+    container_name: duels-service
     environment:
       PORT: 8087
       DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_DUELS_PASSWORD}@duels-db:5432/duelsdb
       REDIS_URL: redis://:${REDIS_PASSWORD}@advisor-redis:6379/2
       RATE_LIMIT_REDIS_URL: redis://:${REDIS_PASSWORD}@advisor-redis:6379/1
       JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGS: HS512,HS384,HS256
       CURRICULUM_BASE: http://curriculum-service:8082
       PROGRESS_BASE: http://progress-service:8083
       CLASSROOM_BASE: http://classroom-service:8084
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
+      S2S_JWT_ISSUER: ai-advisor-service
       DUELS_PICK_RETRIES: 5
       DUELS_FAIL_ON_EMPTY_ROUND: "false"
       DUELS_OPEN_MAX_AGE_H: 24
       LOG_LEVEL: INFO
       UVICORN_LOG_LEVEL: info
-    ports: []
-    restart: unless-stopped
+      BEHIND_GATEWAY: "true"
     depends_on:
       duels-db:
         condition: service_healthy
       advisor-redis:
-        condition: service_healthy
-
-  prometheus:
-    image: prom/prometheus:v2.54.1
-    ports: ["9091:9090"]   # opcional en prod (restringe con firewall)
+        condition: service_started
+      curriculum-service:
+        condition: service_started
+    networks: [tesis-network]
     restart: unless-stopped
+    logging: *default-logging
+
+  # === Monitoring (interno) ===
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: prometheus
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    networks: [tesis-network]
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - gateway-service
 
   grafana:
-    image: grafana/grafana:10.4.2
-    ports: ["3000:3000"]   # idem
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+    networks: [tesis-network]
     restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - prometheus
