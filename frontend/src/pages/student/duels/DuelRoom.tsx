@@ -604,6 +604,12 @@ const DuelRoom: React.FC = () => {
     [playersMap, readyIds, myId]
   );
 
+  // Helper UI: barra respondidos/total
+  const respondedPct = useMemo(() => {
+    if (respondedTotal <= 0) return 0;
+    return Math.min(100, Math.max(0, (responded / respondedTotal) * 100));
+  }, [responded, respondedTotal]);
+
   return (
     <div className="mx-auto max-w-3xl p-4">
       <header className="mb-3 flex items-center justify-between gap-3">
@@ -615,6 +621,7 @@ const DuelRoom: React.FC = () => {
                 ? "bg-emerald-100 text-emerald-800"
                 : "bg-amber-100 text-amber-800"
             }`}
+            aria-live="polite"
           >
             {connected ? "Conectado" : "Reconectando…"}
           </span>
@@ -706,6 +713,7 @@ const DuelRoom: React.FC = () => {
                         : "bg-gray-100 text-gray-600"
                     }`}
                     title={p.ready ? "Listo" : "No listo"}
+                    aria-label={p.ready ? "Listo" : "No listo"}
                   >
                     {p.ready ? "✔ Listo" : "Pendiente"}
                   </span>
@@ -843,16 +851,26 @@ const DuelRoom: React.FC = () => {
             </div>
           )}
 
-          {/* Progreso global */}
+          {/* Progreso global (barra + contador) */}
           {(responded > 0 || respondedTotal > 0) && (
-            <div className="text-xs sm:text-sm opacity-80">
-              Participantes que respondieron: <b>{responded}</b>
-              {respondedTotal > 0 ? (
-                <>
-                  {" "}
-                  / <b>{respondedTotal}</b>
-                </>
-              ) : null}
+            <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+              <div className="flex items-center justify-between text-xs sm:text-sm">
+                <span className="opacity-80">Respuestas recibidas</span>
+                <span className="font-mono">
+                  {responded}/{respondedTotal}
+                </span>
+              </div>
+              <div className="mt-2 h-2 w-full rounded bg-gray-200 dark:bg-gray-700">
+                <div
+                  className="h-2 rounded bg-blue-500 transition-all"
+                  style={{ width: `${respondedPct}%` }}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(respondedPct)}
+                  role="progressbar"
+                  aria-label="Progreso de respuestas de los participantes"
+                />
+              </div>
             </div>
           )}
 
@@ -895,7 +913,7 @@ const DuelRoom: React.FC = () => {
               params={exercise.params}
               submissionKey={submissionKey}
               onSubmit={onSubmit}
-              // ⬇️ FIX: permitir envío cuando no hay deadline (o mientras queda tiempo) y no se ha enviado aún
+              // ⬇️ permitir envío cuando no hay deadline (o mientras queda tiempo) y no se ha enviado aún
               disabled={
                 !(
                   status === "ROUND" &&

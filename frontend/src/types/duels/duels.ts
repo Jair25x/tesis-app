@@ -1,4 +1,4 @@
-// types/duels/duels.ts
+// src/types/duels/duels.ts
 import type { TemplateType } from "../exercise/TemplateSchemaResponse";
 
 export type DuelState = "WAITING" | "COUNTDOWN" | "ROUND" | "RESULTS";
@@ -78,6 +78,7 @@ export type AnswerProgressMsg = {
 
 export type ClientMsg =
   | { type: "ready" }
+  | { type: "pong" }
   | {
       type: "answer";
       round: number;

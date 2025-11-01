@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from ..deps import SessionLocal
+from ..deps import redis as redis_client  # opcional (puede ser None)
 from ..models import Match, Round, RoundConfig, RoundPick, Answer, DuelRating, MatchPlayer
 from ..metrics import duels_round_duration_seconds, duels_answers_total
 from ..clients.curriculum import check_answer
@@ -34,6 +35,22 @@ def _env_bool(name: str, default: str = "false") -> bool:
 FAIL_ON_EMPTY_ROUND = _env_bool("DUELS_FAIL_ON_EMPTY_ROUND", "false")
 NO_PARTICIPATION_RETRY = 0 if FAIL_ON_EMPTY_ROUND else 1  # reintentos por ronda si nadie responde
 PICK_RETRIES = max(0, int(os.getenv("DUELS_PICK_RETRIES", "5") or "5"))  # reintentos para evitar duplicados
+
+# -----------------------
+# Claves Redis (opcional)
+# -----------------------
+REDIS_TTL_SECONDS = 2 * 60 * 60  # 2h: suficiente para una sesión larga
+
+def _r_key_base(match_id: str, n: int, q_index: int) -> str:
+    return f"duels:{match_id}:r{n}:q{q_index}"
+
+def _r_key_set(match_id: str, n: int, q_index: int) -> str:
+    # quiénes ya respondieron (SET)
+    return _r_key_base(match_id, n, q_index) + ":responders"
+
+def _r_key_list(match_id: str, n: int, q_index: int) -> str:
+    # orden de llegada (LIST)
+    return _r_key_base(match_id, n, q_index) + ":queue"
 
 # -------------------------------------------------------------------
 # Short code & CRUD
@@ -383,6 +400,8 @@ class Room:
     keepalive_tasks: Dict[str, asyncio.Task] = field(default_factory=dict)
     # NUEVO: total de participantes del match (preciso, no solo conectados)
     participants_total: int = 0
+    # Cache liviana para no spamear WS con payloads idénticos
+    _last_progress_payload: Optional[str] = None
 
 ROOMS: Dict[str, Room] = {}
 ROOMS_LOCK = asyncio.Lock()
@@ -463,29 +482,127 @@ async def _keepalive(ws: WebSocket, user_id: str):
         pass
 
 # -------------------------------------------------------------------
-# WS readers por conexión
+# Progreso (DB/Redis)
 # -------------------------------------------------------------------
-async def _reader_task(room: Room, user_id: str, ws: WebSocket):
-    async def _broadcast_progress(n: int, q_index: int):
-        """Emite progreso respondido X/Y para la sub-pregunta actual."""
+async def _progress_clear(room: Room, n: int, q_index: int):
+    # limpia cache local
+    room._last_progress_payload = None
+    # limpia redis si existe
+    if redis_client is not None:
+        try:
+            kset = _r_key_set(room.match_id, n, q_index)
+            klist = _r_key_list(room.match_id, n, q_index)
+            await redis_client.delete(kset, klist)  # type: ignore
+        except Exception:
+            pass
+
+async def _progress_register_answer(room: Room, n: int, q_index: int, user_id: str):
+    """Registra en Redis (si existe) la respuesta para mantener orden y set únicos."""
+    if redis_client is None:
+        return
+    try:
+        pipe = redis_client.pipeline()  # type: ignore
+        kset = _r_key_set(room.match_id, n, q_index)
+        klist = _r_key_list(room.match_id, n, q_index)
+        # SADD devuelve 1 si se añadió; sólo en ese caso push a lista
+        pipe.sadd(kset, user_id)
+        pipe.expire(kset, REDIS_TTL_SECONDS)
+        sadd_res, _ = await pipe.execute()
+        if sadd_res == 1:
+            # new user in set -> anotar orden
+            t_ms = 0
+            if room.question_t0 is not None:
+                t_ms = max(0, int((time.perf_counter() - room.question_t0) * 1000))
+            entry = json.dumps({"id": user_id, "tMs": t_ms})
+            pipe = redis_client.pipeline()  # type: ignore
+            pipe.rpush(klist, entry)
+            pipe.expire(klist, REDIS_TTL_SECONDS)
+            await pipe.execute()
+    except Exception:
+        pass
+
+def _user_name(room: Room, uid: str) -> str:
+    return room.names.get(uid) or f"Jugador {uid[:4]}"
+
+async def _progress_snapshot(room: Room, n: int, q_index: int) -> Dict:
+    """
+    Devuelve {'responded': X, 'total': Y, 'queue': [{'id','name','tMs'}...]}
+    - Si Redis existe: lee SET/LIST y arma cola.
+    - Si no: consulta DB (Answer) ordenado por created_at y arma cola.
+    """
+    total = room.participants_total or max(1, len(room.members))
+    queue: List[Dict[str, str | int]] = []
+    responded_ids: List[str] = []
+
+    if redis_client is not None:
+        try:
+            kset = _r_key_set(room.match_id, n, q_index)
+            klist = _r_key_list(room.match_id, n, q_index)
+            # leer lista (orden)
+            entries = await redis_client.lrange(klist, 0, -1)  # type: ignore
+            for e in entries or []:
+                try:
+                    obj = json.loads(e)
+                    uid = str(obj.get("id"))
+                    tms = int(obj.get("tMs", 0))
+                    responded_ids.append(uid)
+                    queue.append({"id": uid, "name": _user_name(room, uid), "tMs": tms})
+                except Exception:
+                    continue
+            # si por algún motivo lista vacía, usar el set
+            if not queue:
+                s_ids = await redis_client.smembers(kset)  # type: ignore
+                for uid in s_ids or []:
+                    responded_ids.append(uid)
+                    # sin tMs exacto; aproximar desde ahora si hay question_t0
+                    tms = 0
+                    if room.question_t0 is not None:
+                        tms = max(0, int((time.perf_counter() - room.question_t0) * 1000))
+                    queue.append({"id": uid, "name": _user_name(room, uid), "tMs": tms})
+        except Exception:
+            # fallback a DB
+            pass
+
+    if not queue:
+        # Fallback sin Redis: DB
         dbp = SessionLocal()
         try:
-            a_rows = dbp.query(Answer).filter_by(
-                match_id=room.match_id, n=n, q_index=q_index
-            ).all()
-            responded = len({str(a.student_id) for a in a_rows})
+            a_rows = (
+                dbp.query(Answer)
+                .filter_by(match_id=room.match_id, n=n, q_index=q_index)
+                .order_by(Answer.created_at.asc())
+                .all()
+            )
+            for a in a_rows:
+                uid = str(a.student_id)
+                responded_ids.append(uid)
+                tms = int(a.time_ms or 0)
+                queue.append({"id": uid, "name": _user_name(room, uid), "tMs": tms})
         finally:
             dbp.close()
 
-        total = room.participants_total or max(1, len(room.members))
-        await _broadcast(room, {
-            "type": "answer_progress",
-            "round": n,
-            "qIndex": q_index,
-            "responded": int(responded),
-            "total": int(total),
-        })
+    responded = len(set(responded_ids))
+    return {"responded": int(responded), "total": int(total), "queue": queue}
 
+async def _broadcast_progress(room: Room, n: int, q_index: int):
+    snap = await _progress_snapshot(room, n, q_index)
+    payload = {
+        "type": "answer_progress",
+        "round": n,
+        "qIndex": q_index,
+        **snap,
+    }
+    # evitar spam con payload idéntico
+    enc = json.dumps(payload, sort_keys=True)
+    if room._last_progress_payload == enc:
+        return
+    room._last_progress_payload = enc
+    await _broadcast(room, payload)
+
+# -------------------------------------------------------------------
+# WS readers por conexión
+# -------------------------------------------------------------------
+async def _reader_task(room: Room, user_id: str, ws: WebSocket):
     while True:
         try:
             msg = await ws.receive_text()
@@ -623,9 +740,15 @@ async def _reader_task(room: Room, user_id: str, ws: WebSocket):
             finally:
                 db.close()
 
-            # Telemetría X/Y
+            # Registrar progreso (Redis si hay, si no DB)
             try:
-                await _broadcast_progress(n, q_index)
+                await _progress_register_answer(room, n, q_index, user_id)
+            except Exception:
+                pass
+
+            # Telemetría X/Y (+ cola)
+            try:
+                await _broadcast_progress(room, n, q_index)
             except Exception:
                 log.exception("answer_progress broadcast failed match=%s n=%s q=%s",
                               room.match_id, n, q_index)
@@ -933,6 +1056,7 @@ async def _orchestrator(room: Room):
                 exercise_id,
             )
 
+            await _progress_clear(room, n, q)  # 🧹 reset progreso (Redis + cache)
             await _broadcast(room, {
                 "type": "round_start",
                 "round": n,
@@ -941,6 +1065,8 @@ async def _orchestrator(room: Room):
                 "qIndex": q,
                 "qTotal": room.q_total,
             })
+            # Enviar progreso inicial vacío (0/total, cola=[])
+            await _broadcast_progress(room, n, q)
 
             deadline = time.perf_counter() + (qtime_ms / 1000.0)
 
@@ -949,25 +1075,49 @@ async def _orchestrator(room: Room):
             while time.perf_counter() < deadline:
                 if room.closed:
                     return
-                db = SessionLocal()
-                try:
-                    a_rows = db.query(Answer).filter_by(match_id=room.match_id, n=n, q_index=q).all()
-                    got = {str(a.student_id) for a in a_rows}
-                    if len(got) != last_seen:
-                        last_seen = len(got)
+                # Si hay Redis no hace falta ir a DB cada 100 ms; sólo se compara responded para cortar
+                responded_now = None
+                if redis_client is not None:
+                    try:
+                        kset = _r_key_set(room.match_id, n, q)
+                        responded_now = await redis_client.scard(kset)  # type: ignore
+                    except Exception:
+                        responded_now = None
+
+                if responded_now is None:
+                    # Fallback DB para saber si todos ya respondieron
+                    db = SessionLocal()
+                    try:
+                        a_rows = db.query(Answer).filter_by(match_id=room.match_id, n=n, q_index=q).all()
+                        got = {str(a.student_id) for a in a_rows}
+                        if len(got) != last_seen:
+                            last_seen = len(got)
+                            log.debug(
+                                "ANSWERS match=%s n=%s q=%s received=%s of %s",
+                                room.match_id,
+                                n,
+                                q,
+                                last_seen,
+                                len(score),
+                            )
+                        if got.issuperset(set(score.keys())):
+                            log.info("Q_DONE_ALL match=%s n=%s q=%s total=%s", room.match_id, n, q, len(got))
+                            break
+                    finally:
+                        db.close()
+                else:
+                    # Con Redis: si responded_now == total -> cortar
+                    total_need = len(score)
+                    if responded_now != last_seen:
+                        last_seen = responded_now
                         log.debug(
-                            "ANSWERS match=%s n=%s q=%s received=%s of %s",
-                            room.match_id,
-                            n,
-                            q,
-                            last_seen,
-                            len(score),
+                            "ANSWERS(REDIS) match=%s n=%s q=%s received=%s of %s",
+                            room.match_id, n, q, last_seen, total_need
                         )
-                    if got.issuperset(set(score.keys())):
-                        log.info("Q_DONE_ALL match=%s n=%s q=%s total=%s", room.match_id, n, q, len(got))
+                    if responded_now >= total_need:
+                        log.info("Q_DONE_ALL(REDIS) match=%s n=%s q=%s total=%s", room.match_id, n, q, responded_now)
                         break
-                finally:
-                    db.close()
+
                 await asyncio.sleep(0.1)
 
             await asyncio.sleep(0.15)
@@ -1161,6 +1311,13 @@ async def ws_lobby(ws: WebSocket, user_id: str, user_name: Optional[str] = None)
         room.keepalive_tasks[user_id] = ka
 
     await _send_state(room)
+
+    # Si ya hay una sub-pregunta activa, emite progreso actual al nuevo cliente
+    if room.round_no > 0 and room.q_index > 0:
+        try:
+            await _broadcast_progress(room, room.round_no, room.q_index)
+        except Exception:
+            pass
 
     reader = asyncio.create_task(_reader_task(room, user_id, ws))
 

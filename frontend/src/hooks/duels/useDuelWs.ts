@@ -218,14 +218,9 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
         try {
           const unknownParsed: unknown = JSON.parse(ev.data);
 
-          // —— ping/pong lightweight ——
+          // —— ping/pong lightweight —— (responder usando send tipado)
           if (isRecord(unknownParsed) && unknownParsed.type === "ping") {
-            // responder "pong" y no pasar al reducer
-            try {
-              ws.send(JSON.stringify({ type: "pong" }));
-            } catch {
-              /* noop */
-            }
+            send({ type: "pong" });
             return;
           }
 
@@ -267,7 +262,7 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
       }
       wsRef.current = null;
     };
-  }, [enabled, url]);
+  }, [enabled, url, send]);
 
   return { connected, lastMsg, send };
 }

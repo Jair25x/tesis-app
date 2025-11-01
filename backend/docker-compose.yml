@@ -515,9 +515,8 @@ services:
     environment:
       - PORT=8087
       - DATABASE_URL=postgresql+psycopg://postgres:misan@duels-db:5432/duelsdb
-      # Pendiente de implementacion
-      - REDIS_URL=
-      # JWT de usuarios (el mismo que el gateway/otros)
+      - REDIS_URL=redis://advisor-redis:6379/2
+      # JWT de usuarios
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGS=HS512,HS384,HS256
       # Endpoints S2S
@@ -527,7 +526,7 @@ services:
       # S2S JWT (duels -> progress)
       - S2S_JWT_SECRET=${S2S_JWT_SECRET}
       - S2S_JWT_ISSUER=ai-advisor-service
-      # Eureka (opcional pero recomendado para homogeneidad)
+      # Eureka
       - EUREKA_SERVER=http://eureka-server:8761/eureka/
       - EUREKA_APP_NAME=DUELS-SERVICE
       - DUELS_HOST=duels-service
@@ -535,13 +534,12 @@ services:
       - UVICORN_LOG_LEVEL=debug
       - HEALTH_URL=http://duels-service:8087/healthz
       - HOME_URL=http://duels-service:8087/docs
+      # Rate limit del Duels (ya lo tienes en /1) — lo dejamos tal cual:
       - RATE_LIMIT_REDIS_URL=redis://advisor-redis:6379/1
       - RATE_LIMIT_MATCHES_PER_MIN=10
-       # ── NUEVO: reintentos para evitar ejercicios repetidos (default 5)
+      # Evitar ejercicios repetidos y otras flags:
       - DUELS_PICK_RETRIES=5
-      # ── Opcional: si quieres que una ronda sin participación falle el match en vez de reintentarla 1 vez
       - DUELS_FAIL_ON_EMPTY_ROUND=false
-      # ── Ventana para listar duelos abiertos
       - DUELS_OPEN_MAX_AGE_H=24
     depends_on:
       - duels-db
