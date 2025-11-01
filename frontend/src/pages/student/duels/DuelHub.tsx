@@ -1,5 +1,5 @@
 // pages/student/duels/DuelHub.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../../context/useAuth";
 import {
@@ -30,10 +30,11 @@ type OpenMatchItem = {
   maxPlayers: number;
 };
 
+const REFRESH_MS = 30_000;
+
 const DuelHub: React.FC = () => {
   const nav = useNavigate();
   const { user, isAuthenticated } = useAuth();
-  const token = getAccessToken() || "";
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -66,7 +67,6 @@ const DuelHub: React.FC = () => {
   const toastError = useToastError(setErr);
   const toastJoinError = useToastError(setJoinErr);
 
-  // Nombre amigable
   const playerName = useMemo(() => {
     const raw =
       (user?.nombres || "").trim() ||
@@ -76,13 +76,19 @@ const DuelHub: React.FC = () => {
     return raw.split(" ")[0];
   }, [user?.nombres, user?.username, user?.email]);
 
+  // Carga inicial (summary, history, open matches)
   useEffect(() => {
-    if (!isAuthenticated || !token) return;
+    if (!isAuthenticated) return;
     let canceled = false;
 
     const run = async () => {
       setBusy(true);
       setErr(null);
+      const token = getAccessToken();
+      if (!token) {
+        setBusy(false);
+        return;
+      }
       try {
         const [s, h, opens] = await Promise.all([
           getMyDuelSummary(token),
@@ -95,16 +101,20 @@ const DuelHub: React.FC = () => {
           setOpenMatches(opens);
         }
       } catch (e) {
-        if (!canceled) toastError(e, "No se pudo cargar tu resumen de duelos.");
+        if (!canceled) {
+          // silencioso: banner discreto
+          toastError(e, "No se pudo cargar tu resumen de duelos.");
+        }
       } finally {
         if (!canceled) setBusy(false);
       }
     };
     void run();
+
     return () => {
       canceled = true;
     };
-  }, [isAuthenticated, token, toastError]);
+  }, [isAuthenticated, toastError]);
 
   const goJoinByCode = async () => {
     const code = joinCode.trim().toUpperCase();
@@ -113,6 +123,7 @@ const DuelHub: React.FC = () => {
       toastJoinError("Ingresa un código válido (4–12 caracteres).");
       return;
     }
+    const token = getAccessToken();
     if (!token) {
       toastJoinError("No hay sesión activa.");
       return;
@@ -128,18 +139,37 @@ const DuelHub: React.FC = () => {
     }
   };
 
-  const refreshOpens = async () => {
+  const refreshOpens = async (silent = false) => {
+    const token = getAccessToken();
     if (!token) return;
     try {
-      setBusy(true);
+      if (!silent) setBusy(true);
       const items = await listOpenMatches(token);
       setOpenMatches(items);
     } catch (e) {
-      toastError(e, "No se pudo actualizar la lista.");
+      if (!silent) toastError(e, "No se pudo actualizar la lista.");
     } finally {
-      setBusy(false);
+      if (!silent) setBusy(false);
     }
   };
+
+  // Auto-refresh de salas públicas (silencioso)
+  const refreshTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    // configura intervalo solo si autenticado
+    if (!isAuthenticated) return;
+    // primera ejecución silenciosa
+    void refreshOpens(true);
+    refreshTimerRef.current = window.setInterval(() => {
+      void refreshOpens(true);
+    }, REFRESH_MS);
+    return () => {
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+    };
+  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
@@ -174,13 +204,15 @@ const DuelHub: React.FC = () => {
       {/* Join by code inline */}
       <div className="mb-6 rounded-2xl border bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <label className="text-sm font-medium sm:w-48">
+          <label className="text-sm font-medium sm:w-48" htmlFor="join-code">
             Unirme por código
           </label>
           <div className="flex w-full flex-col gap-2 sm:flex-row">
             <input
+              id="join-code"
               type="text"
               inputMode="text"
+              aria-label="Código de duelo"
               autoCapitalize="characters"
               autoCorrect="off"
               spellCheck={false}
@@ -224,9 +256,9 @@ const DuelHub: React.FC = () => {
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-emerald-500 text-3xl text-white shadow">
               🛡️
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="text-sm opacity-70">Tu personaje</div>
-              <div className="text-lg font-bold">{playerName}</div>
+              <div className="truncate text-lg font-bold">{playerName}</div>
             </div>
           </div>
           <div className="text-xs opacity-70">
@@ -235,22 +267,35 @@ const DuelHub: React.FC = () => {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
+          {/* KPIs con skeleton */}
           <div className="rounded-2xl border bg-white p-4 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <div className="text-xs opacity-70">Ganados</div>
             <div className="text-3xl font-extrabold text-emerald-600">
-              {summary?.wins ?? 0}
+              {busy ? (
+                <span className="animate-pulse">—</span>
+              ) : (
+                summary?.wins ?? 0
+              )}
             </div>
           </div>
           <div className="rounded-2xl border bg-white p-4 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <div className="text-xs opacity-70">Perdidos</div>
             <div className="text-3xl font-extrabold text-rose-600">
-              {summary?.losses ?? 0}
+              {busy ? (
+                <span className="animate-pulse">—</span>
+              ) : (
+                summary?.losses ?? 0
+              )}
             </div>
           </div>
           <div className="rounded-2xl border bg-white p-4 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <div className="text-xs opacity-70">Rating</div>
             <div className="text-3xl font-extrabold text-indigo-600">
-              {summary?.rating ?? 1000}
+              {busy ? (
+                <span className="animate-pulse">—</span>
+              ) : (
+                summary?.rating ?? 1000
+              )}
             </div>
           </div>
         </div>
@@ -263,8 +308,9 @@ const DuelHub: React.FC = () => {
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Partidas públicas</h2>
             <button
-              onClick={refreshOpens}
+              onClick={() => void refreshOpens()}
               className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:text-indigo-300"
+              aria-label="Actualizar partidas públicas"
             >
               ⟳ Actualizar
             </button>
@@ -279,7 +325,7 @@ const DuelHub: React.FC = () => {
               <span>No hay salas abiertas.</span>
               <button
                 onClick={() => nav("/student/duels/new")}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-white transition hover:bg-indigo-700"
+                className="rounded-lg bg-indigo-600 px-3 py-2 text-white transition hover:bg-indigo-700"
               >
                 Crear una
               </button>
@@ -291,7 +337,7 @@ const DuelHub: React.FC = () => {
                   key={m.matchId}
                   className="flex items-center justify-between rounded-xl border p-3 text-sm shadow-sm transition hover:border-indigo-300/70 dark:border-gray-700 dark:hover:border-indigo-700/50"
                 >
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-medium">
                       Código:{" "}
                       <span className="font-mono tracking-widest">
@@ -303,7 +349,7 @@ const DuelHub: React.FC = () => {
                     </div>
                   </div>
                   <button
-                    className="inline-flex h-9 items-center justify-center rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                    className="inline-flex h-10 items-center justify-center rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
                     onClick={() =>
                       nav(
                         `/student/duels/room?code=${encodeURIComponent(
@@ -342,7 +388,7 @@ const DuelHub: React.FC = () => {
                     key={h.matchId}
                     className="flex items-center justify-between rounded-xl border p-3 text-sm shadow-sm dark:border-gray-700"
                   >
-                    <div>
+                    <div className="min-w-0">
                       <div className="font-medium">
                         {h.shortCode ? (
                           <span className="font-mono">#{h.shortCode}</span>
