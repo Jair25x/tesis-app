@@ -199,15 +199,17 @@ services:
     env_file:
       - ./.env
     command: >
-      sh -c "echo 'appendonly yes' > /usr/local/etc/redis/redis.conf
-      && echo 'save 60 1000' >> /usr/local/etc/redis/redis.conf
-      && echo 'rename-command CONFIG \"\"' >> /usr/local/etc/redis/redis.conf
-      && echo 'rename-command FLUSHALL \"\"' >> /usr/local/etc/redis/redis.conf
-      && echo \"requirepass ${REDIS_PASSWORD}\" >> /usr/local/etc/redis/redis.conf
-      && exec redis-server /usr/local/etc/redis/redis.conf"
+      sh -c '
+      exec redis-server
+        --appendonly yes
+        "--save" "60 1000"
+        "--rename-command" "CONFIG" ""
+        "--rename-command" "FLUSHALL" ""
+        "--requirepass" "${REDIS_PASSWORD}"
+      '
     volumes:
       - redis-data:/data
-    ports: []   # interno
+    ports: []   # interno (sin publicar)
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
