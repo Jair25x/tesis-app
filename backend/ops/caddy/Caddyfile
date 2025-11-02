@@ -58,12 +58,11 @@ api.capimath.net.pe {
 admin.capimath.net.pe {
   encode zstd gzip
 
-  # (Opcional) Allowlist por IP privadas y loopback
-  @allow internal remote_ip 127.0.0.1/32 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+  # (Opcional) si no quieres allowlist, elimina el bloque @allow y el handle de bloqueo
+  # @allow internal remote_ip 127.0.0.1/32 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
 
-  # Autenticación básica (cambia el hash por el tuyo)
   basicauth /* {
-    admin JDJhJDEwJHJFVElRVW5NdE1ZVDFqNlZyQm9uT21GQzRTQm1aL2d0NElQb0s2M1F6cGZrLk1mN2N5Qy5YQXQ1  # <== REEMPLAZA
+    admin $2a$14$J7wTGpvYyfZgTfyfeVWwmuwsF3p.42zlF96fxQx.ZYUBgLJZsWjai
   }
 
   header {
@@ -73,7 +72,7 @@ admin.capimath.net.pe {
     Referrer-Policy "strict-origin-when-cross-origin"
   }
 
-  # (Si quieres forzar allowlist, descomenta este bloque y el de @allow arriba)
+  # Si quisieras forzar allowlist, aquí iría el handle con @allow:
   # handle {
   #   @block not @allow
   #   respond "Forbidden" 403
