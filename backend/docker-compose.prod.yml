@@ -206,6 +206,7 @@ services:
         "--rename-command" "CONFIG" ""
         "--rename-command" "FLUSHALL" ""
         "--requirepass" "${REDIS_PASSWORD}"
+        --protected-mode yes
       '
     volumes:
       - redis-data:/data
