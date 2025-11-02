@@ -43,13 +43,7 @@ services:
       - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      frontend:
-        condition: service_healthy
-      gateway-service:
-        condition: service_healthy
-      admin-monitoring-service:
-        condition: service_healthy
+    # IMPORTANTE: sin depends_on; Caddy debe arrancar siempre para ACME
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -58,6 +52,9 @@ services:
   frontend:
     image: ghcr.io/tuorg/tesis-frontend:prod-YYYYMMDD-HHMM
     container_name: frontend
+    env_file:
+      - ./.env
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -77,6 +74,8 @@ services:
   gateway-service:
     image: ghcr.io/tuorg/gateway-service:prod-YYYYMMDD-HHMM
     container_name: gateway-service
+    env_file:
+      - ./.env
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -97,6 +96,7 @@ services:
         condition: service_healthy
       admin-monitoring-service:
         condition: service_started
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -116,9 +116,12 @@ services:
   eureka-server:
     image: ghcr.io/tuorg/eureka-server:prod-YYYYMMDD-HHMM
     container_name: eureka-server
+    env_file:
+      - ./.env
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -138,11 +141,14 @@ services:
   config-service:
     image: ghcr.io/tuorg/config-service:prod-YYYYMMDD-HHMM
     container_name: config-service
+    env_file:
+      - ./.env
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -158,22 +164,20 @@ services:
           cpus: "0.50"
           memory: "384M"
 
-  # === Admin (Spring Boot Admin, interno; Caddy lo publica en admin.*) ===
+  # === Admin (Spring Boot Admin; Caddy lo publica en admin.*) ===
   admin-monitoring-service:
     image: ghcr.io/tuorg/admin-monitoring-service:prod-YYYYMMDD-HHMM
     container_name: admin-monitoring-service
+    env_file:
+      - ./.env
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
-      # Si SBA usa Eureka para descubrir, mantén esta URL;
-      # sino, igualmente los clients se registrarán por actuator.
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      # Opcional: si tu SBA requiere credenciales internas, agrégalas aquí
-      # SBA_SECURITY_USER: admin
-      # SBA_SECURITY_PASSWORD: <secreto>
     depends_on:
       eureka-server:
         condition: service_healthy
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -192,15 +196,18 @@ services:
   advisor-redis:
     image: redis:7-alpine
     container_name: advisor-redis
+    env_file:
+      - ./.env
     command: >
       sh -c "echo 'appendonly yes' > /usr/local/etc/redis/redis.conf
       && echo 'save 60 1000' >> /usr/local/etc/redis/redis.conf
       && echo 'rename-command CONFIG \"\"' >> /usr/local/etc/redis/redis.conf
       && echo 'rename-command FLUSHALL \"\"' >> /usr/local/etc/redis/redis.conf
-      && echo 'requirepass ${REDIS_PASSWORD}' >> /usr/local/etc/redis/redis.conf
+      && echo \"requirepass ${REDIS_PASSWORD}\" >> /usr/local/etc/redis/redis.conf
       && exec redis-server /usr/local/etc/redis/redis.conf"
     volumes:
       - redis-data:/data
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -220,10 +227,13 @@ services:
   auth-profile-db:
     image: postgres:17.5-alpine3.22
     container_name: auth-profile-db
+    env_file:
+      - ./.env
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
       POSTGRES_DB: tesisdb_auth
     volumes: [ "auth-profile-db-data:/var/lib/postgresql/data" ]
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -242,10 +252,13 @@ services:
   content-db:
     image: postgres:17.5-alpine3.22
     container_name: content-db
+    env_file:
+      - ./.env
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_CONTENT_PASSWORD}
       POSTGRES_DB: contentdb
     volumes: [ "content-db-data:/var/lib/postgresql/data" ]
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -264,10 +277,13 @@ services:
   progress-db:
     image: postgres:17.5-alpine3.22
     container_name: progress-db
+    env_file:
+      - ./.env
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PROGRESS_PASSWORD}
       POSTGRES_DB: progressdb
     volumes: [ "progress-db-data:/var/lib/postgresql/data" ]
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -286,10 +302,13 @@ services:
   classroom-db:
     image: postgres:17.5-alpine3.22
     container_name: classroom-db
+    env_file:
+      - ./.env
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD}
       POSTGRES_DB: classroomdb
     volumes: [ "classroom-db-data:/var/lib/postgresql/data" ]
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -308,10 +327,13 @@ services:
   assessment-db:
     image: postgres:17.5-alpine3.22
     container_name: assessment-db
+    env_file:
+      - ./.env
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_ASSESSMENT_PASSWORD}
       POSTGRES_DB: assessmentdb
     volumes: [ "assessment-db-data:/var/lib/postgresql/data" ]
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -330,10 +352,13 @@ services:
   advisor-db:
     image: pgvector/pgvector:pg17
     container_name: advisor-db
+    env_file:
+      - ./.env
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_ADVISOR_PASSWORD}
       POSTGRES_DB: advisordb
     volumes: [ "advisor-db-data:/var/lib/postgresql/data" ]
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -352,10 +377,13 @@ services:
   duels-db:
     image: postgres:17.5-alpine3.22
     container_name: duels-db
+    env_file:
+      - ./.env
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_DUELS_PASSWORD}
       POSTGRES_DB: duelsdb
     volumes: [ "duels-db-data:/var/lib/postgresql/data" ]
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -375,6 +403,8 @@ services:
   auth-service:
     image: ghcr.io/tuorg/auth-service:prod-YYYYMMDD-HHMM
     container_name: auth-service
+    env_file:
+      - ./.env
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -395,6 +425,7 @@ services:
         condition: service_healthy
       admin-monitoring-service:
         condition: service_started
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -407,6 +438,8 @@ services:
   curriculum-service:
     image: ghcr.io/tuorg/curriculum-service:prod-YYYYMMDD-HHMM
     container_name: curriculum-service
+    env_file:
+      - ./.env
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -428,6 +461,7 @@ services:
         condition: service_healthy
       admin-monitoring-service:
         condition: service_started
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -440,6 +474,8 @@ services:
   progress-service:
     image: ghcr.io/tuorg/progress-service:prod-YYYYMMDD-HHMM
     container_name: progress-service
+    env_file:
+      - ./.env
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -460,6 +496,7 @@ services:
         condition: service_healthy
       admin-monitoring-service:
         condition: service_started
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -472,6 +509,8 @@ services:
   classroom-service:
     image: ghcr.io/tuorg/classroom-service:prod-YYYYMMDD-HHMM
     container_name: classroom-service
+    env_file:
+      - ./.env
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -492,6 +531,7 @@ services:
         condition: service_healthy
       admin-monitoring-service:
         condition: service_started
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -504,6 +544,8 @@ services:
   assessment-service:
     image: ghcr.io/tuorg/assessment-service:prod-YYYYMMDD-HHMM
     container_name: assessment-service
+    env_file:
+      - ./.env
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -524,6 +566,7 @@ services:
         condition: service_healthy
       admin-monitoring-service:
         condition: service_started
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -537,6 +580,8 @@ services:
   ai-advisor-service:
     image: ghcr.io/tuorg/ai-advisor-service:prod-YYYYMMDD-HHMM
     container_name: ai-advisor-service
+    env_file:
+      - ./.env
     environment:
       ENV: prod
       PORT: 8086
@@ -572,6 +617,7 @@ services:
         condition: service_healthy
       progress-service:
         condition: service_healthy
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -584,6 +630,8 @@ services:
   duels-service:
     image: ghcr.io/tuorg/duels-service:prod-YYYYMMDD-HHMM
     container_name: duels-service
+    env_file:
+      - ./.env
     environment:
       PORT: 8087
       DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_DUELS_PASSWORD}@duels-db:5432/duelsdb
@@ -609,6 +657,7 @@ services:
         condition: service_healthy
       curriculum-service:
         condition: service_healthy
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -625,6 +674,7 @@ services:
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -640,9 +690,12 @@ services:
   grafana:
     image: grafana/grafana:11.2.0
     container_name: grafana
+    env_file:
+      - ./.env
     environment:
       GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+    ports: []   # interno
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
