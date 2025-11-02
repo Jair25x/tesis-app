@@ -9,16 +9,16 @@ RUN mvn -q -f assessment-service/pom.xml -DskipTests package
 FROM eclipse-temurin:21-jdk-alpine
 WORKDIR /app
 
-RUN apk add --no-cache wget
+RUN apk add --no-cache curl ca-certificates
 COPY ./dockerize/dockerize /usr/local/bin/dockerize
 RUN chmod +x /usr/local/bin/dockerize
 
 COPY --from=builder /workspace/assessment-service/target/assessment-service-0.0.1-SNAPSHOT.jar /app/app.jar
 
-# scripts
 COPY ./assessment-service/scripts/entrypoint.sh /scripts/entrypoint.sh
 COPY ./scripts/preflight-env.sh /scripts/preflight-env.sh
 RUN chmod +x /scripts/*.sh
 
 EXPOSE 8085
 ENTRYPOINT ["/scripts/entrypoint.sh"]
+

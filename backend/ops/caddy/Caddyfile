@@ -1,7 +1,5 @@
 {
-  # Opcional: email para Let's Encrypt
   email almanzajair5@gmail.com
-  # Forzar HTTP/3 si quieres
   servers {
     protocols h1 h2 h3
   }
@@ -11,19 +9,16 @@
 app.capimath.net.pe {
   encode zstd gzip
 
-  @static {
-    path_regexp ^/(assets/.*|favicon\.ico|manifest\.json)$
-  }
-
-  # Cabeceras de seguridad básicas
   header {
+    # Seguridad básica
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    Content-Security-Policy "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:"
     X-Content-Type-Options nosniff
     X-Frame-Options SAMEORIGIN
     Referrer-Policy "strict-origin-when-cross-origin"
   }
 
   reverse_proxy frontend:80 {
-    # Mantén upgrade para futuras necesidades (SSE lo maneja sin special headers)
     header_up Host {host}
     header_up X-Forwarded-For {remote}
     header_up X-Forwarded-Proto {scheme}
@@ -34,31 +29,59 @@ app.capimath.net.pe {
 api.capimath.net.pe {
   encode zstd gzip
 
-  # Importante para SSE y WebSockets (no buffers largos)
   header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
     X-Content-Type-Options nosniff
     X-Frame-Options SAMEORIGIN
     Referrer-Policy "strict-origin-when-cross-origin"
-  }
-
-  @ws {
-    header Connection *Upgrade*
-    header Upgrade    *websocket*
+    # Si el gateway expone esta cabecera, exponerla al browser:
+    Access-Control-Expose-Headers "X-Request-Id"
   }
 
   reverse_proxy gateway-service:8080 {
-    # WS/SSE friendly
+    # WS y SSE sin buffers agresivos, con timeouts generosos
     transport http {
-      read_buffer  4096
-      write_buffer 4096
-      # timeouts altos por SSE y WS
+      read_buffer   4096
+      write_buffer  4096
       read_timeout  3700s
       write_timeout 3700s
-      dial_timeout   5s
+      dial_timeout  5s
     }
     header_up Host {host}
     header_up X-Forwarded-For {remote}
     header_up X-Forwarded-Proto {scheme}
     header_up X-Forwarded-Host {host}
+  }
+}
+
+# --------- Admin (Spring Boot Admin) ----------
+admin.capimath.net.pe {
+  encode zstd gzip
+
+  # (Opcional) Allowlist por IP privadas y loopback
+  @allow internal remote_ip 127.0.0.1/32 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+
+  # Autenticación básica (cambia el hash por el tuyo)
+  basicauth /* {
+    admin JDJhJDEwJHJFVElRVW5NdE1ZVDFqNlZyQm9uT21GQzRTQm1aL2d0NElQb0s2M1F6cGZrLk1mN2N5Qy5YQXQ1  # <== REEMPLAZA
+  }
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options nosniff
+    X-Frame-Options SAMEORIGIN
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+
+  # (Si quieres forzar allowlist, descomenta este bloque y el de @allow arriba)
+  # handle {
+  #   @block not @allow
+  #   respond "Forbidden" 403
+  # }
+
+  reverse_proxy admin-monitoring-service:9090 {
+    header_up Host {host}
+    header_up X-Forwarded-For {remote}
+    header_up X-Forwarded-Proto {scheme}
   }
 }

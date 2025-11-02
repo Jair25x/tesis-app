@@ -1,7 +1,7 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-/scripts/preflight-env.sh
+[ -f /scripts/preflight-env.sh ] && /scripts/preflight-env.sh || true
 
 log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] $*"; }
 
@@ -14,13 +14,14 @@ export PYTHONPATH="/app${PYTHONPATH:+:$PYTHONPATH}"
 log "PYTHONPATH=$PYTHONPATH"
 
 wait_for_db() {
-  if [[ -z "$DB_URL" ]]; then
+  if [ -z "$DB_URL" ]; then
     log "WARN: DATABASE_URL no definido; salto espera de DB."
     return 0
   fi
   log "Esperando DB: ${DB_URL}"
-  local tries=40
-  for i in $(seq 1 $tries); do
+  tries=40
+  i=1
+  while [ "$i" -le "$tries" ]; do
     python - <<'PY'
 import os, sys
 from sqlalchemy import create_engine, text
@@ -34,10 +35,11 @@ except Exception as e:
     print("DB no lista:", e)
     sys.exit(1)
 PY
-    if [[ $? -eq 0 ]]; then
+    if [ $? -eq 0 ]; then
       log "DB OK"; return 0
     fi
     log "DB aún no lista... intento ${i}/${tries}"
+    i=$((i+1))
     sleep 1
   done
   log "ERROR: no se pudo conectar a la DB tras ${tries} intentos."
@@ -45,7 +47,7 @@ PY
 }
 
 wait_for_redis() {
-  if [[ -z "$REDIS_URL" ]]; then
+  if [ -z "$REDIS_URL" ]; then
     log "REDIS_URL vacío; salto espera de Redis."
     return 0
   fi
@@ -66,7 +68,7 @@ except Exception as e:
     print("Redis no listo:", e)
     sys.exit(1)
 PY
-  if [[ $? -ne 0 ]]; then
+  if [ $? -ne 0 ]; then
     log "WARN: Redis no respondió, continúo (REDIS_URL=${REDIS_URL})"
   else
     log "Redis OK"
@@ -79,7 +81,7 @@ term_handler() {
   wait || true
   exit 0
 }
-trap term_handler SIGTERM
+trap term_handler TERM
 
 wait_for_db
 wait_for_redis

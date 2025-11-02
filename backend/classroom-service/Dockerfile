@@ -9,13 +9,12 @@ RUN mvn -q -f classroom-service/pom.xml -DskipTests package
 FROM eclipse-temurin:21-jdk-alpine
 WORKDIR /app
 
-RUN apk add --no-cache wget
+RUN apk add --no-cache curl ca-certificates
 COPY ./dockerize/dockerize /usr/local/bin/dockerize
 RUN chmod +x /usr/local/bin/dockerize
 
 COPY --from=builder /workspace/classroom-service/target/classroom-service-0.0.1-SNAPSHOT.jar /app/app.jar
 
-# scripts
 COPY ./classroom-service/scripts/entrypoint.sh /scripts/entrypoint.sh
 COPY ./scripts/preflight-env.sh /scripts/preflight-env.sh
 RUN chmod +x /scripts/*.sh
