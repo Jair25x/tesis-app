@@ -1,0 +1,109 @@
+name: Build & Push (all services)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/build-and-push-all.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-and-push-all-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Un único TAG estable para todo el batch: prod-YYYYMMDD-HHMM (UTC)
+      - name: Compute TAG
+        id: tag
+        run: echo "TAG=prod-$(date -u +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+
+      - name: Lowercase owner (GHCR namespace)
+        id: ns
+        run: echo "NS=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Docker login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Cache Maven para acelerar builds Java
+      - name: Setup Temurin JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Warm Maven cache (monorepo backend)
+        run: mvn -B -f backend/pom.xml -DskipTests package || true
+
+      - name: Build & Push images
+        env:
+          TAG: ${{ steps.tag.outputs.TAG }}
+          NS:  ${{ steps.ns.outputs.NS }}
+        run: |
+          set -e
+
+          build_push () {
+            local dockerfile="$1"
+            local context="$2"
+            local image="$3"
+            echo ""
+            echo "==> Building ${image}:${TAG}"
+            docker build -f "${dockerfile}" -t "${image}:${TAG}" "${context}"
+            docker push "${image}:${TAG}"
+          }
+
+          # --- JAVA services ---
+          build_push backend/eureka-server/Dockerfile              .  "${NS}/eureka-server"
+          build_push backend/config-service/Dockerfile             .  "${NS}/config-service"
+          build_push backend/admin-monitoring-service/Dockerfile   .  "${NS}/admin-monitoring-service"
+          build_push backend/gateway-service/Dockerfile            .  "${NS}/gateway-service"
+          build_push backend/auth-service/Dockerfile               .  "${NS}/auth-service"
+          build_push backend/curriculum-service/Dockerfile         .  "${NS}/curriculum-service"
+          build_push backend/progress-service/Dockerfile           .  "${NS}/progress-service"
+          build_push backend/classroom-service/Dockerfile          .  "${NS}/classroom-service"
+          build_push backend/assessment-service/Dockerfile         .  "${NS}/assessment-service"
+
+          # --- FastAPI services ---
+          build_push backend/ai-advisor-service/Dockerfile         .  "${NS}/ai-advisor-service"
+          build_push backend/duels-service/Dockerfile              .  "${NS}/duels-service"
+
+          # --- Frontend (vive en ./frontend) ---
+          build_push frontend/Dockerfile                       ./frontend  "${NS}/tesis-frontend"
+
+          # Emitir archivo de TAGS para despliegue
+          {
+            echo "FRONTEND_TAG=${TAG}"
+            echo "GATEWAY_TAG=${TAG}"
+            echo "EUREKA_TAG=${TAG}"
+            echo "CONFIG_TAG=${TAG}"
+            echo "ADMIN_TAG=${TAG}"
+            echo "AUTH_TAG=${TAG}"
+            echo "CURRICULUM_TAG=${TAG}"
+            echo "PROGRESS_TAG=${TAG}"
+            echo "CLASSROOM_TAG=${TAG}"
+            echo "ASSESSMENT_TAG=${TAG}"
+            echo "AI_ADVISOR_TAG=${TAG}"
+            echo "DUELS_TAG=${TAG}"
+          } > tags.env
+
+      - name: Upload tags.env artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-tags
+          path: tags.env
