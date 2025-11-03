@@ -9,6 +9,8 @@ import com.tesis.curriculum_service.repository.*;
 import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
@@ -21,7 +23,9 @@ import java.util.stream.Collectors;
 @Profile({ "dev", "docker" })
 @RequiredArgsConstructor
 public class DataInitializer {
-
+        @Value("${app.seed.enabled:false}")
+        private boolean seedEnabled;
+        
         private final CurriculumRepository curriculumRepository;
         private final CompetencyRepository competencyRepository;
         private final StandardRepository standardRepository;
@@ -34,8 +38,12 @@ public class DataInitializer {
         @Transactional
         @PostConstruct
         public void init() throws Exception {
+                if (!seedEnabled) {
+                        System.out.println("ℹ️ app.seed.enabled=false → DataInitializer deshabilitado.");
+                        return;
+                }
                 ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-                try (InputStream is = new ClassPathResource("data/curriculum-math-6.yml").getInputStream()) {
+                try (InputStream is = new ClassPathResource("data/curriculum-math-4.yml").getInputStream()) {
                         CurriculumDef def = mapper.readValue(is, CurriculumDef.class);
 
                         // 🔐 Idempotencia real: revisa existencia por code sin filtrar por active

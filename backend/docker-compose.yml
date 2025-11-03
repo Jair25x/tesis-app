@@ -370,6 +370,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD:-misan}
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
       JWT_SECRET_KEY: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
     ports: ["8084:8084"]
     depends_on:
       eureka-server:

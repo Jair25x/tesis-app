@@ -1,0 +1,54 @@
+name: Flyway Smoke - auth-service
+
+on:
+  pull_request:
+    paths:
+      - "auth-service/**"
+      - ".github/workflows/flyway-smoke.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "auth-service/**"
+
+jobs:
+  flyway-smoke:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: ci_flyway
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d ci_flyway"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Temurin JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # Compila el módulo y empaqueta recursos (incluye db/migration en el classpath)
+      - name: Build (auth-service only)
+        run: mvn -B -pl auth-service -am -DskipTests package
+
+      # Ejecuta Flyway solo contra DB efímera de CI (sin tocar tu Docker ni tu VPS)
+      - name: Flyway migrate (smoke)
+        run: |
+          mvn -B -pl auth-service -am -DskipTests \
+            -Dflyway.url=jdbc:postgresql://localhost:55432/ci_flyway \
+            -Dflyway.user=postgres \
+            -Dflyway.password=postgres \
+            flyway:clean flyway:migrate

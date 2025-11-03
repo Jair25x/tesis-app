@@ -1,0 +1,90 @@
+code: "CURR-MATH-4"
+name: "Currículo de Matemática - Cuarto grado"
+description: "MVP – Ejemplos para 3 plantillas (mismo set de 6.º, adaptado a 4.º para pruebas)"
+grade: "4"
+competencies:
+  - code: "C.1"
+    name: "BIENVENIDOS"
+    description: "Tablas y totales"
+    standards:
+      - code: "S.1.1"
+        name: "Ficha 1: Juntamos las tablas"
+        description: "Organizar y representar datos en tablas."
+        learningObjectives:
+          - code: "LO.1.1.1"
+            name: "Analizar tablas de frecuencia"
+            description: "Interpretar tablas con datos estadísticos simples."
+            exercises:
+              - statement: "Observa la tabla y responde."
+                difficulty: "BASIC"
+                type: "TABLE_QA"
+                templateType: "FREQUENCY_TABLE_QA"
+                parameters:
+                  columns: ["Actividad", "Frecuencia"]
+                  rows:
+                    - { actividad: "Ajedrez", frecuencia: 10 }
+                    - { actividad: "Cantar",  frecuencia: 12 }
+                    - { actividad: "Bailar",  frecuencia: 8  }
+                    - { actividad: "Otras",   frecuencia: 5  }
+                  questions:
+                    - id: "q1"
+                      kind: "single_choice"
+                      prompt: "¿Cuál es la moda?"
+                      options: ["Ajedrez","Cantar","Bailar","Otras"]
+                      answer: "Cantar"
+                    - id: "q2"
+                      kind: "numeric"
+                      prompt: "¿Total de estudiantes?"
+                      answer: 35
+                hints:
+                  - hintText: "La moda es el mayor valor de la columna Frecuencia."
+                    cost: 1
+
+  - code: "C.2"
+    name: "CANTIDAD Y OPERACIONES"
+    description: "Multiplicación en contextos reales"
+    standards:
+      - code: "S.2.1"
+        name: "Ficha 2: Candados y decenas"
+        description: "Aplicar multiplicación con unidades de medida y valor posicional."
+        learningObjectives:
+          - code: "LO.2.1.1"
+            name: "Resolver problemas con multiplicación"
+            description: "Usar operaciones para resolver problemas sobre cantidades."
+            exercises:
+              - statement: "Eliana compró 9 cajas con 10 candados cada una. Cada candado se venderá a S/ 18. ¿Cuánto dinero recibirá Eliana?"
+                difficulty: "BASIC"
+                type: "CHOICE"
+                templateType: "EQUATION_SINGLE_CHOICE"
+                parameters:
+                  a: 90
+                  b: 18
+                  choices: ["S/ 180.00", "S/ 1620.00", "S/ 1800.00"]
+                  answer: "S/ 1620.00"
+                hints:
+                  - hintText: "Primero halla la cantidad total de candados."
+                    cost: 1
+                  - hintText: "Multiplica la cantidad por el precio unitario."
+                    cost: 2
+                solutionSteps:
+                  - stepNumber: 1
+                    explanation: "9 cajas x 10 = 90 candados."
+                  - stepNumber: 2
+                    explanation: "90 x 18 = S/ 1620.00."
+
+              - statement: "Completa el dato faltante indicando el total de personas que realizan estas actividades."
+                difficulty: "BASIC"
+                type: "TABLE_COMPLETE"
+                templateType: "FREQUENCY_TABLE_COMPLETE"
+                parameters:
+                  columns: ["Actividad", "Frecuencia"]
+                  rows:
+                    - { actividad: "Ajedrez", frecuencia: 14 }
+                    - { actividad: "Cantar",  frecuencia: 11 }
+                    - { actividad: "Bailar",  frecuencia: 10 }
+                    - { actividad: "Otras",   frecuencia: 5  }
+                  missing:
+                    - { cell: "total", answer: 40 }
+                hints:
+                  - hintText: "Suma todas las frecuencias."
+                    cost: 1
