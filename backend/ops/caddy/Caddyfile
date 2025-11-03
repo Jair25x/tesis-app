@@ -3,7 +3,7 @@
   servers {
     protocols h1 h2 h3
   }
-  # Opcional: logs globales a stdout (útil para debug y métricas Nginx->Prometheus si agregas exporter)
+  # Opcional: logs globales
   # logging {
   #   output stdout
   #   level INFO
@@ -25,15 +25,9 @@ app.capimath.net.pe {
     X-Content-Type-Options nosniff
     X-Frame-Options SAMEORIGIN
     Referrer-Policy "strict-origin-when-cross-origin"
-    # (Opcional) Cache estática si sirves assets pesados
-    # Cache-Control "public, max-age=31536000, immutable"
   }
 
-  reverse_proxy frontend:80 {
-    header_up Host {host}
-    header_up X-Forwarded-For {remote}
-    header_up X-Forwarded-Proto {scheme}
-  }
+  reverse_proxy frontend:80
 }
 
 # --------- API (gateway) ----------
@@ -56,10 +50,6 @@ api.capimath.net.pe {
       write_timeout 3700s
       dial_timeout  5s
     }
-    header_up Host {host}
-    header_up X-Forwarded-For {remote}
-    header_up X-Forwarded-Proto {scheme}
-    header_up X-Forwarded-Host {host}
   }
 }
 
@@ -67,10 +57,7 @@ api.capimath.net.pe {
 admin.capimath.net.pe {
   encode zstd gzip
 
-  # (Opcional) allowlist si luego lo quieres restringir por IP
-  # @allow internal remote_ip 127.0.0.1/32 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
-
-  basicauth /* {
+  basic_auth /* {
     admin $2a$14$J7wTGpvYyfZgTfyfeVWwmuwsF3p.42zlF96fxQx.ZYUBgLJZsWjai
   }
 
@@ -81,11 +68,5 @@ admin.capimath.net.pe {
     Referrer-Policy "strict-origin-when-cross-origin"
   }
 
-  # handle { @block not @allow ... } si habilitas allowlist
-
-  reverse_proxy admin-monitoring-service:9090 {
-    header_up Host {host}
-    header_up X-Forwarded-For {remote}
-    header_up X-Forwarded-Proto {scheme}
-  }
+  reverse_proxy admin-monitoring-service:9090
 }
