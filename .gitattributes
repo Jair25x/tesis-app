@@ -1,21 +1,21 @@
+# Normalización por defecto
+* text=auto
+
 # ===== Fin de línea: scripts y config SIEMPRE LF (Linux/CI friendly) =====
 *.sh           text eol=lf
+*.bash         text eol=lf
 Dockerfile     text eol=lf
-*Caddyfile*    text eol=lf
+Caddyfile      text eol=lf
 *.service      text eol=lf
-
-# YAML/propiedades/entornos (evitar CRLF en CI y compose)
 *.yml          text eol=lf
 *.yaml         text eol=lf
 *.conf         text eol=lf
 *.properties   text eol=lf
 *.env          text eol=lf
 *.env.sample   text eol=lf
-
-# SQL (migraciones Flyway/Alembic)
 *.sql          text eol=lf
 
-# Código fuente: marcar como texto (Git gestiona EOL)
+# Código fuente como texto (Git gestiona EOL)
 *.java         text
 *.kt           text
 *.py           text
@@ -39,5 +39,5 @@ Dockerfile     text eol=lf
 *.jar          binary
 *.zip          binary
 
-# dockerize binario (si lo versionas)
+# Binarios adicionales
 backend/dockerize/** binary
