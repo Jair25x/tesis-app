@@ -3,6 +3,16 @@
   servers {
     protocols h1 h2 h3
   }
+  # Opcional: logs globales a stdout (útil para debug y métricas Nginx->Prometheus si agregas exporter)
+  # logging {
+  #   output stdout
+  #   level INFO
+  # }
+}
+
+# Redirección explícita HTTP -> HTTPS para cualquier host
+http:// {
+  redir https://{host}{uri} permanent
 }
 
 # --------- Frontend (app) ----------
@@ -10,12 +20,13 @@ app.capimath.net.pe {
   encode zstd gzip
 
   header {
-    # Seguridad básica
     Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
     Content-Security-Policy "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:"
     X-Content-Type-Options nosniff
     X-Frame-Options SAMEORIGIN
     Referrer-Policy "strict-origin-when-cross-origin"
+    # (Opcional) Cache estática si sirves assets pesados
+    # Cache-Control "public, max-age=31536000, immutable"
   }
 
   reverse_proxy frontend:80 {
@@ -34,12 +45,10 @@ api.capimath.net.pe {
     X-Content-Type-Options nosniff
     X-Frame-Options SAMEORIGIN
     Referrer-Policy "strict-origin-when-cross-origin"
-    # Si el gateway expone esta cabecera, exponerla al browser:
     Access-Control-Expose-Headers "X-Request-Id"
   }
 
   reverse_proxy gateway-service:8080 {
-    # WS y SSE sin buffers agresivos, con timeouts generosos
     transport http {
       read_buffer   4096
       write_buffer  4096
@@ -58,7 +67,7 @@ api.capimath.net.pe {
 admin.capimath.net.pe {
   encode zstd gzip
 
-  # (Opcional) si no quieres allowlist, elimina el bloque @allow y el handle de bloqueo
+  # (Opcional) allowlist si luego lo quieres restringir por IP
   # @allow internal remote_ip 127.0.0.1/32 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
 
   basicauth /* {
@@ -72,11 +81,7 @@ admin.capimath.net.pe {
     Referrer-Policy "strict-origin-when-cross-origin"
   }
 
-  # Si quisieras forzar allowlist, aquí iría el handle con @allow:
-  # handle {
-  #   @block not @allow
-  #   respond "Forbidden" 403
-  # }
+  # handle { @block not @allow ... } si habilitas allowlist
 
   reverse_proxy admin-monitoring-service:9090 {
     header_up Host {host}
