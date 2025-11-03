@@ -51,7 +51,6 @@ services:
   frontend:
     image: ghcr.io/jair25x/tesis-frontend:${FRONTEND_TAG}
     container_name: frontend
-    env_file: [ ./.env ]
     ports: []
     networks: [tesis-network]
     restart: unless-stopped
@@ -70,7 +69,7 @@ services:
   gateway-service:
     image: ghcr.io/jair25x/gateway-service:${GATEWAY_TAG}
     container_name: gateway-service
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -92,7 +91,11 @@ services:
     restart: unless-stopped
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health/liveness || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:8080/actuator/health/liveness || exit 1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -105,7 +108,7 @@ services:
   eureka-server:
     image: ghcr.io/jair25x/eureka-server:${EUREKA_TAG}
     container_name: eureka-server
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -128,7 +131,7 @@ services:
   config-service:
     image: ghcr.io/jair25x/config-service:${CONFIG_TAG}
     container_name: config-service
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -139,7 +142,11 @@ services:
     restart: unless-stopped
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8888/actuator/health || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:8888/actuator/health || exit 1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -152,7 +159,7 @@ services:
   admin-monitoring-service:
     image: ghcr.io/jair25x/admin-monitoring-service:${ADMIN_TAG}
     container_name: admin-monitoring-service
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -164,7 +171,11 @@ services:
     restart: unless-stopped
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9090/actuator/health || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:9090/actuator/health || exit 1",
+        ]
       interval: 15s
       timeout: 5s
       retries: 15
@@ -176,7 +187,7 @@ services:
   advisor-redis:
     image: redis:7-alpine
     container_name: advisor-redis
-    env_file: [ ./.env ]
+    env_file: [./.env]
     command: >
       sh -c '
       exec redis-server
@@ -206,11 +217,11 @@ services:
   auth-profile-db:
     image: postgres:17.5-alpine3.22
     container_name: auth-profile-db
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
       POSTGRES_DB: tesisdb_auth
-    volumes: [ "auth-profile-db-data:/var/lib/postgresql/data" ]
+    volumes: ["auth-profile-db-data:/var/lib/postgresql/data"]
     ports: []
     networks: [tesis-network]
     restart: unless-stopped
@@ -228,11 +239,11 @@ services:
   content-db:
     image: postgres:17.5-alpine3.22
     container_name: content-db
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_CONTENT_PASSWORD}
       POSTGRES_DB: contentdb
-    volumes: [ "content-db-data:/var/lib/postgresql/data" ]
+    volumes: ["content-db-data:/var/lib/postgresql/data"]
     ports: []
     networks: [tesis-network]
     restart: unless-stopped
@@ -250,11 +261,11 @@ services:
   progress-db:
     image: postgres:17.5-alpine3.22
     container_name: progress-db
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PROGRESS_PASSWORD}
       POSTGRES_DB: progressdb
-    volumes: [ "progress-db-data:/var/lib/postgresql/data" ]
+    volumes: ["progress-db-data:/var/lib/postgresql/data"]
     ports: []
     networks: [tesis-network]
     restart: unless-stopped
@@ -272,11 +283,11 @@ services:
   classroom-db:
     image: postgres:17.5-alpine3.22
     container_name: classroom-db
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD}
       POSTGRES_DB: classroomdb
-    volumes: [ "classroom-db-data:/var/lib/postgresql/data" ]
+    volumes: ["classroom-db-data:/var/lib/postgresql/data"]
     ports: []
     networks: [tesis-network]
     restart: unless-stopped
@@ -294,11 +305,11 @@ services:
   assessment-db:
     image: postgres:17.5-alpine3.22
     container_name: assessment-db
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_ASSESSMENT_PASSWORD}
       POSTGRES_DB: assessmentdb
-    volumes: [ "assessment-db-data:/var/lib/postgresql/data" ]
+    volumes: ["assessment-db-data:/var/lib/postgresql/data"]
     ports: []
     networks: [tesis-network]
     restart: unless-stopped
@@ -316,11 +327,11 @@ services:
   advisor-db:
     image: pgvector/pgvector:pg17
     container_name: advisor-db
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_ADVISOR_PASSWORD}
       POSTGRES_DB: advisordb
-    volumes: [ "advisor-db-data:/var/lib/postgresql/data" ]
+    volumes: ["advisor-db-data:/var/lib/postgresql/data"]
     ports: []
     networks: [tesis-network]
     restart: unless-stopped
@@ -338,11 +349,11 @@ services:
   duels-db:
     image: postgres:17.5-alpine3.22
     container_name: duels-db
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_DUELS_PASSWORD}
       POSTGRES_DB: duelsdb
-    volumes: [ "duels-db-data:/var/lib/postgresql/data" ]
+    volumes: ["duels-db-data:/var/lib/postgresql/data"]
     ports: []
     networks: [tesis-network]
     restart: unless-stopped
@@ -361,7 +372,7 @@ services:
   auth-service:
     image: ghcr.io/jair25x/auth-service:${AUTH_TAG}
     container_name: auth-service
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -373,7 +384,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
       JWT_SECRET: ${JWT_SECRET}
-      BOOTSTRAP_ADMIN: "true"               # solo primer despliegue
+      BOOTSTRAP_ADMIN: "true" # solo primer despliegue
       BOOTSTRAP_ADMIN_USERNAME: "admin"
       BOOTSTRAP_ADMIN_PASSWORD: "admin"
       BOOTSTRAP_ADMIN_EMAIL: "almanzajair5@gmail.com"
@@ -393,7 +404,7 @@ services:
   curriculum-service:
     image: ghcr.io/jair25x/curriculum-service:${CURRICULUM_TAG}
     container_name: curriculum-service
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -415,6 +426,16 @@ services:
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:8082/actuator/health/liveness || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
     deploy:
       resources:
         limits: { cpus: "0.75", memory: "640M" }
@@ -422,7 +443,7 @@ services:
   progress-service:
     image: ghcr.io/jair25x/progress-service:${PROGRESS_TAG}
     container_name: progress-service
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -443,6 +464,16 @@ services:
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:8083/actuator/health/liveness || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
     deploy:
       resources:
         limits: { cpus: "0.75", memory: "640M" }
@@ -450,7 +481,7 @@ services:
   classroom-service:
     image: ghcr.io/jair25x/classroom-service:${CLASSROOM_TAG}
     container_name: classroom-service
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -478,7 +509,7 @@ services:
   assessment-service:
     image: ghcr.io/jair25x/assessment-service:${ASSESSMENT_TAG}
     container_name: assessment-service
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -507,7 +538,7 @@ services:
   ai-advisor-service:
     image: ghcr.io/jair25x/ai-advisor-service:${AI_ADVISOR_TAG}
     container_name: ai-advisor-service
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       ENV: prod
       PORT: 8086
@@ -550,7 +581,7 @@ services:
   duels-service:
     image: ghcr.io/jair25x/duels-service:${DUELS_TAG}
     container_name: duels-service
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       PORT: 8087
       DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_DUELS_PASSWORD}@duels-db:5432/duelsdb
@@ -601,7 +632,7 @@ services:
   grafana:
     image: grafana/grafana:11.2.0
     container_name: grafana
-    env_file: [ ./.env ]
+    env_file: [./.env]
     environment:
       GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
