@@ -1,0 +1,22 @@
+services:
+  admin-monitoring-service: { ports: [] }
+  advisor-redis: { ports: [] }
+  ai-advisor-service: { ports: [] }
+  assessment-db: { ports: [] }
+  assessment-service: { ports: [] }
+  auth-profile-db: { ports: [] }
+  auth-service: { ports: [] }
+  classroom-db: { ports: [] }
+  classroom-service: { ports: [] }
+  config-service: { ports: [] }
+  content-db: { ports: [] }
+  curriculum-service: { ports: [] }
+  duels-db: { ports: [] }
+  duels-service: { ports: [] }
+  eureka-server: { ports: [] }
+  frontend: { ports: [] }
+  gateway-service: { ports: [] }
+  grafana: { ports: [] }
+  progress-db: { ports: [] }
+  progress-service: { ports: [] }
+  prometheus: { ports: [] }
