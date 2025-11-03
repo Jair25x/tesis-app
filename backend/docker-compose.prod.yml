@@ -43,18 +43,16 @@ services:
       - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    # IMPORTANTE: sin depends_on; Caddy debe arrancar siempre para ACME
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
 
   # === Frontend (interno; Caddy lo publica) ===
   frontend:
-    image: ghcr.io/tuorg/tesis-frontend:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/tesis-frontend:${FRONTEND_TAG}
     container_name: frontend
-    env_file:
-      - ./.env
-    ports: []   # interno
+    env_file: [ ./.env ]
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -66,16 +64,13 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "256M"
+        limits: { cpus: "0.50", memory: "256M" }
 
   # === Gateway (interno; Caddy lo publica en api.*) ===
   gateway-service:
-    image: ghcr.io/tuorg/gateway-service:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/gateway-service:${GATEWAY_TAG}
     container_name: gateway-service
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -88,15 +83,11 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
     depends_on:
-      eureka-server:
-        condition: service_healthy
-      config-service:
-        condition: service_healthy
-      advisor-redis:
-        condition: service_healthy
-      admin-monitoring-service:
-        condition: service_started
-    ports: []   # interno
+      eureka-server: { condition: service_healthy }
+      config-service: { condition: service_healthy }
+      advisor-redis: { condition: service_healthy }
+      admin-monitoring-service: { condition: service_started }
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -108,20 +99,17 @@ services:
       start_period: 40s
     deploy:
       resources:
-        limits:
-          cpus: "1.00"
-          memory: "512M"
+        limits: { cpus: "1.00", memory: "512M" }
 
   # === Eureka (interno) ===
   eureka-server:
-    image: ghcr.io/tuorg/eureka-server:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/eureka-server:${EUREKA_TAG}
     container_name: eureka-server
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
-    ports: []   # interno
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -133,22 +121,19 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "384M"
+        limits: { cpus: "0.50", memory: "384M" }
 
   # === Config Server (interno) ===
   config-service:
-    image: ghcr.io/tuorg/config-service:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/config-service:${CONFIG_TAG}
     container_name: config-service
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    ports: []   # interno
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -160,24 +145,20 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "384M"
+        limits: { cpus: "0.50", memory: "384M" }
 
   # === Admin (Spring Boot Admin; Caddy lo publica en admin.*) ===
   admin-monitoring-service:
-    image: ghcr.io/tuorg/admin-monitoring-service:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/admin-monitoring-service:${ADMIN_TAG}
     container_name: admin-monitoring-service
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
-      eureka-server:
-        condition: service_healthy
-    ports: []   # interno
+      eureka-server: { condition: service_healthy }
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -188,16 +169,13 @@ services:
       retries: 15
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "384M"
+        limits: { cpus: "0.50", memory: "384M" }
 
   # === Redis endurecido (interno) ===
   advisor-redis:
     image: redis:7-alpine
     container_name: advisor-redis
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     command: >
       sh -c '
       exec redis-server
@@ -210,7 +188,7 @@ services:
       '
     volumes:
       - redis-data:/data
-    ports: []   # interno (sin publicar)
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -219,24 +197,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 15
-      start_period: 20s
     deploy:
       resources:
-        limits:
-          cpus: "0.25"
-          memory: "256M"
+        limits: { cpus: "0.25", memory: "256M" }
 
   # === Postgres por servicio (internos, sin puertos) ===
   auth-profile-db:
     image: postgres:17.5-alpine3.22
     container_name: auth-profile-db
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
       POSTGRES_DB: tesisdb_auth
     volumes: [ "auth-profile-db-data:/var/lib/postgresql/data" ]
-    ports: []   # interno
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -248,20 +222,17 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "512M"
+        limits: { cpus: "0.50", memory: "512M" }
 
   content-db:
     image: postgres:17.5-alpine3.22
     container_name: content-db
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_CONTENT_PASSWORD}
       POSTGRES_DB: contentdb
     volumes: [ "content-db-data:/var/lib/postgresql/data" ]
-    ports: []   # interno
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -273,20 +244,17 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "512M"
+        limits: { cpus: "0.50", memory: "512M" }
 
   progress-db:
     image: postgres:17.5-alpine3.22
     container_name: progress-db
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PROGRESS_PASSWORD}
       POSTGRES_DB: progressdb
     volumes: [ "progress-db-data:/var/lib/postgresql/data" ]
-    ports: []   # interno
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -298,20 +266,17 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "512M"
+        limits: { cpus: "0.50", memory: "512M" }
 
   classroom-db:
     image: postgres:17.5-alpine3.22
     container_name: classroom-db
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD}
       POSTGRES_DB: classroomdb
     volumes: [ "classroom-db-data:/var/lib/postgresql/data" ]
-    ports: []   # interno
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -323,20 +288,17 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "512M"
+        limits: { cpus: "0.50", memory: "512M" }
 
   assessment-db:
     image: postgres:17.5-alpine3.22
     container_name: assessment-db
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_ASSESSMENT_PASSWORD}
       POSTGRES_DB: assessmentdb
     volumes: [ "assessment-db-data:/var/lib/postgresql/data" ]
-    ports: []   # interno
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -348,20 +310,17 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "512M"
+        limits: { cpus: "0.50", memory: "512M" }
 
   advisor-db:
     image: pgvector/pgvector:pg17
     container_name: advisor-db
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_ADVISOR_PASSWORD}
       POSTGRES_DB: advisordb
     volumes: [ "advisor-db-data:/var/lib/postgresql/data" ]
-    ports: []   # interno
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -373,20 +332,17 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "512M"
+        limits: { cpus: "0.50", memory: "512M" }
 
   duels-db:
     image: postgres:17.5-alpine3.22
     container_name: duels-db
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_DUELS_PASSWORD}
       POSTGRES_DB: duelsdb
     volumes: [ "duels-db-data:/var/lib/postgresql/data" ]
-    ports: []   # interno
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
@@ -398,16 +354,13 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "512M"
+        limits: { cpus: "0.50", memory: "512M" }
 
   # === Microservicios Java (internos; los ve el gateway) ===
   auth-service:
-    image: ghcr.io/tuorg/auth-service:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/auth-service:${AUTH_TAG}
     container_name: auth-service
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -419,30 +372,27 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
       JWT_SECRET: ${JWT_SECRET}
+      BOOTSTRAP_ADMIN: "true"               # solo primer despliegue
+      BOOTSTRAP_ADMIN_USERNAME: "admin"
+      BOOTSTRAP_ADMIN_PASSWORD: "admin"
+      BOOTSTRAP_ADMIN_EMAIL: "almanzajair5@gmail.com"
     depends_on:
-      auth-profile-db:
-        condition: service_healthy
-      config-service:
-        condition: service_healthy
-      eureka-server:
-        condition: service_healthy
-      admin-monitoring-service:
-        condition: service_started
-    ports: []   # interno
+      auth-profile-db: { condition: service_healthy }
+      config-service: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+      admin-monitoring-service: { condition: service_started }
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
     deploy:
       resources:
-        limits:
-          cpus: "0.75"
-          memory: "640M"
+        limits: { cpus: "0.75", memory: "640M" }
 
   curriculum-service:
-    image: ghcr.io/tuorg/curriculum-service:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/curriculum-service:${CURRICULUM_TAG}
     container_name: curriculum-service
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -456,29 +406,22 @@ services:
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
       S2S_JWT_ISSUER: ai-advisor-service
     depends_on:
-      content-db:
-        condition: service_healthy
-      config-service:
-        condition: service_healthy
-      eureka-server:
-        condition: service_healthy
-      admin-monitoring-service:
-        condition: service_started
-    ports: []   # interno
+      content-db: { condition: service_healthy }
+      config-service: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+      admin-monitoring-service: { condition: service_started }
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
     deploy:
       resources:
-        limits:
-          cpus: "0.75"
-          memory: "640M"
+        limits: { cpus: "0.75", memory: "640M" }
 
   progress-service:
-    image: ghcr.io/tuorg/progress-service:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/progress-service:${PROGRESS_TAG}
     container_name: progress-service
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -491,29 +434,22 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
     depends_on:
-      progress-db:
-        condition: service_healthy
-      config-service:
-        condition: service_healthy
-      eureka-server:
-        condition: service_healthy
-      admin-monitoring-service:
-        condition: service_started
-    ports: []   # interno
+      progress-db: { condition: service_healthy }
+      config-service: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+      admin-monitoring-service: { condition: service_started }
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
     deploy:
       resources:
-        limits:
-          cpus: "0.75"
-          memory: "640M"
+        limits: { cpus: "0.75", memory: "640M" }
 
   classroom-service:
-    image: ghcr.io/tuorg/classroom-service:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/classroom-service:${CLASSROOM_TAG}
     container_name: classroom-service
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -526,29 +462,22 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET}
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
     depends_on:
-      classroom-db:
-        condition: service_healthy
-      config-service:
-        condition: service_healthy
-      eureka-server:
-        condition: service_healthy
-      admin-monitoring-service:
-        condition: service_started
-    ports: []   # interno
+      classroom-db: { condition: service_healthy }
+      config-service: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+      admin-monitoring-service: { condition: service_started }
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
     deploy:
       resources:
-        limits:
-          cpus: "0.75"
-          memory: "640M"
+        limits: { cpus: "0.75", memory: "640M" }
 
   assessment-service:
-    image: ghcr.io/tuorg/assessment-service:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/assessment-service:${ASSESSMENT_TAG}
     container_name: assessment-service
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       <<: *jvm-opts
       SPRING_PROFILES_ACTIVE: prod
@@ -561,30 +490,23 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       S2S_JWT_SECRET: ${S2S_JWT_SECRET}
     depends_on:
-      assessment-db:
-        condition: service_healthy
-      config-service:
-        condition: service_healthy
-      eureka-server:
-        condition: service_healthy
-      admin-monitoring-service:
-        condition: service_started
-    ports: []   # interno
+      assessment-db: { condition: service_healthy }
+      config-service: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+      admin-monitoring-service: { condition: service_started }
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
     deploy:
       resources:
-        limits:
-          cpus: "0.75"
-          memory: "640M"
+        limits: { cpus: "0.75", memory: "640M" }
 
   # === FastAPI (internos) ===
   ai-advisor-service:
-    image: ghcr.io/tuorg/ai-advisor-service:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/ai-advisor-service:${AI_ADVISOR_TAG}
     container_name: ai-advisor-service
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       ENV: prod
       PORT: 8086
@@ -612,29 +534,22 @@ services:
       EMB_REQUEST_TIMEOUT: 12
       BEHIND_GATEWAY: "true"
     depends_on:
-      advisor-db:
-        condition: service_healthy
-      advisor-redis:
-        condition: service_healthy
-      curriculum-service:
-        condition: service_healthy
-      progress-service:
-        condition: service_healthy
-    ports: []   # interno
+      advisor-db: { condition: service_healthy }
+      advisor-redis: { condition: service_healthy }
+      curriculum-service: { condition: service_healthy }
+      progress-service: { condition: service_healthy }
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
     deploy:
       resources:
-        limits:
-          cpus: "0.75"
-          memory: "512M"
+        limits: { cpus: "0.75", memory: "512M" }
 
   duels-service:
-    image: ghcr.io/tuorg/duels-service:prod-YYYYMMDD-HHMM
+    image: ghcr.io/jair25x/duels-service:${DUELS_TAG}
     container_name: duels-service
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       PORT: 8087
       DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_DUELS_PASSWORD}@duels-db:5432/duelsdb
@@ -654,21 +569,16 @@ services:
       UVICORN_LOG_LEVEL: info
       BEHIND_GATEWAY: "true"
     depends_on:
-      duels-db:
-        condition: service_healthy
-      advisor-redis:
-        condition: service_healthy
-      curriculum-service:
-        condition: service_healthy
-    ports: []   # interno
+      duels-db: { condition: service_healthy }
+      advisor-redis: { condition: service_healthy }
+      curriculum-service: { condition: service_healthy }
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
     deploy:
       resources:
-        limits:
-          cpus: "0.75"
-          memory: "512M"
+        limits: { cpus: "0.75", memory: "512M" }
 
   # === Monitoring (interno) ===
   prometheus:
@@ -677,36 +587,29 @@ services:
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
-    ports: []   # interno
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
     depends_on:
-      gateway-service:
-        condition: service_healthy
+      gateway-service: { condition: service_healthy }
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "256M"
+        limits: { cpus: "0.50", memory: "256M" }
 
   grafana:
     image: grafana/grafana:11.2.0
     container_name: grafana
-    env_file:
-      - ./.env
+    env_file: [ ./.env ]
     environment:
       GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
-    ports: []   # interno
+    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
     depends_on:
-      prometheus:
-        condition: service_started
+      prometheus: { condition: service_started }
     deploy:
       resources:
-        limits:
-          cpus: "0.50"
-          memory: "256M"
+        limits: { cpus: "0.50", memory: "256M" }

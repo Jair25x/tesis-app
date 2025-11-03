@@ -7,6 +7,7 @@ on:
       - "backend/**"
       - "frontend/**"
       - ".github/workflows/build-and-push-all.yml"
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -24,7 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Un único TAG estable para todo el batch: prod-YYYYMMDD-HHMM (UTC)
+      # Un único TAG estable por batch: prod-YYYYMMDD-HHMM (UTC)
       - name: Compute TAG
         id: tag
         run: echo "TAG=prod-$(date -u +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
@@ -51,40 +52,50 @@ jobs:
       - name: Warm Maven cache (monorepo backend)
         run: mvn -B -f backend/pom.xml -DskipTests package || true
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Helper para construir y pushear usando buildx con cache y contextos correctos
       - name: Build & Push images
         env:
           TAG: ${{ steps.tag.outputs.TAG }}
           NS:  ${{ steps.ns.outputs.NS }}
         run: |
-          set -e
+          set -euo pipefail
 
           build_push () {
-            local dockerfile="$1"
+            local file="$1"
             local context="$2"
             local image="$3"
+
             echo ""
             echo "==> Building ${image}:${TAG}"
-            docker build -f "${dockerfile}" -t "${image}:${TAG}" "${context}"
-            docker push "${image}:${TAG}"
+            docker buildx build \
+              --file "${file}" \
+              --tag "${image}:${TAG}" \
+              --cache-from "type=gha,scope=${image}" \
+              --cache-to   "type=gha,mode=max,scope=${image}" \
+              --push \
+              "${context}"
           }
 
-          # --- JAVA services ---
-          build_push backend/eureka-server/Dockerfile              .  "${NS}/eureka-server"
-          build_push backend/config-service/Dockerfile             .  "${NS}/config-service"
-          build_push backend/admin-monitoring-service/Dockerfile   .  "${NS}/admin-monitoring-service"
-          build_push backend/gateway-service/Dockerfile            .  "${NS}/gateway-service"
-          build_push backend/auth-service/Dockerfile               .  "${NS}/auth-service"
-          build_push backend/curriculum-service/Dockerfile         .  "${NS}/curriculum-service"
-          build_push backend/progress-service/Dockerfile           .  "${NS}/progress-service"
-          build_push backend/classroom-service/Dockerfile          .  "${NS}/classroom-service"
-          build_push backend/assessment-service/Dockerfile         .  "${NS}/assessment-service"
+          # --- JAVA services (contexto = ./backend) ---
+          build_push backend/eureka-server/Dockerfile              ./backend  "${NS}/eureka-server"
+          build_push backend/config-service/Dockerfile             ./backend  "${NS}/config-service"
+          build_push backend/admin-monitoring-service/Dockerfile   ./backend  "${NS}/admin-monitoring-service"
+          build_push backend/gateway-service/Dockerfile            ./backend  "${NS}/gateway-service"
+          build_push backend/auth-service/Dockerfile               ./backend  "${NS}/auth-service"
+          build_push backend/curriculum-service/Dockerfile         ./backend  "${NS}/curriculum-service"
+          build_push backend/progress-service/Dockerfile           ./backend  "${NS}/progress-service"
+          build_push backend/classroom-service/Dockerfile          ./backend  "${NS}/classroom-service"
+          build_push backend/assessment-service/Dockerfile         ./backend  "${NS}/assessment-service"
 
-          # --- FastAPI services ---
-          build_push backend/ai-advisor-service/Dockerfile         .  "${NS}/ai-advisor-service"
-          build_push backend/duels-service/Dockerfile              .  "${NS}/duels-service"
+          # --- FastAPI services (también dentro de ./backend) ---
+          build_push backend/ai-advisor-service/Dockerfile         ./backend  "${NS}/ai-advisor-service"
+          build_push backend/duels-service/Dockerfile              ./backend  "${NS}/duels-service"
 
-          # --- Frontend (vive en ./frontend) ---
-          build_push frontend/Dockerfile                       ./frontend  "${NS}/tesis-frontend"
+          # --- Frontend (contexto = ./frontend) ---
+          build_push frontend/Dockerfile                           ./frontend "${NS}/tesis-frontend"
 
           # Emitir archivo de TAGS para despliegue
           {
@@ -107,3 +118,4 @@ jobs:
         with:
           name: image-tags
           path: tags.env
+          retention-days: 14

@@ -1,17 +1,12 @@
 package com.tesis.auth_service.model;
 
 import jakarta.persistence.*;
+import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.*;
-
-import java.util.UUID;
 
 @Data
 @NoArgsConstructor
@@ -22,9 +17,8 @@ import java.util.UUID;
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id; // PK legacy (se mantiene)
+    private Long id;
 
-    // ⬇️ NUEVO: UUID canónico para identidad externa y JWT
     @Column(name = "user_uuid", columnDefinition = "uuid", nullable = false, unique = true)
     private UUID userUuid;
 
@@ -50,22 +44,35 @@ public class User {
     private String profilePictureUrl;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
+    @Column(columnDefinition = "jsonb not null")
+    @Builder.Default
     private Map<String, Object> preferences = new HashMap<>();
 
+    @Builder.Default
     private boolean enabled = true;
+
+    @Column(name = "account_non_locked")
+    @Builder.Default
     private boolean accountNonLocked = true;
+
+    @Column(name = "credentials_non_expired")
+    @Builder.Default
     private boolean credentialsNonExpired = true;
 
     @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"), inverseJoinColumns = @JoinColumn(name = "role_id"))
+    @JoinTable(
+        name = "user_roles",
+        joinColumns = @JoinColumn(name = "user_id"),
+        inverseJoinColumns = @JoinColumn(name = "role_id")
+    )
+    @Builder.Default
     private Set<Role> roles = new HashSet<>();
 
     @PrePersist
     public void prePersist() {
-        if (userUuid == null)
-            userUuid = UUID.randomUUID();
-        if (fechaRegistro == null)
-            fechaRegistro = LocalDateTime.now();
+        if (userUuid == null) userUuid = UUID.randomUUID();
+        if (fechaRegistro == null) fechaRegistro = LocalDateTime.now();
+        if (preferences == null) preferences = new HashMap<>();
+        if (roles == null) roles = new HashSet<>();
     }
 }
