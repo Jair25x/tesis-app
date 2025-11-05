@@ -1,3 +1,4 @@
+# app/main.py
 from __future__ import annotations
 
 import os
@@ -12,6 +13,8 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .routers import http as http_router, ws as ws_router
 from .routers import reports
+from .routers import actuator  # 👈 AÑADIR ESTA LÍNEA
+
 from .config import (
     ALLOWED_ORIGINS, EUREKA_SERVER, EUREKA_APP_NAME, DUELS_HOST, PORT,
     HEALTH_URL, HOME_URL, EUREKA_PREFER_IP, EUREKA_RENEWAL, EUREKA_DURATION,
@@ -40,8 +43,9 @@ app.add_middleware(
 app.include_router(http_router.router)
 app.include_router(ws_router.router)
 app.include_router(reports.router)
+app.include_router(actuator.router)
 
-# Health & Metrics
+# Health & Metrics (legacy)
 @app.get("/healthz", include_in_schema=False)
 async def healthz():
     return {"status": "ok"}
