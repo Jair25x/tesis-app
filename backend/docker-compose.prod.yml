@@ -188,16 +188,15 @@ services:
     image: redis:7-alpine
     container_name: advisor-redis
     env_file: [./.env]
-    command: >
-      sh -c '
-      exec redis-server
-        --appendonly yes
-        "--save" "60 1000"
-        "--rename-command" "CONFIG" ""
-        "--rename-command" "FLUSHALL" ""
-        "--requirepass" "${REDIS_PASSWORD}"
-        --protected-mode yes
-      '
+    command: [
+      "redis-server",
+      "--appendonly", "yes",
+      "--save", "60 1000",
+      "--rename-command", "CONFIG", "",
+      "--rename-command", "FLUSHALL", "",
+      "--requirepass", "${REDIS_PASSWORD}",
+      "--protected-mode", "yes"
+    ]
     volumes:
       - redis-data:/data
     ports: []
