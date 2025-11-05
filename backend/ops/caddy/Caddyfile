@@ -3,14 +3,14 @@
   servers {
     protocols h1 h2 h3
   }
-  # Opcional: logs globales
+  # Si luego quieres logs globales:
   # logging {
   #   output stdout
   #   level INFO
   # }
 }
 
-# Redirección explícita HTTP -> HTTPS para cualquier host
+# Redirección explícita HTTP -> HTTPS para cualquier host (por si alguien fuerza :80)
 http:// {
   redir https://{host}{uri} permanent
 }
@@ -20,13 +20,18 @@ app.capimath.net.pe {
   encode zstd gzip
 
   header {
+    # Seguridad
     Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
     Content-Security-Policy "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:"
     X-Content-Type-Options nosniff
     X-Frame-Options SAMEORIGIN
     Referrer-Policy "strict-origin-when-cross-origin"
+    # (Opcional) cache agresiva sólo para assets hasheados de Vite
+    # @assets path /assets/*
+    # header @assets Cache-Control "public, max-age=31536000, immutable"
   }
 
+  # Todo lo que llegue al host del app lo sirve el contenedor frontend (Nginx SPA + /api proxied)
   reverse_proxy frontend:80
 }
 
@@ -43,6 +48,7 @@ api.capimath.net.pe {
   }
 
   reverse_proxy gateway-service:8080 {
+    # Timeouts generosos para WS/SSE
     transport http {
       read_buffer   4096
       write_buffer  4096
@@ -57,6 +63,7 @@ api.capimath.net.pe {
 admin.capimath.net.pe {
   encode zstd gzip
 
+  # Si más adelante quieres +seguridad, puedes combinar con allowlist por IP.
   basic_auth /* {
     admin $2a$14$J7wTGpvYyfZgTfyfeVWwmuwsF3p.42zlF96fxQx.ZYUBgLJZsWjai
   }

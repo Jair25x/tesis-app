@@ -40,7 +40,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./ops/caddy:/etc/caddy:ro
       - caddy_data:/data
       - caddy_config:/config
     networks: [tesis-network]
