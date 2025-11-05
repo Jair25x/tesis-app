@@ -565,6 +565,11 @@ services:
       OPENAI_EMBED_MODEL: text-embedding-3-small
       EMB_REQUEST_TIMEOUT: 12
       BEHIND_GATEWAY: "true"
+      EUREKA_SERVER: ${EUREKA_URL}
+      EUREKA_APP_NAME: AI-ADVISOR-SERVICE
+      ADVISOR_HOST: ai-advisor-service
+      HEALTH_URL: http://ai-advisor-service:8086/healthz
+      HOME_URL:   http://ai-advisor-service:8086/docs
     depends_on:
       advisor-db: { condition: service_healthy }
       advisor-redis: { condition: service_healthy }
@@ -600,6 +605,11 @@ services:
       LOG_LEVEL: INFO
       UVICORN_LOG_LEVEL: info
       BEHIND_GATEWAY: "true"
+      EUREKA_SERVER: ${EUREKA_URL}
+      EUREKA_APP_NAME: DUELS-SERVICE
+      DUELS_HOST: duels-service
+      HEALTH_URL: http://duels-service:8087/healthz
+      HOME_URL:   http://duels-service:8087/docs
     depends_on:
       duels-db: { condition: service_healthy }
       advisor-redis: { condition: service_healthy }
