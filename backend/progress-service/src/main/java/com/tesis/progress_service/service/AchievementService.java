@@ -27,20 +27,13 @@ public class AchievementService {
    * Consultas de logros (DTOs)
    * ===========================
    */
+  /**
+   * Catálogo de logros del alumno (sólo DTOs). Sin Lazy, sin N+1.
+   */
 
+  @Transactional(readOnly = true)
   public List<AchievementDto> listForStudent(UUID studentId) {
-    List<StudentAchievement> list = studentAchievementRepository.findAllByStudentIdOrderByEarnedAtDesc(studentId);
-    List<AchievementDto> out = new ArrayList<>(list.size());
-    for (var sa : list) {
-      var a = sa.getAchievement();
-      out.add(AchievementDto.builder()
-          .code(a.getCode())
-          .name(a.getName())
-          .description(a.getDescription())
-          .earnedAt(sa.getEarnedAt())
-          .build());
-    }
-    return out;
+    return studentAchievementRepository.findAllDtoByStudentIdOrderByEarnedAtDesc(studentId);
   }
 
   @Cacheable(cacheNames = "achievementCatalog", unless = "#result == null || #result.isEmpty()")
