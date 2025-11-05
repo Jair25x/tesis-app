@@ -574,10 +574,15 @@ services:
       advisor-redis: { condition: service_healthy }
       curriculum-service: { condition: service_healthy }
       progress-service: { condition: service_healthy }
-    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8086/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
     deploy:
       resources:
         limits: { cpus: "0.75", memory: "512M" }
@@ -613,10 +618,15 @@ services:
       duels-db: { condition: service_healthy }
       advisor-redis: { condition: service_healthy }
       curriculum-service: { condition: service_healthy }
-    ports: []
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8087/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
     deploy:
       resources:
         limits: { cpus: "0.75", memory: "512M" }
