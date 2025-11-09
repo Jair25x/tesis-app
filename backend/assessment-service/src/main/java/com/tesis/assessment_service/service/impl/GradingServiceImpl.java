@@ -26,11 +26,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
+
+import static com.tesis.assessment_service.util.ScoreUtils.normalize;
 
 @Service
 @RequiredArgsConstructor
@@ -77,13 +78,10 @@ public class GradingServiceImpl implements GradingService {
     meta.put("submissionItemId", it.getId().toString());
     meta.put("gradingMode", it.getGradingMode() == null ? GradingMode.AUTO.name() : it.getGradingMode().name());
 
-    // Normalización 0..1
-    BigDecimal normalized = null;
-    if (it.getScore() != null && it.getPoints() != null && it.getPoints() > 0) {
-      normalized = it.getScore().divide(BigDecimal.valueOf(it.getPoints()), 3, RoundingMode.HALF_UP);
-    }
+    // Normalización 0..1 (utilidad central)
+    BigDecimal normalized = normalize(it.getScore(), it.getPoints());
 
-    // Payload para outbox (JSONB real) — usa claves nuevas
+    // Payload para outbox (JSONB real) — claves nuevas
     ObjectNode payload = mapper.createObjectNode();
     payload.put("studentId", s.getStudentId().toString());
     payload.put("source", "ASSESSMENT");
@@ -97,7 +95,8 @@ public class GradingServiceImpl implements GradingService {
       payload.put("awardedPoints", it.getScore().intValue());
     if (it.getPoints() != null)
       payload.put("maxPoints", it.getPoints());
-    payload.put("objectiveId", it.getObjectiveId().toString());
+    if (it.getObjectiveId() != null)
+      payload.put("objectiveId", it.getObjectiveId().toString());
     payload.set("metadata", meta);
 
     // Envío best-effort + fallback

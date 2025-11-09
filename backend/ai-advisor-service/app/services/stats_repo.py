@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional, Iterable
+from decimal import Decimal, ROUND_HALF_UP
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -10,12 +12,15 @@ from sqlalchemy.orm import Session
 # ---- util ----
 
 def _norm_diff(d: Optional[str]) -> Optional[str]:
+    """
+    Normaliza etiquetas de dificultad a EASY|MEDIUM|HARD.
+    Acepta equivalencias BASIC→EASY, INTERMEDIATE→MEDIUM, ADVANCED→HARD.
+    """
     if not d:
         return None
     x = str(d).strip().upper()
     if x in {"EASY", "MEDIUM", "HARD"}:
         return x
-    # Acepta los enums internos de curriculum
     if x == "BASIC":
         return "EASY"
     if x == "INTERMEDIATE":
@@ -25,12 +30,22 @@ def _norm_diff(d: Optional[str]) -> Optional[str]:
     return None
 
 
+def _q3(x: Optional[float]) -> Optional[float]:
+    """
+    Cuantiza a 3 decimales con HALF_UP antes de pasar a SQL.
+    Evita ruido binario de float; devuelve None si x es None.
+    """
+    if x is None:
+        return None
+    return float(Decimal(x).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
+
+
 # ---- create/ensure ----
 
 def ensure_stats_row(db: Session, *, student_id: str, objective_id: str) -> None:
     """
     Idempotente: crea el registro (con defaults) si no existe.
-    Safe en concurrencia gracias a ON CONFLICT DO NOTHING.
+    Concurrencia segura vía ON CONFLICT DO NOTHING.
     """
     db.execute(
         text("""
@@ -87,11 +102,12 @@ def register_attempt(
     """
     Actualiza acumuladores globales y por dificultad.
     Asume que ya llamaste a ensure_stats_row(...).
+    'score' llega en 0..1. Se aplica blindaje Decimal a 3 decimales antes de SQL.
     """
     d = _norm_diff(difficulty)
 
     db.execute(
-        text(f"""
+        text("""
         UPDATE student_objective_stats
         SET
           -- globales
@@ -124,7 +140,7 @@ def register_attempt(
             "oid": objective_id,
             "d": d,
             "correct": bool(correct),
-            "score": score,
+            "score": _q3(score),
             "now": now,
         },
     )

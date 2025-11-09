@@ -24,11 +24,12 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
+
+import static com.tesis.assessment_service.util.ScoreUtils.normalize;
 
 @Slf4j
 @Service
@@ -59,7 +60,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     // 2) membresía si es aula
     ensureStudentMembership(a, studentId);
 
-    // 3) Idempotencia: si hay un IN_PROGRESS, devuélvelo
+    // 3) Idempotencia
     Optional<AssessmentSubmission> inProgress = submissionRepo
         .findTopByAssignment_IdAndStudentIdAndStatusOrderByCreatedAtDesc(assignmentId, studentId,
             SubmissionStatus.IN_PROGRESS);
@@ -102,17 +103,16 @@ public class SubmissionServiceImpl implements SubmissionService {
             .sorted(Comparator.comparingInt(AssessmentTemplateItem::getPosition))
             .toList();
 
-    // 8) IDs de ejercicios y lookup batch de dificultad (denormalización)
+    // 8) Lookup batch dificultad
     List<UUID> exerciseIds = templateItems.stream()
         .map(AssessmentTemplateItem::getExerciseId)
         .filter(Objects::nonNull)
         .distinct()
         .toList();
 
-    final Map<UUID, String> diffMap = safeGetDifficulties(exerciseIds); // <- FINAL
+    final Map<UUID, String> diffMap = safeGetDifficulties(exerciseIds);
 
-    // 9) Construir y persistir submission items (seteando exerciseDifficulty si
-    // existe)
+    // 9) Construir y persistir items
     List<AssessmentSubmissionItem> items = templateItems.stream()
         .map(ti -> {
           AssessmentSubmissionItem.AssessmentSubmissionItemBuilder b = AssessmentSubmissionItem.builder()
@@ -469,12 +469,6 @@ public class SubmissionServiceImpl implements SubmissionService {
   }
 
   /** Envío a progress-service con outbox fallback. */
-  private static BigDecimal norm(BigDecimal score, Integer points) {
-    if (score == null || points == null || points <= 0)
-      return null;
-    return score.divide(BigDecimal.valueOf(points), 3, RoundingMode.HALF_UP);
-  }
-
   private void postAttemptBestEffort(AssessmentSubmission s, AssessmentSubmissionItem it, UUID objectiveId) {
     try {
       ObjectNode meta = mapper.createObjectNode();
@@ -483,7 +477,7 @@ public class SubmissionServiceImpl implements SubmissionService {
       meta.put("submissionItemId", it.getId().toString());
       meta.put("gradingMode", it.getGradingMode().name());
 
-      BigDecimal normalized = norm(it.getScore(), it.getPoints());
+      BigDecimal normalized = normalize(it.getScore(), it.getPoints());
 
       var req = new ProgressClient.AttemptRequest(
           s.getStudentId(),
@@ -525,10 +519,7 @@ public class SubmissionServiceImpl implements SubmissionService {
       if (it.getCorrect() != null)
         root.put("correct", it.getCorrect());
 
-      BigDecimal normalized = (it.getScore() == null || it.getPoints() == null || it.getPoints() <= 0)
-          ? null
-          : it.getScore().divide(BigDecimal.valueOf(it.getPoints()), 3, RoundingMode.HALF_UP);
-
+      BigDecimal normalized = normalize(it.getScore(), it.getPoints());
       if (normalized != null)
         root.put("normalizedScore", normalized);
       if (it.getScore() != null)

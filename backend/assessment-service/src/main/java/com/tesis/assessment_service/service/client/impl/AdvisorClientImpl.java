@@ -85,7 +85,10 @@ public class AdvisorClientImpl implements AdvisorClient {
 
       // objectiveId requerido por nuestro backend (si falta, el router hará fallback
       // a curriculumId)
-      attempt.put("objectiveId", it.path("objectiveId").asText(""));
+      String obj = it.path("objectiveId").asText(null);
+      if (obj != null && !obj.isBlank()) {
+        attempt.put("objectiveId", obj);
+      }
 
       // answeredAt: usa el del item; si no hay, usa occurredAt del evento; si no,
       // now(UTC)

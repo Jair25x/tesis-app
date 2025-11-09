@@ -37,9 +37,11 @@ public class ProgressClientImpl implements ProgressClient {
       body.put("source", req.source());
       body.put("curriculumId", req.curriculumId().toString());
       body.put("exerciseId", req.exerciseId().toString());
-      body.put("objectiveId", req.objectiveId() == null ? null : req.objectiveId().toString());
 
       // opcionales
+      if (req.objectiveId() != null) {
+        body.put("objectiveId", req.objectiveId().toString());
+      }
       if (req.correct() != null) {
         body.put("correct", req.correct());
       }
