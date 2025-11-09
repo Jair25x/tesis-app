@@ -1,8 +1,8 @@
 export type RecoAttribution = {
   source: "AI_RECO";
-  objectiveId: string;
-  at: string;           // ISO timestamp
-  sourceRefId: string;  // correlación end-to-end
+  objectiveId: string | null; // ← permite null, consistente con RecommendationItem
+  at: string;                 // ISO timestamp
+  sourceRefId: string;        // correlación end-to-end
 };
 
 const PREFIX = "reco:attr:";

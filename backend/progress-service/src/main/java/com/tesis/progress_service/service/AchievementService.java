@@ -1,12 +1,18 @@
-// src/main/java/com/tesis/progress_service/service/AchievementService.java
 package com.tesis.progress_service.service;
 
+import com.tesis.progress_service.client.AvatarClient;
 import com.tesis.progress_service.dto.AchievementDto;
+import com.tesis.progress_service.dto.AvatarClaimRequest;
 import com.tesis.progress_service.dto.DuelEventRequest;
-import com.tesis.progress_service.model.*;
+import com.tesis.progress_service.model.Achievement;
+import com.tesis.progress_service.model.Attempt;
+import com.tesis.progress_service.model.Streak;
+import com.tesis.progress_service.model.StudentAchievement;
+import com.tesis.progress_service.model.StudentObjectiveProgress;
 import com.tesis.progress_service.repository.AchievementRepository;
 import com.tesis.progress_service.repository.StudentAchievementRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -15,20 +21,19 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.*;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AchievementService {
 
   private final AchievementRepository achievementRepository;
   private final StudentAchievementRepository studentAchievementRepository;
+  private final AvatarClient avatarClient; // << NUEVO
 
   /*
    * ===========================
    * Consultas de logros (DTOs)
    * ===========================
-   */
-  /**
-   * Catálogo de logros del alumno (sólo DTOs). Sin Lazy, sin N+1.
    */
 
   @Transactional(readOnly = true)
@@ -106,7 +111,7 @@ public class AchievementService {
       unlocked.addAll(grantIfEligible(winnerId, "DUEL_FIRST_WIN", Map.of("matchId", matchId)));
     }
 
-    // 2) Respuesta rápida (≤ 5s) para cualquier jugador en alguna ronda
+    // 2) Respuesta rápida (≤ 5s)
     for (var r : rounds) {
       Map<String, DuelEventRequest.PlayerResult> res = r.getResult();
       if (res == null || res.isEmpty())
@@ -118,7 +123,6 @@ public class AchievementService {
           continue;
         var pr = e.getValue();
 
-        // Lombok @Data en boolean -> isCorrect()
         boolean correct = (pr != null) && pr.isCorrect();
         Integer t = (pr != null) ? pr.getTimeMs() : null;
 
@@ -129,7 +133,7 @@ public class AchievementService {
       }
     }
 
-    // 3) Ganador Best-of-3 (si hubo al menos 3 rondas y hay ganador)
+    // 3) Best-of-3 ganador
     if (winnerId != null && rounds.size() >= 3) {
       unlocked.addAll(grantIfEligible(winnerId, "DUEL_BEST_OF_THREE_WINNER",
           Map.of("matchId", matchId)));
@@ -163,6 +167,7 @@ public class AchievementService {
     return out;
   }
 
+  /** Otorga, persiste y **dispara** premio en avatar-service (no bloqueante). */
   private AchievementDto grant(UUID studentId, Achievement a, Map<String, Object> meta) {
     var sa = StudentAchievement.builder()
         .studentId(studentId)
@@ -170,6 +175,23 @@ public class AchievementService {
         .metadata(meta == null ? Map.of() : meta)
         .build();
     studentAchievementRepository.save(sa);
+
+    // --- Notificar recompensa al avatar-service ---
+    try {
+      String awardCode = "ACHIEVEMENT:" + a.getCode(); // convención MVP
+      avatarClient.claimReward(new AvatarClaimRequest(
+          studentId,
+          "ACHIEVEMENT",
+          awardCode,
+          a.getCode(), // triggerCode
+          (meta == null || meta.isEmpty()) ? null : meta.toString() // opcional
+      ));
+      log.info("Premio notificado a avatar-service: student={} awardCode={}", studentId, awardCode);
+    } catch (Exception ex) {
+      // no romper flujo de logros
+      log.error("Error notificando premio a avatar-service: {}", ex.toString());
+    }
+
     return AchievementDto.builder()
         .code(a.getCode())
         .name(a.getName())

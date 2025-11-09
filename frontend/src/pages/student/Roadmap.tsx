@@ -11,6 +11,11 @@ import ObjectiveCard from "../../components/student/ObjectiveCard";
 import { useObjectiveStatuses } from "../../hooks/progress/useObjectiveStatuses";
 import { useObjectiveCoverage } from "../../hooks/progress/useObjectiveCoverage";
 
+// nuevos
+import HeroBanner from "../../components/student/HeroBanner";
+import CompetencyPills from "../../components/student/CompetencyPills";
+import RecommendedStrip from "../../components/student/RecommendedStrip";
+
 type Filter = "ALL" | "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
 
 type LOFlat = {
@@ -53,6 +58,9 @@ export default function Roadmap() {
       return "ALL";
     }
   });
+
+  // competencia seleccionada ("" => Todas)
+  const [selectedCompId, setSelectedCompId] = useState<string>("");
 
   // modo enfoque (objetivo seleccionado)
   const [selectedObjectiveId, setSelectedObjectiveId] = useState<string>("");
@@ -99,7 +107,7 @@ export default function Roadmap() {
   } = useObjectiveStatuses(curriculumId);
   const { data: coverageMap } = useObjectiveCoverage(curriculumId);
 
-  // listado plano de objetivos (para selector y buckets)
+  // listado plano de objetivos
   const allObjectives: LOFlat[] = useMemo(() => {
     if (!curriculum) return [];
     const list: LOFlat[] = [];
@@ -141,6 +149,7 @@ export default function Roadmap() {
     return "NOT_STARTED";
   };
 
+  // buckets por competencia (usa statusSets)
   const byCompetency: CompetencyBuckets[] = useMemo(() => {
     if (!curriculum || !statusSets) return [];
     const groups: CompetencyBuckets[] = [];
@@ -200,6 +209,7 @@ export default function Roadmap() {
 
   const shouldShowSection = (sectionCount: number): boolean =>
     filter === "ALL" || sectionCount > 0;
+
   const compHasAnyForFilter = (g: CompetencyBuckets): boolean => {
     if (filter === "ALL") return true;
     if (filter === "COMPLETED") return g.completed.length > 0;
@@ -219,10 +229,53 @@ export default function Roadmap() {
   };
   const clearSelection = () => setSelectedObjectiveId("");
 
+  // items para pills (con conteos)
+  const competencyItems = useMemo(() => {
+    if (!curriculum || !statusSets) return [];
+    return curriculum.competencies.map((c) => {
+      const allLO: string[] = c.standards.flatMap((s) =>
+        s.learningObjectives.map((lo) => lo.id)
+      );
+      const total = allLO.length;
+      const pending = allLO.filter(
+        (id) =>
+          !(statusSets.completedIds.has(id) || statusSets.inProgressIds.has(id))
+      ).length;
+      return { id: c.id, name: c.name, counts: { total, pending } };
+    });
+  }, [curriculum, statusSets]);
+
+  // grupos visibles según competencia seleccionada
+  const visibleGroups = useMemo(() => {
+    const base = byCompetency.filter(compHasAnyForFilter);
+    if (!selectedCompId) return base;
+    return base.filter((g) => g.compId === selectedCompId);
+  }, [byCompetency, selectedCompId, filter]);
+
+  // selector de objetivo: solo LO de la competencia activa
+  const objectivesForPicker = useMemo(() => {
+    const source = !selectedCompId
+      ? allObjectives
+      : allObjectives.filter((o) => o.compId === selectedCompId);
+    return source;
+  }, [allObjectives, selectedCompId]);
+
+  // seleccionado para modo enfoque
+  const selected = selectedObjectiveId
+    ? objectiveById[selectedObjectiveId]
+    : undefined;
+  const selectedStatus = selected ? statusOf(selected.id) : undefined;
+  const selectedCoverage = selected ? coverageMap?.[selected.id] : undefined;
+
+  // helper de ruta
+  const buildPracticePath = (compId: string, stdId: string, loId: string) =>
+    `/student/practice/${curriculum?.id}/${compId}/${stdId}/${loId}`;
+
   if (error)
     return <div className="p-4 text-red-600 dark:text-red-400">{error}</div>;
   if (!curriculum) return <LoadingScreen />;
 
+  // Chip reusado (del filtro por estado)
   type FilterChipProps = {
     k: Filter;
     label: string;
@@ -258,24 +311,37 @@ export default function Roadmap() {
     );
   };
 
-  // seleccionado para modo enfoque
-  const selected = selectedObjectiveId
-    ? objectiveById[selectedObjectiveId]
-    : undefined;
-  const selectedStatus = selected ? statusOf(selected.id) : undefined;
-  const selectedCoverage = selected ? coverageMap?.[selected.id] : undefined;
-
   return (
     <div className="p-4 md:p-8">
-      {/* Título */}
-      <div className="mb-4">
-        <h1 className="text-2xl md:text-3xl font-bold text-indigo-600 dark:text-indigo-300">
-          🗺️ Mapa de Aprendizaje – {curriculum.name}
-        </h1>
+      {/* HERO */}
+      <HeroBanner
+        title="Selecciona lo que quieres aprender o reforzar hoy"
+        subtitle="Elige una competencia para ver objetivos claros y empezar sin distracciones."
+      />
+
+      {/* PILLS DE COMPETENCIAS */}
+      <div className="my-4">
+        <CompetencyPills
+          items={competencyItems}
+          selectedId={selectedCompId}
+          onSelect={(id) => {
+            setSelectedCompId(id);
+            // al cambiar de competencia, limpia el enfoque si no pertenece
+            if (selected && selected.compId !== id && id !== "") {
+              setSelectedObjectiveId("");
+            }
+          }}
+        />
       </div>
 
-      {/* Toolbar: filtros (2/3) + selector (1/3) */}
-      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+      {/* STRIP DE RECOMENDADOS (máx. 3) */}
+      <RecommendedStrip
+        curriculumId={curriculum.id}
+        pathBuilder={buildPracticePath}
+      />
+
+      {/* Barra de filtro por estado + selector de enfoque */}
+      <div className="mt-6 mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
         {/* Chips de filtro */}
         <div className="md:col-span-2">
           <div
@@ -314,7 +380,7 @@ export default function Roadmap() {
           </div>
         </div>
 
-        {/* Selector de enfoque */}
+        {/* Selector de enfoque (limitado por competencia) */}
         <div className="md:col-span-1">
           <div className="rounded-xl border p-4 dark:border-gray-700">
             <div className="mb-2">
@@ -337,8 +403,14 @@ export default function Roadmap() {
                 className="min-w-[220px] flex-1 rounded-md border px-2 py-1.5 text-sm dark:bg-gray-900 dark:border-gray-700"
                 aria-label="Elige un objetivo para enfocarte"
               >
-                <option value="">— Elegir objetivo —</option>
-                {allObjectives.map((o) => (
+                <option value="">
+                  —{" "}
+                  {selectedCompId
+                    ? "Elegir objetivo de la competencia"
+                    : "Elegir objetivo"}{" "}
+                  —
+                </option>
+                {objectivesForPicker.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.compName} — {o.name}
                   </option>
@@ -386,7 +458,11 @@ export default function Roadmap() {
               key={selected.id}
               label={selected.name}
               description={selected.description}
-              to={`/student/practice/${curriculum.id}/${selected.compId}/${selected.standardId}/${selected.id}`}
+              to={buildPracticePath(
+                selected.compId,
+                selected.standardId,
+                selected.id
+              )}
               status={selectedStatus ?? "NOT_STARTED"}
               coverageSolved={
                 selectedCoverage?.totalExercises
@@ -403,7 +479,11 @@ export default function Roadmap() {
               </p>
               <div className="flex flex-wrap gap-2">
                 <Link
-                  to={`/student/practice/${curriculum.id}/${selected.compId}/${selected.standardId}/${selected.id}`}
+                  to={buildPracticePath(
+                    selected.compId,
+                    selected.standardId,
+                    selected.id
+                  )}
                   className="rounded-lg bg-indigo-600 px-3 py-2 text-white hover:bg-indigo-700"
                 >
                   {selectedStatus === "COMPLETED" ? "Repasar" : "Empezar"}
@@ -426,7 +506,7 @@ export default function Roadmap() {
         </section>
       )}
 
-      {/* LISTA COMPLETA (si no hay selección) */}
+      {/* LISTA AGRUPADA POR COMPETENCIA (si no hay enfoque) */}
       {!selected && (
         <>
           {nothingInFilter && (
@@ -435,7 +515,7 @@ export default function Roadmap() {
             </div>
           )}
 
-          {byCompetency.filter(compHasAnyForFilter).map((group) => (
+          {visibleGroups.map((group) => (
             <section key={group.compId} className="mb-10">
               <header className="mb-4">
                 <h2 className="text-xl font-semibold text-blue-700 dark:text-blue-300">
@@ -443,124 +523,109 @@ export default function Roadmap() {
                 </h2>
               </header>
 
-              {/* Pendientes */}
+              {/* Pendientes (colapsable) */}
               {shouldShowSection(group.notStarted.length) &&
                 (filter === "ALL" || filter === "NOT_STARTED") && (
-                  <div className="mb-8">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-lg font-medium text-sky-700 dark:text-sky-300">
+                  <details
+                    className="mb-4 rounded-md border p-3 dark:border-gray-700"
+                    open={group.notStarted.length > 0}
+                  >
+                    <summary className="cursor-pointer text-lg font-medium flex items-center justify-between">
+                      <span className="text-sky-700 dark:text-sky-300">
                         🎯 Pendientes
-                      </h3>
+                      </span>
                       <span className="text-xs rounded-full bg-sky-100 px-2 py-1 text-sky-700 dark:bg-sky-900/30 dark:text-sky-200">
                         {group.notStarted.length} objetivo(s)
                       </span>
+                    </summary>
+                    <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
+                      {group.notStarted.map((o) => (
+                        <ObjectiveCard
+                          key={o.id}
+                          label={o.name}
+                          description={o.description}
+                          to={buildPracticePath(o.compId, o.standardId, o.id)}
+                          status="NOT_STARTED"
+                          coverageSolved={
+                            coverageMap?.[o.id]?.totalExercises
+                              ? coverageMap[o.id].solvedDistinct
+                              : undefined
+                          }
+                          coverageTotal={
+                            coverageMap?.[o.id]?.totalExercises ?? undefined
+                          }
+                        />
+                      ))}
                     </div>
-                    {group.notStarted.length > 0 ? (
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                        {group.notStarted.map((o) => (
-                          <ObjectiveCard
-                            key={o.id}
-                            label={o.name}
-                            description={o.description}
-                            to={`/student/practice/${curriculum.id}/${o.compId}/${o.standardId}/${o.id}`}
-                            status="NOT_STARTED"
-                            coverageSolved={
-                              coverageMap?.[o.id]?.totalExercises
-                                ? coverageMap[o.id].solvedDistinct
-                                : undefined
-                            }
-                            coverageTotal={
-                              coverageMap?.[o.id]?.totalExercises ?? undefined
-                            }
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-md border border-dashed p-4 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300">
-                        ¡No tienes objetivos pendientes aquí!
-                      </div>
-                    )}
-                  </div>
+                  </details>
                 )}
 
-              {/* En curso */}
+              {/* En curso (colapsable) */}
               {shouldShowSection(group.inProgress.length) &&
                 (filter === "ALL" || filter === "IN_PROGRESS") && (
-                  <div className="mb-8">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-lg font-medium text-amber-700 dark:text-amber-300">
+                  <details className="mb-4 rounded-md border p-3 dark:border-gray-700">
+                    <summary className="cursor-pointer text-lg font-medium flex items-center justify-between">
+                      <span className="text-amber-700 dark:text-amber-300">
                         🧭 En curso
-                      </h3>
+                      </span>
                       <span className="text-xs rounded-full bg-amber-100 px-2 py-1 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
                         {group.inProgress.length} objetivo(s)
                       </span>
+                    </summary>
+                    <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
+                      {group.inProgress.map((o) => (
+                        <ObjectiveCard
+                          key={o.id}
+                          label={o.name}
+                          description={o.description}
+                          to={buildPracticePath(o.compId, o.standardId, o.id)}
+                          status="IN_PROGRESS"
+                          coverageSolved={
+                            coverageMap?.[o.id]?.totalExercises
+                              ? coverageMap[o.id].solvedDistinct
+                              : undefined
+                          }
+                          coverageTotal={
+                            coverageMap?.[o.id]?.totalExercises ?? undefined
+                          }
+                        />
+                      ))}
                     </div>
-                    {group.inProgress.length > 0 ? (
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                        {group.inProgress.map((o) => (
-                          <ObjectiveCard
-                            key={o.id}
-                            label={o.name}
-                            description={o.description}
-                            to={`/student/practice/${curriculum.id}/${o.compId}/${o.standardId}/${o.id}`}
-                            status="IN_PROGRESS"
-                            coverageSolved={
-                              coverageMap?.[o.id]?.totalExercises
-                                ? coverageMap[o.id].solvedDistinct
-                                : undefined
-                            }
-                            coverageTotal={
-                              coverageMap?.[o.id]?.totalExercises ?? undefined
-                            }
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-md border border-dashed p-4 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300">
-                        Sin objetivos en curso dentro de esta competencia.
-                      </div>
-                    )}
-                  </div>
+                  </details>
                 )}
 
-              {/* Completados */}
+              {/* Completados (colapsable) */}
               {shouldShowSection(group.completed.length) &&
                 (filter === "ALL" || filter === "COMPLETED") && (
-                  <div>
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-lg font-medium text-emerald-700 dark:text-emerald-300">
+                  <details className="mb-2 rounded-md border p-3 dark:border-gray-700">
+                    <summary className="cursor-pointer text-lg font-medium flex items-center justify-between">
+                      <span className="text-emerald-700 dark:text-emerald-300">
                         ✅ Completados
-                      </h3>
+                      </span>
                       <span className="text-xs rounded-full bg-emerald-100 px-2 py-1 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
                         {group.completed.length} objetivo(s)
                       </span>
+                    </summary>
+                    <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
+                      {group.completed.map((o) => (
+                        <ObjectiveCard
+                          key={o.id}
+                          label={o.name}
+                          description={o.description}
+                          to={buildPracticePath(o.compId, o.standardId, o.id)}
+                          status="COMPLETED"
+                          coverageSolved={
+                            coverageMap?.[o.id]?.totalExercises
+                              ? coverageMap[o.id].solvedDistinct
+                              : undefined
+                          }
+                          coverageTotal={
+                            coverageMap?.[o.id]?.totalExercises ?? undefined
+                          }
+                        />
+                      ))}
                     </div>
-                    {group.completed.length > 0 ? (
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                        {group.completed.map((o) => (
-                          <ObjectiveCard
-                            key={o.id}
-                            label={o.name}
-                            description={o.description}
-                            to={`/student/practice/${curriculum.id}/${o.compId}/${o.standardId}/${o.id}`}
-                            status="COMPLETED"
-                            coverageSolved={
-                              coverageMap?.[o.id]?.totalExercises
-                                ? coverageMap[o.id].solvedDistinct
-                                : undefined
-                            }
-                            coverageTotal={
-                              coverageMap?.[o.id]?.totalExercises ?? undefined
-                            }
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-md border border-dashed p-4 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300">
-                        Aún no hay objetivos completados en esta competencia.
-                      </div>
-                    )}
-                  </div>
+                  </details>
                 )}
             </section>
           ))}

@@ -18,6 +18,7 @@ import com.tesis.curriculum_service.service.template.ExerciseTemplateService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import static com.tesis.curriculum_service.util.AnswerUtils.*;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -253,12 +254,158 @@ public class ExerciseServiceImpl implements ExerciseService {
       case FREQUENCY_TABLE_COMPLETE:
         return validateFrequencyTableComplete(exercise, answerNode);
 
+      // === NUEVOS: validación por plantilla ===
+      case BASE_TEN_BLOCKS_QA:
+        return validateBaseTenBlocksQa(exercise, answerNode);
+
+      case NUMBER_SEQUENCE_QA:
+        return validateNumberSequenceQa(exercise, answerNode);
+
+      case PLACE_VALUE_QA:
+        return validatePlaceValueQa(exercise, answerNode);
+
+      case NUMBER_WORDS_BIDIR:
+        return validateNumberWordsBidir(exercise, answerNode);
+
       default:
         return validateLegacyByCorrectAnswer(exercise, answerNode);
     }
   }
 
   /* === Validadores MVP === */
+  // BASE_TEN_BLOCKS_QA: params.answer numérico
+  private CheckAnswerResponse validateBaseTenBlocksQa(Exercise ex, JsonNode answerNode) {
+    var params = asJson(ex.getParameters());
+    var expected = params.path("answer"); // number
+    var given = answerNode.path("value");
+
+    boolean ok = expected.isNumber() && (given.isNumber() || given.isTextual())
+        && eqNumeric(given.isNumber() ? given.numberValue() : given.asText(), expected.numberValue());
+
+    return CheckAnswerResponse.builder()
+        .correct(ok).score(ok ? 1.0 : 0.0)
+        .feedback(ok ? "¡Correcto!" : "Respuesta incorrecta.")
+        .build();
+  }
+
+  // NUMBER_SEQUENCE_QA: soporta answer (number) o answers (array)
+  private CheckAnswerResponse validateNumberSequenceQa(Exercise ex, JsonNode answerNode) {
+    var params = asJson(ex.getParameters());
+
+    // Si hay varios huecos → answers (array); si uno → answer (number)
+    var expAnswers = params.path("answers");
+    var expAnswer = params.path("answer");
+
+    boolean ok = false;
+
+    // alumno puede enviar single (value) o múltiple (values)
+    var givenValue = answerNode.path("value");
+    var givenValues = answerNode.path("values");
+
+    if (expAnswers.isArray()) {
+      // múltiple
+      if (givenValues.isArray()) {
+        if (expAnswers.size() == givenValues.size()) {
+          ok = true;
+          for (int i = 0; i < expAnswers.size(); i++) {
+            var e = expAnswers.get(i);
+            var g = givenValues.get(i);
+            boolean thisOk = e.isNumber() && (g != null) &&
+                (g.isNumber() || g.isTextual()) &&
+                eqNumeric(g.isNumber() ? g.numberValue() : g.asText(), e.numberValue());
+            if (!thisOk) {
+              ok = false;
+              break;
+            }
+          }
+        }
+      } else if (givenValue.isArray()) { // por compatibilidad
+        if (expAnswers.size() == givenValue.size()) {
+          ok = true;
+          for (int i = 0; i < expAnswers.size(); i++) {
+            var e = expAnswers.get(i);
+            var g = givenValue.get(i);
+            boolean thisOk = e.isNumber() && (g != null) &&
+                (g.isNumber() || g.isTextual()) &&
+                eqNumeric(g.isNumber() ? g.numberValue() : g.asText(), e.numberValue());
+            if (!thisOk) {
+              ok = false;
+              break;
+            }
+          }
+        }
+      }
+    } else if (expAnswer.isNumber()) {
+      // único
+      if (givenValue.isNumber() || givenValue.isTextual()) {
+        ok = eqNumeric(givenValue.isNumber() ? givenValue.numberValue() : givenValue.asText(),
+            expAnswer.numberValue());
+      }
+    }
+
+    return CheckAnswerResponse.builder()
+        .correct(ok).score(ok ? 1.0 : 0.0)
+        .feedback(ok ? "¡Bien!" : "Intenta otra vez.")
+        .build();
+  }
+
+  // PLACE_VALUE_QA: ask define si comparar como número o texto
+  private CheckAnswerResponse validatePlaceValueQa(Exercise ex, JsonNode answerNode) {
+    var params = asJson(ex.getParameters());
+    String ask = params.path("ask").asText(""); // p.ej. "hundreds","expanded","compose", etc.
+    var expected = params.path("answer");
+    var given = answerNode.path("value");
+
+    boolean numericAsk = switch (ask.toLowerCase()) {
+      case "hundreds", "tens", "units", "value_of_digit", "compose", "tens_count", "hundreds_to_units" -> true;
+      default -> false; // "expanded","expanded_choice","positional_of_digit" → texto
+    };
+
+    boolean ok;
+    if (numericAsk) {
+      ok = expected.isNumber() && (given.isNumber() || given.isTextual()) &&
+          eqNumeric(given.isNumber() ? given.numberValue() : given.asText(), expected.numberValue());
+    } else {
+      ok = (given.isNumber() || given.isTextual()) &&
+          eqText(given.asText(), expected.asText());
+    }
+
+    return CheckAnswerResponse.builder()
+        .correct(ok).score(ok ? 1.0 : 0.0)
+        .feedback(ok ? "¡Correcto!" : "Revisa el valor posicional / forma desarrollada.")
+        .build();
+  }
+
+  // NUMBER_WORDS_BIDIR: si hay choices → texto; si DIGITS_TO_WORDS → texto; si
+  // WORDS_TO_DIGITS → número
+  private CheckAnswerResponse validateNumberWordsBidir(Exercise ex, JsonNode answerNode) {
+    var params = asJson(ex.getParameters());
+    var choices = params.path("choices");
+    var expected = params.path("answer");
+    var given = answerNode.path("value");
+
+    boolean ok = false;
+
+    if (choices.isArray() && choices.size() > 0) {
+      // opción múltiple textual
+      ok = eqText(given.asText(""), expected.asText(""));
+    } else {
+      String direction = params.path("direction").asText("WORDS_TO_DIGITS"); // default tolerante
+      if ("DIGITS_TO_WORDS".equalsIgnoreCase(direction)) {
+        ok = eqText(given.asText(""), expected.asText(""));
+      } else {
+        // WORDS_TO_DIGITS → numérico
+        if (expected.isNumber() && (given.isNumber() || given.isTextual())) {
+          ok = eqNumeric(given.isNumber() ? given.numberValue() : given.asText(), expected.numberValue());
+        }
+      }
+    }
+
+    return CheckAnswerResponse.builder()
+        .correct(ok).score(ok ? 1.0 : 0.0)
+        .feedback(ok ? "¡Bien!" : "Verifica la conversión palabras↔número.")
+        .build();
+  }
 
   private CheckAnswerResponse validateEquationSingleChoice(Exercise ex, JsonNode answerNode) {
     var params = asJson(ex.getParameters());

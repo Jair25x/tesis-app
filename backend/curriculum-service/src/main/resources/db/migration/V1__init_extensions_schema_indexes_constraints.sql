@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS exercises (
   id                    UUID PRIMARY KEY,
   statement             TEXT          NOT NULL,
   difficulty            VARCHAR(20)   NOT NULL,   -- BASIC | INTERMEDIATE | ADVANCED
-  type                  VARCHAR(50)   NOT NULL,   -- libre (CHOICE, TABLE_QA, etc.)
+  type                  VARCHAR(50)   NOT NULL,   -- CHOICE | QA | EQUATION | ...
   correct_answer        TEXT,
   template_type         VARCHAR(50),              -- enum lógico por app
   parameters            JSONB,                    -- @JdbcTypeCode(SqlTypes.JSON)
@@ -130,17 +130,42 @@ CREATE TABLE IF NOT EXISTS solution_steps (
   deleted_by  VARCHAR(255)
 );
 
--- Índices funcionales / de apoyo (coinciden con tus @Index y patrones de consulta)
-CREATE INDEX IF NOT EXISTS idx_ex_lo_active      ON exercises(learning_objective_id, active);
-CREATE INDEX IF NOT EXISTS idx_ex_diag_active    ON exercises(is_diagnostic, active);
-CREATE INDEX IF NOT EXISTS idx_hint_exercise     ON hints(exercise_id);
-CREATE INDEX IF NOT EXISTS idx_step_exercise     ON solution_steps(exercise_id);
+-- Índices de apoyo / navegación
+CREATE INDEX IF NOT EXISTS idx_comp_curr     ON competencies(curriculum_id);
+CREATE INDEX IF NOT EXISTS idx_std_comp      ON standards(competency_id);
+CREATE INDEX IF NOT EXISTS idx_lo_std        ON learning_objectives(standard_id);
+CREATE INDEX IF NOT EXISTS idx_ex_lo_active  ON exercises(learning_objective_id, active);
+CREATE INDEX IF NOT EXISTS idx_ex_diag_act   ON exercises(is_diagnostic, active);
+CREATE INDEX IF NOT EXISTS idx_hint_exercise ON hints(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_step_exercise ON solution_steps(exercise_id);
 
--- Búsquedas por texto aceleradas con GIN/trgm sobre lower(code/name)
-CREATE INDEX IF NOT EXISTS gin_curricula_code     ON curricula       USING GIN (LOWER(code) gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS gin_curricula_name     ON curricula       USING GIN (LOWER(name) gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS gin_competencies_code  ON competencies    USING GIN (LOWER(code) gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS gin_competencies_name  ON competencies    USING GIN (LOWER(name) gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS gin_standards_code     ON standards       USING GIN (LOWER(code) gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS gin_standards_name     ON standards       USING GIN (LOWER(name) gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS gin_lobj_code          ON learning_objectives USING GIN (LOWER(code) gin_trgm_ops);
+-- Búsquedas por texto aceleradas con GIN/trgm (lower)
+CREATE INDEX IF NOT EXISTS gin_curricula_code     ON curricula            USING GIN (LOWER(code) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS gin_curricula_name     ON curricula            USING GIN (LOWER(name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS gin_competencies_code  ON competencies         USING GIN (LOWER(code) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS gin_competencies_name  ON competencies         USING GIN (LOWER(name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS gin_standards_code     ON standards            USING GIN (LOWER(code) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS gin_standards_name     ON standards            USING GIN (LOWER(name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS gin_lobj_code          ON learning_objectives  USING GIN (LOWER(code) gin_trgm_ops);
+
+-- Checks de dominio
+ALTER TABLE hints
+  ADD CONSTRAINT chk_hints_cost_nonneg CHECK (cost >= 0) NOT VALID;
+
+ALTER TABLE solution_steps
+  ADD CONSTRAINT chk_steps_num_positive CHECK (step_number >= 1) NOT VALID;
+
+-- Dificultad canónica (mayúsculas)
+ALTER TABLE exercises
+  ADD CONSTRAINT chk_ex_difficulty
+  CHECK (difficulty IN ('BASIC','INTERMEDIATE','ADVANCED'));
+
+-- Unicidad lógica para evitar duplicados molestos
+ALTER TABLE solution_steps
+  ADD CONSTRAINT uq_step_per_ex UNIQUE (exercise_id, step_number) DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE hints
+  ADD CONSTRAINT uq_hint_text_per_ex UNIQUE (exercise_id, hint_text) DEFERRABLE INITIALLY IMMEDIATE;
+
+-- (Opcional) Índice GIN para parameters si vas a filtrar por keys
+-- CREATE INDEX IF NOT EXISTS gin_ex_params ON exercises USING GIN (parameters);

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.UUID;
 
 @Tag(name = "Templates", description = "Plantillas parametrizables para generación de ejercicios")
 @RestController
@@ -39,7 +40,7 @@ public class TemplateController {
             .type(schema.getTemplateType())
             .description(generateDescription(schema.getTemplateType()))
             .example(schema.getExample())
-            .uiHints(schema.getUiHints()) // puede ser null
+            .uiHints(schema.getUiHints())
             .build())
         .collect(Collectors.toList());
     return ResponseEntity.ok(response);
@@ -49,13 +50,24 @@ public class TemplateController {
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = TemplateSchemaResponse.class))),
       @ApiResponse(responseCode = "404", description = "No encontrado", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+      @ApiResponse(responseCode = "400", description = "Tipo inválido", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
       @ApiResponse(responseCode = "403", description = "Acceso denegado")
   })
   @GetMapping("/{type}")
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
   public ResponseEntity<?> getByType(@PathVariable UUID curriculumId,
-      @PathVariable TemplateType type) {
-    return templateService.schemaFor(type)
+      @PathVariable String type) {
+    // Binding tolerante: case-insensitive y guiones/barras bajas
+    TemplateType parsed;
+    try {
+      String norm = type.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+      parsed = TemplateType.valueOf(norm);
+    } catch (Exception ex) {
+      return ResponseEntity.badRequest().body(
+          new ErrorResponse("Tipo de plantilla inválido: '" + type + "'.", 400, System.currentTimeMillis()));
+    }
+
+    return templateService.schemaFor(parsed)
         .map(schema -> TemplateSchemaResponse.builder()
             .type(schema.getTemplateType())
             .description(generateDescription(schema.getTemplateType()))
@@ -64,14 +76,20 @@ public class TemplateController {
             .build())
         .<ResponseEntity<?>>map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.status(404).body(
-            new ErrorResponse("Template type '" + type + "' not found.", 404, System.currentTimeMillis())));
+            new ErrorResponse("Template type '" + parsed + "' not found.", 404, System.currentTimeMillis())));
   }
 
   private String generateDescription(TemplateType type) {
+    // Siempre cubrir TODOS los enums + default
     return switch (type) {
       case EQUATION_SINGLE_CHOICE -> "Ecuación simple con opciones (Mustache + opciones).";
       case FREQUENCY_TABLE_QA -> "Tabla de frecuencias con preguntas asociadas (moda/total/etc.).";
       case FREQUENCY_TABLE_COMPLETE -> "Completar celdas faltantes en una tabla de frecuencias.";
+      case NUMBER_WORDS_BIDIR -> "Conversión entre número en cifras ↔ número en palabras (es-PE).";
+      case PLACE_VALUE_QA -> "Valor posicional y descomposición en base 10.";
+      case BASE_TEN_BLOCKS_QA -> "Bloques base diez (centenas/decenas/unidades) → número.";
+      case NUMBER_SEQUENCE_QA -> "Patrones numéricos y secuencias con espacios a completar.";
+      default -> "Plantilla no documentada.";
     };
   }
 }

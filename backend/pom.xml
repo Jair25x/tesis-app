@@ -83,6 +83,7 @@
     <module>progress-service</module>
     <module>classroom-service</module>
     <module>assessment-service</module>
+    <module>avatar-service</module>
   </modules>
 
   <build>

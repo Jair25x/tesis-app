@@ -183,6 +183,98 @@ public class InMemoryTemplateService implements ExerciseTemplateService {
                                         h.put("targetTotal", "number | optional");
                                 }))
                                 .build());
+                // 4) NUMBER_WORDS_BIDIR (palabras ↔ cifras)
+                schemas.put(TemplateSchema.TemplateType.NUMBER_WORDS_BIDIR,
+                                TemplateSchema.builder()
+                                                .templateType(TemplateSchema.TemplateType.NUMBER_WORDS_BIDIR)
+                                                .example(obj(o -> {
+                                                        o.put("mode", "to_words"); // "to_words" | "to_digits"
+                                                        o.put("number", 70015); // requerido si mode=to_words
+                                                        o.put("words", "Setenta mil quince"); // requerido si
+                                                                                              // mode=to_digits
+                                                        o.put("locale", "es-PE");
+                                                }))
+                                                .uiHints(obj(h -> {
+                                                        h.put("notes", "Convierte números ↔ palabras en español. 'mode' define la dirección.");
+                                                        h.put("mode", "'to_words' | 'to_digits'");
+                                                        var rules = mapper.createArrayNode();
+                                                        rules.add("to_words: exige 'number' entero 0..999999.");
+                                                        rules.add("to_digits: exige 'words' con grafía válida en es-PE.");
+                                                        h.set("authoringRules", rules);
+                                                }))
+                                                .build());
+
+                // 5) PLACE_VALUE_QA (valor posicional / descomposición)
+                schemas.put(TemplateSchema.TemplateType.PLACE_VALUE_QA,
+                                TemplateSchema.builder()
+                                                .templateType(TemplateSchema.TemplateType.PLACE_VALUE_QA)
+                                                .example(obj(o -> {
+                                                        o.put("kind", "place_value"); // "place_value" | "expansion" |
+                                                                                      // "count_units"
+                                                        o.put("number", 74325);
+                                                        o.put("digit", 7); // si kind=place_value
+                                                        o.put("place", "ten_thousands"); // decenas de millar
+                                                        o.put("answer", "70 000"); // respuesta string normalizada para
+                                                                                   // corrección exacta
+                                                        // Para expansion, usar: "answer": "70 000 + 4 000 + 300 + 20 +
+                                                        // 5"
+                                                }))
+                                                .uiHints(obj(h -> {
+                                                        h.put("notes", "Consultas de valor posicional/expansión en base 10.");
+                                                        var places = mapper.createArrayNode();
+                                                        places.add("units");
+                                                        places.add("tens");
+                                                        places.add("hundreds");
+                                                        places.add("thousands");
+                                                        places.add("ten_thousands");
+                                                        h.set("places", places);
+                                                }))
+                                                .build());
+
+                // 6) BASE_TEN_BLOCKS_QA (fichas de centenas/decenas/unidades)
+                schemas.put(TemplateSchema.TemplateType.BASE_TEN_BLOCKS_QA,
+                                TemplateSchema.builder()
+                                                .templateType(TemplateSchema.TemplateType.BASE_TEN_BLOCKS_QA)
+                                                .example(obj(o -> {
+                                                        o.put("hundreds", 3);
+                                                        o.put("tens", 4);
+                                                        o.put("ones", 2);
+                                                        o.put("answer", 342);
+                                                        // opcional: "altText": "3 centenas, 4 decenas y 2 unidades"
+                                                }))
+                                                .uiHints(obj(h -> {
+                                                        h.put("notes", "Cuenta bloques base-10 → cifra total. FE puede mostrar íconos/emoji.");
+                                                        h.put("renderHint", "🟦=100, 🟩=10, 🟨=1 (sugerencia)");
+                                                }))
+                                                .build());
+
+                // 7) NUMBER_SEQUENCE_QA (patrones y reglas)
+                schemas.put(TemplateSchema.TemplateType.NUMBER_SEQUENCE_QA,
+                                TemplateSchema.builder()
+                                                .templateType(TemplateSchema.TemplateType.NUMBER_SEQUENCE_QA)
+                                                .example(obj(o -> {
+                                                        // Secuencia 9005, 8905, 8805, 8705, __, 8505 (−1000 entre los
+                                                        // dos primeros, luego −100, −100…)
+                                                        var seq = mapper.createArrayNode();
+                                                        seq.add(9005);
+                                                        seq.add(8905);
+                                                        seq.add(8805);
+                                                        seq.add(8705);
+                                                        o.set("sequence", seq);
+                                                        var blanks = mapper.createArrayNode();
+                                                        blanks.add(4); // índices a completar (0-based)
+                                                        o.set("missingIndices", blanks);
+                                                        // aceptar respuesta como "8605" para pos 4
+                                                        var ans = mapper.createArrayNode();
+                                                        ans.add(8605);
+                                                        o.set("answers", ans);
+                                                        o.put("ruleHint", "Disminuye de 100 en 100 desde 8905.");
+                                                }))
+                                                .uiHints(obj(h -> {
+                                                        h.put("notes", "Define 'sequence' (lista), 'missingIndices' y 'answers' alineados.");
+                                                        h.put("acceptMulti", false); // si quieres varios huecos → true
+                                                }))
+                                                .build());
         }
 
         @Override

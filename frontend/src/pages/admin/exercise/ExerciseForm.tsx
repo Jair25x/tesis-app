@@ -41,12 +41,14 @@ const zChoices = z
   .min(2, "Debes proporcionar al menos 2 opciones");
 
 const schemaByTemplate: Record<TemplateType, z.ZodTypeAny> = {
+  // === EXISTENTES ===
   EQUATION_SINGLE_CHOICE: z
     .object({
       choices: zChoices,
       answer: z.string().min(1, "Debes indicar la respuesta correcta"),
     })
     .loose(),
+
   FREQUENCY_TABLE_QA: z
     .object({
       columns: z.array(z.string().min(1)).min(2),
@@ -70,6 +72,7 @@ const schemaByTemplate: Record<TemplateType, z.ZodTypeAny> = {
         .min(1),
     })
     .loose(),
+
   FREQUENCY_TABLE_COMPLETE: z
     .object({
       columns: z.array(z.string().min(1)).min(2),
@@ -88,6 +91,64 @@ const schemaByTemplate: Record<TemplateType, z.ZodTypeAny> = {
           })
         )
         .min(1),
+    })
+    .loose(),
+
+  // === NUEVOS ===
+  NUMBER_WORDS_BIDIR: z
+    .object({
+      direction: z.enum(["WORDS_TO_DIGITS", "DIGITS_TO_WORDS"]),
+      value: z.union([z.number(), z.string().min(1)]),
+      locale: z.enum(["es-PE", "es-ES"]).optional(),
+      choices: z.array(z.string().min(1)).optional(),
+      answer: z.union([z.number(), z.string().min(1)]).optional(),
+    })
+    .loose(),
+
+  PLACE_VALUE_QA: z
+    .object({
+      ask: z.enum([
+        "hundreds",
+        "tens",
+        "units",
+        "expanded",
+        "positional_of_digit",
+        "value_of_digit",
+        "compose",
+        "tens_count",
+        "hundreds_to_units",
+        "expanded_choice",
+      ]),
+      number: z.number().int().min(0).optional(),
+      digit: z.number().int().min(0).max(9).optional(),
+      hundreds: z.number().int().min(0).optional(),
+      choices: z.array(z.string().min(1)).optional(), // usado por expanded_choice
+      answer: z.union([z.string().min(1), z.number()]).optional(),
+    })
+    .loose(),
+
+  BASE_TEN_BLOCKS_QA: z
+    .object({
+      hundreds: z.number().int().min(0),
+      tens: z.number().int().min(0),
+      ones: z.number().int().min(0),
+      altText: z.string().optional(),
+      answer: z.number().int().optional(),
+    })
+    .loose(),
+
+  NUMBER_SEQUENCE_QA: z
+    .object({
+      sequence: z.array(z.union([z.number(), z.null()])).min(2),
+      rule: z.string().optional(),
+      missingIndex: z.number().int().min(0).optional(),
+      missingIndices: z.array(z.number().int().min(0)).optional(),
+      answers: z.array(z.number()).optional(),
+      answer: z.number().optional(),
+    })
+    .refine((v) => !!v.missingIndex || (v.missingIndices?.length ?? 0) > 0, {
+      message:
+        "Debes indicar al menos un hueco (missingIndex o missingIndices).",
     })
     .loose(),
 };

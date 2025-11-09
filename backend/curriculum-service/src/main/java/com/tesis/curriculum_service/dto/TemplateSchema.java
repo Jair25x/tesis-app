@@ -37,6 +37,12 @@ public class TemplateSchema {
   public enum TemplateType {
     EQUATION_SINGLE_CHOICE,
     FREQUENCY_TABLE_QA,
-    FREQUENCY_TABLE_COMPLETE
+    FREQUENCY_TABLE_COMPLETE,
+
+    // NUEVOS (Unidad 1 – 4.º)
+    NUMBER_WORDS_BIDIR, // “en palabras” ↔ “en cifras”
+    PLACE_VALUE_QA, // valor posicional / descomposición
+    BASE_TEN_BLOCKS_QA, // fichas de 100/10/1 → número
+    NUMBER_SEQUENCE_QA // reglas y continuación de secuencias
   }
 }
