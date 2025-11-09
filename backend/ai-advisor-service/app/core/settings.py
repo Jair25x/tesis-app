@@ -1,4 +1,4 @@
-# app/core/settings.py  (reemplazo del archivo completo o añade los nuevos campos)
+# app/core/settings.py
 from __future__ import annotations
 from pydantic_settings import BaseSettings
 from pydantic import Field
@@ -38,7 +38,17 @@ class Settings(BaseSettings):
     # Parámetros de negocio
     RAG_TOP_K: int = 3
     RECO_K: int = 8
+
+    # ❗ TTL general quedó para otros usos; ahora recos usan su propio TTL:
     CACHE_TTL_SECONDS: int = 1800
+    # ✅ 5 min para recomendaciones
+    RECO_CACHE_TTL_SECONDS: int = 300
+
+    # Exclusión de ejercicios “abiertos recientemente” para diversificar
+    # ✅ no repetir un exercise en este tiempo
+    RECENT_EXCLUDE_HOURS: int = 48
+    # ✅ tope de elementos en ZSET recientes
+    RECENT_MAX: int = 200
 
     # Features
     CHAT_PERSISTENCE_ENABLED: bool = True

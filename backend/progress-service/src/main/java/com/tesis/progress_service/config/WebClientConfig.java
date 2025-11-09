@@ -86,4 +86,20 @@ public class WebClientConfig {
         .filter(authForwarder)
         .build();
   }
+
+  @Bean(name = "advisorWebClient")
+  public WebClient advisorWebClient(
+      @Value("${clients.advisor.base-url:http://ai-advisor-service:8086}") String baseUrl) {
+
+    // buffer razonable (evitar OOM si logs/errores verbosos)
+    ExchangeStrategies strategies = ExchangeStrategies.builder()
+        .codecs(c -> c.defaultCodecs().maxInMemorySize(256 * 1024))
+        .build();
+
+    return WebClient.builder()
+        .baseUrl(baseUrl)
+        .exchangeStrategies(strategies)
+        .clientConnector(connector())
+        .build();
+  }
 }

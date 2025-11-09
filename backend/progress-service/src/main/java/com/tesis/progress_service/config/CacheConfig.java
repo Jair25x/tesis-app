@@ -2,6 +2,7 @@ package com.tesis.progress_service.config;
 
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.caffeine.CaffeineCache;
 import org.springframework.cache.support.SimpleCacheManager;
 import org.springframework.context.annotation.Bean;
@@ -11,12 +12,12 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Configuración única de caché para el servicio.
- * - Evita duplicación con YAML (no declares spring.cache.* en config-repo para este servicio).
- * - Habilita recordStats() para que Micrometer exponga métricas (hits, misses, evictions, size).
- * - TTL y máximo tamaño conservadores para prod; ajusta según tráfico real.
+ * Configuración única de caché (Caffeine).
+ * - No dupliques con spring.cache.* en YAML para este servicio.
+ * - recordStats(): Micrometer expondrá hits/misses/evictions/size.
  */
 @Configuration
+@EnableCaching
 public class CacheConfig {
 
   @Bean
@@ -24,11 +25,10 @@ public class CacheConfig {
     var achievementCatalog = new CaffeineCache(
         "achievementCatalog",
         Caffeine.newBuilder()
-            .maximumSize(500)                         // evita crecimiento infinito
-            .expireAfterWrite(Duration.ofMinutes(10)) // TTL razonable para catálogo
-            .recordStats()                            // <-- necesario para métricas Micrometer
-            .build()
-    );
+            .maximumSize(500) // evita crecimiento infinito
+            .expireAfterWrite(Duration.ofMinutes(10)) // TTL razonable
+            .recordStats() // expone métricas cache.*
+            .build());
 
     var manager = new SimpleCacheManager();
     manager.setCaches(List.of(achievementCatalog));

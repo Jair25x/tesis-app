@@ -4,13 +4,14 @@ from typing import Optional, List, Callable, Dict, Any
 from uuid import UUID
 import json
 import logging
+import time
 
-from fastapi import APIRouter, Depends, Query, Path, Body
+from fastapi import APIRouter, Depends, Query, Path, Body, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_redis, get_curriculum_client, get_progress_client
 from app.core.settings import settings
-from app.security.authz import require_public_roles, AuthContext
+from app.security.authz import require_public_roles, require_internal, AuthContext
 from app.security.jwt import parse_principal_uuid_or_forbid
 from app.schemas.recommendations import (
     RecommendationsResponse,
@@ -23,6 +24,8 @@ from app.observability.metrics import (
     advisor_reco_latency_seconds,
     advisor_reco_events_total,
     advisor_reco_click_total,
+    advisor_reco_cache_total,
+    advisor_reco_invalidate_total,
 )
 from app.core.rate_limit import rate_limit
 
@@ -30,7 +33,7 @@ router = APIRouter(prefix="/api/ai", tags=["recommendations"])
 logger = logging.getLogger(__name__)
 
 
-# ---------------- Claves de caché e índice ----------------
+# ---------------- Claves de caché / índices / recientes ----------------
 
 def _cache_key(
     student_id: UUID,
@@ -40,11 +43,15 @@ def _cache_key(
 ) -> str:
     subj = (subject or "any").lower()
     obj = str(objective_id) if objective_id else "any"
-    return f"reco:{student_id}:{subj}:{obj}:limit{limit}"
+    # Puedes versionar el contrato si cambias estructura
+    return f"reco:v1:{student_id}:{subj}:{obj}:limit{limit}"
 
 def _index_key(student_id: UUID) -> str:
-    # Hash con pares exerciseId -> difficulty (EASY|MEDIUM|HARD)
     return f"reco:index:{student_id}"
+
+def _recent_key(student_id: UUID) -> str:
+    # ZSET con score = epoch seconds del OPEN
+    return f"reco:recent:{student_id}"
 
 
 def _build_payload(items: List[RecommendationItem]) -> dict:
@@ -55,7 +62,6 @@ def _build_payload(items: List[RecommendationItem]) -> dict:
 
 
 def _update_reco_index(rdb, student_id: UUID, payload: Dict[str, Any]) -> None:
-    """Construye/actualiza el índice O(1) exercise->difficulty para el estudiante."""
     if not rdb:
         return
     try:
@@ -70,9 +76,8 @@ def _update_reco_index(rdb, student_id: UUID, payload: Dict[str, Any]) -> None:
                 mapping[ex] = diff
         if mapping:
             key = _index_key(student_id)
-            # HSET con múltiples campos; refrescamos expiración acorde al caché
             rdb.hset(key, mapping=mapping)
-            rdb.expire(key, int(getattr(settings, "CACHE_TTL_SECONDS", 1800)))
+            rdb.expire(key, int(getattr(settings, "RECO_CACHE_TTL_SECONDS", 300)))
     except Exception as e:
         logger.warning("No se pudo actualizar índice de recos en Redis: %s", e)
 
@@ -84,48 +89,32 @@ def _get_or_set_cache(
     *,
     student_id: Optional[UUID] = None,
 ) -> dict:
-    # Lectura
     if rdb:
         try:
             raw = rdb.get(key)
             if raw:
                 data = json.loads(raw)
-                # opcional: rehidratar índice (por si se perdió expiración)
                 if student_id:
                     _update_reco_index(rdb, student_id, data)
                 if isinstance(data, dict) and "items" in data:
+                    advisor_reco_cache_total.labels(result="hit").inc()
                     return data
         except Exception:
-            pass
+            advisor_reco_cache_total.labels(result="error").inc()
 
-    # Cálculo
     data = compute_fn()
 
-    # Escritura + índice
     if rdb:
         try:
-            rdb.setex(key, settings.CACHE_TTL_SECONDS, json.dumps(data))
+            ttl = int(getattr(settings, "RECO_CACHE_TTL_SECONDS", 300))
+            rdb.setex(key, ttl, json.dumps(data))
+            advisor_reco_cache_total.labels(result="miss").inc()
         except Exception:
-            pass
+            advisor_reco_cache_total.labels(result="error").inc()
         if student_id:
             _update_reco_index(rdb, student_id, data)
 
     return data
-
-
-def _find_difficulty_fast(rdb, student_id: UUID, exercise_id: str) -> Optional[str]:
-    """Lectura O(1) desde hash reco:index:{studentId}."""
-    if not rdb:
-        return None
-    try:
-        d = rdb.hget(_index_key(student_id), exercise_id)
-        if not d:
-            return None
-        d = str(d).upper().strip()
-        return d if d in {"EASY", "MEDIUM", "HARD"} else None
-    except Exception as e:
-        logger.warning("No se pudo leer difficulty desde índice Redis: %s", e)
-        return None
 
 
 # ---------------- Endpoints de recomendaciones ----------------
@@ -162,6 +151,7 @@ def recommend_me(
                 objective_id=objectiveId,
                 curriculum_client=curriculum,
                 progress_client=progress,
+                rdb=rdb,  # ✅ para exclusión de “recientes”
             )
         return _build_payload(items)
 
@@ -174,7 +164,6 @@ def recommend_me(
         )
     else:
         payload = _compute()
-        # si pediste fresh, actualizamos índice igual
         _update_reco_index(rdb, student_uuid, payload)
 
     return RecommendationsResponse(**payload)
@@ -212,6 +201,7 @@ def recommend_for_student_qp(
                 objective_id=objectiveId,
                 curriculum_client=curriculum,
                 progress_client=progress,
+                rdb=rdb,
             )
         return _build_payload(items)
 
@@ -261,6 +251,7 @@ def recommend_for_student_path(
                 objective_id=objectiveId,
                 curriculum_client=curriculum,
                 progress_client=progress,
+                rdb=rdb,
             )
         return _build_payload(items)
 
@@ -278,7 +269,7 @@ def recommend_for_student_path(
     return RecommendationsResponse(**payload)
 
 
-# ---------------- CTR / eventos de recomendaciones ----------------
+# ---------------- CTR / eventos / impresiones ----------------
 
 @router.post(
     "/recommendations/events",
@@ -287,27 +278,81 @@ def recommend_for_student_path(
 )
 def post_reco_event(
     evt: RecoEventIn = Body(...),
-    ctx: AuthContext = Depends(require_public_roles("ROLE_STUDENT")),
+    ctx: AuthContext = Depends(require_public_roles("ROLE_STUDENT")) ,
     rdb = Depends(get_redis),
 ):
     student_uuid = parse_principal_uuid_or_forbid(ctx.principal)
 
-    # métrica general por tipo
     advisor_reco_events_total.labels(event=evt.event).inc()
 
-    # dificultad (si FE no la mandó, resolvemos vía índice O(1))
-    difficulty = (evt.difficulty or "").upper().strip() if evt.difficulty else None
-    if not difficulty:
-        difficulty = _find_difficulty_fast(rdb, student_uuid, str(evt.exerciseId)) or "UNK"
+    # Resolver dificultad desde índice si FE no la mandó
+    difficulty = None
+    if evt.difficulty:
+        difficulty = str(evt.difficulty).upper().strip()
+    else:
+        try:
+            d = rdb.hget(_index_key(student_uuid), str(evt.exerciseId)) if rdb else None
+            if d:
+                dd = str(d).upper().strip()
+                difficulty = dd if dd in {"EASY", "MEDIUM", "HARD"} else "UNK"
+        except Exception:
+            difficulty = "UNK"
 
-    # Para CTR contamos sólo OPEN
+    # Contabilizamos CTR para OPEN y guardamos “reciente”
     if evt.event == "OPEN":
-        advisor_reco_click_total.labels(difficulty=difficulty, source="AI_RECO").inc()
+        advisor_reco_click_total.labels(difficulty=(difficulty or "UNK"), source="AI_RECO").inc()
+        if rdb:
+            try:
+                now = int(time.time())
+                rkey = _recent_key(student_uuid)
+                rdb.zadd(rkey, {str(evt.exerciseId): now})
+                # mantener ventana y tamaño máximos
+                rdb.expire(rkey, 60 * 60 * max(24, settings.RECENT_EXCLUDE_HOURS * 2))
+                # trimming aproximado (por si crece demasiado)
+                rdb.zremrangebyrank(rkey, 0, -1 * (settings.RECENT_MAX + 1))
+            except Exception as e:
+                logger.warning("RECENT_ZSET_UPDATE_FAIL: %s", e)
 
-    # MVP: log-only (si luego quieres DB, aquí insert)
-    logger.info(
-        "RECO_EVENT sid=%s evt=%s ex=%s obj=%s diff=%s ref=%s ts=%s",
-        student_uuid, evt.event, evt.exerciseId, evt.objectiveId,
-        difficulty, evt.sourceRefId, (evt.ts.isoformat() if evt.ts else None),
-    )
+    return
+
+
+# ✅ Endpoint para contar impresiones (desde el FE al montar panel/strip)
+@router.post(
+    "/recommendations/impressions",
+    status_code=204,
+    summary="[Opcional] Registrar impresiones de recos (para CTR real)",
+)
+def post_reco_impression(
+    placement: str = Query("panel", description="panel|strip"),
+    ctx: AuthContext = Depends(require_public_roles("ROLE_STUDENT")),
+):
+    advisor_reco_events_total.labels(event="IMPRESSION").inc()
+    return
+
+
+# ✅ Invalidación interna (para progress-service/diagnóstico)
+@router.post(
+    "/internal/recommendations/invalidate",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="[INTERNAL] Invalida caché de recos para un estudiante",
+    dependencies=[Depends(require_internal("ROLE_INTERNAL"))],
+)
+def invalidate_recommendations(studentId: UUID = Query(...), rdb = Depends(get_redis)):
+    if not rdb:
+        return
+    try:
+        pattern = f"reco:v1:{studentId}:*"
+        # scan & delete
+        cur = 0
+        while True:
+            cur, keys = rdb.scan(cur, match=pattern, count=100)
+            if keys:
+                rdb.delete(*keys)
+            if cur == 0:
+                break
+        # índice también
+        rdb.delete(_index_key(studentId))
+        advisor_reco_invalidate_total.labels(source="manual").inc()
+    except Exception as e:
+        logger.warning("RECO_INVALIDATE_FAIL: %s", e)
     return

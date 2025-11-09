@@ -16,14 +16,16 @@ class Citation(BaseModel):
 
 
 class RecommendationItem(BaseModel):
-    objectiveId: UUID
+    # ✅ ahora opcional para soportar recos “genéricas” si haces A/B o cápsulas
+    objectiveId: Optional[UUID] = None
     exerciseId: UUID
     score: float = Field(ge=0.0, le=1.0)
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     reason: Optional[str] = None
     source: Literal["RF", "RF+RAG", "HEURISTIC"]
     difficulty: Optional[Literal["EASY", "MEDIUM", "HARD"]] = None
-    citations: list[Citation] = []
+    # ✅ evita lista compartida
+    citations: list[Citation] = Field(default_factory=list)
 
 
 class RecommendationsResponse(BaseModel):

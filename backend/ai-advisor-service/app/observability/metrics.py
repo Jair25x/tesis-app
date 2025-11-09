@@ -1,3 +1,4 @@
+# app/observability/metrics.py
 from __future__ import annotations
 import time
 from contextlib import contextmanager
@@ -40,34 +41,49 @@ advisor_rag_misses_total = Counter(
     []
 )
 
-# Latencia del batch al progress-service
 advisor_progress_batch_seconds = Histogram(
     "advisor_progress_batch_seconds",
     "Latency of batch stats call to progress-service",
     buckets=(0.05, 0.1, 0.2, 0.5, 1, 2, 5),
 )
 
-# Resultado del enriquecimiento de 'reason'
 advisor_reason_enrich_total = Counter(
     "advisor_reason_enrich_total",
     "Resultado del enriquecimiento de 'reason' con stats de Progress",
     ["result"]  # result in {hit, miss, error}
 )
 
-# CTR / Interacciones con recomendaciones
 advisor_reco_events_total = Counter(
     "advisor_reco_events_total",
     "Eventos de interacción con recomendaciones",
-    ["event"]  # OPEN|DISMISS|HOVER
+    ["event"]  # OPEN|DISMISS|HOVER|IMPRESSION
 )
 
 advisor_reco_click_total = Counter(
     "advisor_reco_click_total",
     "Clicks (OPEN) en recomendaciones",
-    ["difficulty", "source"]  # p.ej. difficulty=EASY|MEDIUM|HARD|UNK, source=AI_RECO
+    ["difficulty", "source"]  # e.g. difficulty=EASY|MEDIUM|HARD|UNK, source=AI_RECO
 )
 
-# "Info" de modelo
+# ✅ Métricas nuevas
+advisor_reco_cache_total = Counter(
+    "advisor_reco_cache_total",
+    "Resultados de caché de recomendaciones",
+    ["result"]  # hit|miss|error
+)
+
+advisor_reco_invalidate_total = Counter(
+    "advisor_reco_invalidate_total",
+    "Invalidaciones de caché de recomendaciones",
+    ["source"]  # e.g. progress, diagnostic, manual
+)
+
+advisor_reco_recent_skips_total = Counter(
+    "advisor_reco_recent_skips_total",
+    "Veces que se saltó un exercise por estar en recientes",
+    []
+)
+
 advisor_model_version_info = Gauge(
     "advisor_model_version_info",
     "Versión de modelo en servicio; se fija a 1 para la versión activa",
