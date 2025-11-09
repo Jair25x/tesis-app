@@ -8,7 +8,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.util.UUID;
 
-/** Evento S2S desde assessment-service (ya corregido, NO re-chequear). */
+/** Evento S2S desde assessment-service. */
 @Data
 public class AttemptEventRequest {
 
@@ -23,7 +23,8 @@ public class AttemptEventRequest {
 
   private String source; // "ASSESSMENT" u otro
   private Boolean correct; // puede venir null
-  private BigDecimal score; // puntos logrados
-  private Integer points; // puntos máximos
-  private ObjectNode metadata; // assignmentId, submissionId, etc.
+  private BigDecimal normalizedScore; // 0..1 (preferido)
+  private Integer awardedPoints; // puntos logrados
+  private Integer maxPoints; // puntos máximos
+  private ObjectNode metadata; // assignmentId, submissionId, submissionItemId, etc.
 }

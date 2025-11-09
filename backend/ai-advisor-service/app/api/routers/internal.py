@@ -51,7 +51,7 @@ UPSERT_STATS_SQL = text(
             WHEN EXCLUDED.avg_score IS NULL THEN student_objective_stats.avg_score
             WHEN student_objective_stats.avg_score IS NULL THEN EXCLUDED.avg_score
             ELSE ROUND( (student_objective_stats.avg_score * student_objective_stats.attempts + EXCLUDED.avg_score)
-                        / (student_objective_stats.attempts + 1), 2 )
+                        / (student_objective_stats.attempts + 1), 3 )
         END,
         last_attempt_at = now(),
         streak = CASE

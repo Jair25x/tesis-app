@@ -38,10 +38,10 @@ public class OutboxResendServiceImpl implements OutboxResendService {
             node.path("source").asText("ASSESSMENT"),
             node.hasNonNull("curriculumId") ? UUID.fromString(node.path("curriculumId").asText()) : null,
             UUID.fromString(node.path("exerciseId").asText()),
-            node.path("correct").isMissingNode() || node.get("correct").isNull() ? null
-                : node.get("correct").asBoolean(),
-            node.hasNonNull("score") ? node.path("score").decimalValue() : null,
-            node.hasNonNull("points") ? node.path("points").asInt() : null,
+            node.has("correct") && !node.get("correct").isNull() ? node.get("correct").asBoolean() : null,
+            node.hasNonNull("normalizedScore") ? node.path("normalizedScore").decimalValue() : null,
+            node.hasNonNull("awardedPoints") ? node.path("awardedPoints").asInt() : null,
+            node.hasNonNull("maxPoints") ? node.path("maxPoints").asInt() : null,
             node.hasNonNull("objectiveId") ? UUID.fromString(node.path("objectiveId").asText()) : null,
             (ObjectNode) node.path("metadata"));
         progressClient.postAttempt(req);

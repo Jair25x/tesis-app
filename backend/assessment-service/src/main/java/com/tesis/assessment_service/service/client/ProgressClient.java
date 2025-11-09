@@ -16,8 +16,9 @@ public interface ProgressClient {
       UUID curriculumId,
       UUID exerciseId,
       Boolean correct,
-      BigDecimal score, // puntos logrados
-      Integer points, // puntos máximos
+      BigDecimal normalizedScore, // 0..1
+      Integer awardedPoints, // puntos logrados
+      Integer maxPoints, // puntos máximos
       UUID objectiveId,
       ObjectNode metadata) {
   }

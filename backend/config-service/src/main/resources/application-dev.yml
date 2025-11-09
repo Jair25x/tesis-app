@@ -2,7 +2,6 @@ spring:
   config:
     activate:
       on-profile: dev
-
   boot:
     admin:
       client:
@@ -12,7 +11,6 @@ spring:
             user:
               name: admin
               password: admin
-
   cloud:
     config:
       server:
@@ -22,11 +20,11 @@ spring:
           search-paths: .
           username: Jair25x
           password: ${GITHUB_TOKEN}
-
   cache:
     type: caffeine
     caffeine:
       spec: maximumSize=500,expireAfterAccess=600s
+
 eureka:
   client:
     register-with-eureka: true

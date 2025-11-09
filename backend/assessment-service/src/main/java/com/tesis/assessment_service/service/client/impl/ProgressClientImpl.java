@@ -32,23 +32,32 @@ public class ProgressClientImpl implements ProgressClient {
   public void postAttempt(AttemptRequest req) {
     try {
       ObjectNode body = mapper.createObjectNode();
+      // requeridos
       body.put("studentId", req.studentId().toString());
       body.put("source", req.source());
       body.put("curriculumId", req.curriculumId().toString());
       body.put("exerciseId", req.exerciseId().toString());
-      if (req.correct() != null)
+      body.put("objectiveId", req.objectiveId() == null ? null : req.objectiveId().toString());
+
+      // opcionales
+      if (req.correct() != null) {
         body.put("correct", req.correct());
-      if (req.score() != null)
-        body.put("score", req.score());
-      if (req.points() != null)
-        body.put("points", req.points());
-      if (req.objectiveId() != null)
-        body.put("objectiveId", req.objectiveId().toString());
-      if (req.metadata() != null)
+      }
+      if (req.normalizedScore() != null) {
+        body.put("normalizedScore", req.normalizedScore());
+      }
+      if (req.awardedPoints() != null) {
+        body.put("awardedPoints", req.awardedPoints());
+      }
+      if (req.maxPoints() != null) {
+        body.put("maxPoints", req.maxPoints());
+      }
+      if (req.metadata() != null) {
         body.set("metadata", req.metadata());
+      }
 
       webClient.post()
-          .uri("/internal/progress/attempts") // <— RUTA INTERNA
+          .uri("/internal/progress/attempts") // ruta interna S2S
           .contentType(MediaType.APPLICATION_JSON)
           .accept(MediaType.APPLICATION_JSON)
           .bodyValue(body)
@@ -57,14 +66,19 @@ public class ProgressClientImpl implements ProgressClient {
           .block();
 
     } catch (ResponseStatusException ex) {
-      throw new ExternalServiceException("progress",
+      throw new ExternalServiceException(
+          "progress",
           ex.getStatusCode().value(),
-          "Error registrando intento en progress: " + ex.getReason(), ex);
+          "Error registrando intento en progress: " + ex.getReason(),
+          ex);
     } catch (ExternalServiceException e) {
       throw e;
     } catch (Exception e) {
-      throw new ExternalServiceException("progress", 500,
-          "Fallo inesperado registrando intento en progress", e);
+      throw new ExternalServiceException(
+          "progress",
+          500,
+          "Fallo inesperado registrando intento en progress",
+          e);
     }
   }
 }

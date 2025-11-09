@@ -111,7 +111,7 @@ def register_attempt(
           avg_score = CASE
                         WHEN :score IS NULL THEN avg_score
                         WHEN avg_score IS NULL THEN :score
-                        ELSE ROUND((avg_score * attempts + :score)::numeric / (attempts + 1), 4)
+                        ELSE ROUND((avg_score * attempts + :score)::numeric / (attempts + 1), 3)
                       END,
 
           -- última vez y racha simple

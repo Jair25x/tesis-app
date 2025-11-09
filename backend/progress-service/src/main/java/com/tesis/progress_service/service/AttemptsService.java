@@ -1,7 +1,6 @@
 package com.tesis.progress_service.service;
 
 import com.tesis.progress_service.client.CurriculumClient;
-import com.tesis.progress_service.client.AdvisorClient; // ✅ nuevo
 import com.tesis.progress_service.core.ProgressCalculator;
 import com.tesis.progress_service.dto.AttemptEventRequest;
 import com.tesis.progress_service.dto.AttemptRequest;
@@ -17,7 +16,9 @@ import com.tesis.progress_service.observability.AttemptMetricsRecorder;
 import com.tesis.progress_service.repository.AttemptRepository;
 import com.tesis.progress_service.repository.StreakRepository;
 import com.tesis.progress_service.repository.StudentObjectiveProgressRepository;
+import com.tesis.progress_service.service.events.AttemptPersistedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,13 +41,12 @@ public class AttemptsService {
         private final ProgressCalculator progressCalculator;
         private final AchievementService achievementService;
         private final AttemptMetricsRecorder attemptMetrics;
-
-        // ✅ nuevo
-        private final AdvisorClient advisorClient;
+        private final ApplicationEventPublisher events; // ⬅️ para invalidación post-commit
 
         // === FLUJO PÚBLICO ===
         @Transactional
         public AttemptResponse recordAttempt(UUID studentId, AttemptRequest req) {
+
                 Timer.Sample sample = attemptMetrics.startAttemptTimer();
                 Attempt attempt = null;
                 boolean correct = false;
@@ -55,7 +55,8 @@ public class AttemptsService {
                         // 1) evaluar respuesta
                         CheckResultDto check = curriculumClient.checkAnswer(req.getExerciseId(), req.getAnswer());
                         correct = check.isCorrect();
-                        BigDecimal scoreBD = check.getScore() != null ? check.getScore()
+                        BigDecimal scoreBD = (check.getScore() != null)
+                                        ? check.getScore()
                                         : (correct ? BigDecimal.ONE : BigDecimal.ZERO);
 
                         // 2) persistir intento
@@ -72,7 +73,9 @@ public class AttemptsService {
                                                         .sourceRefId(req.getSourceRefId())
                                                         .sessionId(req.getSessionId())
                                                         .answerPayload(req.getAnswer())
-                                                        .checkResult(Map.of("correct", correct, "score", scoreBD,
+                                                        .checkResult(Map.of(
+                                                                        "correct", correct,
+                                                                        "score", scoreBD,
                                                                         "feedback", check.getFeedback()))
                                                         .correct(correct)
                                                         .score(scoreBD)
@@ -82,8 +85,9 @@ public class AttemptsService {
 
                         // 3) counters por intento
                         boolean fromReco = attempt.getSourceRefId() != null;
-                        attemptMetrics.recordAttempt(attempt.getTemplateType(), attempt.getDifficulty(),
-                                        attempt.isCorrect(), fromReco);
+                        String tpl = safeTag(attempt.getTemplateType());
+                        String dif = safeTag(attempt.getDifficulty());
+                        attemptMetrics.recordAttempt(tpl, dif, attempt.isCorrect(), fromReco);
 
                         // 4) SOP + racha + logros
                         StudentObjectiveProgress sop = sopRepository
@@ -93,26 +97,21 @@ public class AttemptsService {
                                                         .curriculumId(req.getCurriculumId())
                                                         .learningObjectiveId(req.getLearningObjectiveId())
                                                         .build());
+
                         sop = progressCalculator.applyAttempt(sop, attempt);
                         sopRepository.save(sop);
 
                         Streak streak = streakRepository.findByStudentId(studentId)
                                         .orElseGet(() -> Streak.builder().studentId(studentId).current(0).longest(0)
                                                         .build());
+
                         streak = progressCalculator.updateStreak(streak, LocalDate.now());
                         streakRepository.save(streak);
 
                         var unlocked = achievementService.evaluateAndGrant(studentId, attempt, sop, streak);
 
-                        // 5) invalidación (única y post-persistencia) con métrica
-                        try {
-                                var invSample = attemptMetrics.startInvalidationTimer();
-                                advisorClient.invalidateRecommendations(studentId);
-                                attemptMetrics.stopInvalidationTimer(invSample, "success");
-                        } catch (Exception ex) {
-                                attemptMetrics.stopInvalidationTimer(attemptMetrics.startInvalidationTimer(), "error");
-                                // fail-open
-                        }
+                        // 5) invalidación post-commit (publicar evento)
+                        events.publishEvent(new AttemptPersistedEvent(this, studentId));
 
                         // 6) response
                         BigDecimal acc = (sop.getAttemptsCount() == null || sop.getAttemptsCount() == 0)
@@ -146,8 +145,9 @@ public class AttemptsService {
                                         .build();
 
                 } finally {
-                        String tpl = (attempt != null) ? attempt.getTemplateType() : req.getTemplateType();
-                        String dif = (attempt != null) ? attempt.getDifficulty() : req.getDifficulty();
+                        // saneo de tags para evitar NPE/cardinalidad rara
+                        String tpl = safeTag(attempt != null ? attempt.getTemplateType() : req.getTemplateType());
+                        String dif = safeTag(attempt != null ? attempt.getDifficulty() : req.getDifficulty());
                         attemptMetrics.stopAttemptTimer(sample, tpl, dif, correct);
                 }
         }
@@ -155,6 +155,7 @@ public class AttemptsService {
         // === FLUJO INTERNO (assessment → progress) ===
         @Transactional
         public void recordAttemptEvent(UUID studentId, AttemptEventRequest req) {
+
                 AttemptSource src;
                 try {
                         src = (req.getSource() == null) ? AttemptSource.PRACTICE
@@ -163,6 +164,22 @@ public class AttemptsService {
                         src = AttemptSource.PRACTICE;
                 }
 
+                // 1) score normalizado 0..1
+                BigDecimal scoreNorm = null;
+                if (req.getNormalizedScore() != null) {
+                        scoreNorm = req.getNormalizedScore();
+                } else if (req.getAwardedPoints() != null && req.getMaxPoints() != null && req.getMaxPoints() > 0) {
+                        scoreNorm = new BigDecimal(req.getAwardedPoints())
+                                        .divide(new BigDecimal(req.getMaxPoints()), 3, RoundingMode.HALF_UP);
+                } else {
+                        // sin info: 0
+                        scoreNorm = BigDecimal.ZERO;
+                        org.slf4j.LoggerFactory.getLogger(AttemptsService.class)
+                                        .warn("recordAttemptEvent: missing score fields; defaulting to 0 (studentId={}, exerciseId={})",
+                                                        studentId, req.getExerciseId());
+                }
+
+                // 2) Persistir Attempt (respuesta ya corregida por assessment)
                 Attempt attempt = attemptRepository.save(
                                 Attempt.builder()
                                                 .studentId(studentId)
@@ -174,15 +191,17 @@ public class AttemptsService {
                                                 .checkResult(Map.of(
                                                                 "from", "assessment",
                                                                 "correct", req.getCorrect(),
-                                                                "score", req.getScore(),
-                                                                "points", req.getPoints(),
+                                                                "normalizedScore", scoreNorm, // <- 0..1
+                                                                "awardedPoints", req.getAwardedPoints(),
+                                                                "maxPoints", req.getMaxPoints(),
                                                                 "metadata", req.getMetadata()))
-                                                .correct(req.getCorrect())
-                                                .score(req.getScore())
+                                                .correct(Boolean.TRUE.equals(req.getCorrect()))
+                                                .score(scoreNorm) // <- 0..1
                                                 .hintsUsed(0)
                                                 .durationMs(null)
                                                 .build());
 
+                // 3) SOP + racha + logros (igual que antes)
                 StudentObjectiveProgress sop = sopRepository
                                 .findByStudentIdAndLearningObjectiveId(studentId, req.getObjectiveId())
                                 .orElseGet(() -> StudentObjectiveProgress.builder()
@@ -190,6 +209,7 @@ public class AttemptsService {
                                                 .curriculumId(req.getCurriculumId())
                                                 .learningObjectiveId(req.getObjectiveId())
                                                 .build());
+
                 sop = progressCalculator.applyAttempt(sop, attempt);
                 sopRepository.save(sop);
 
@@ -200,12 +220,15 @@ public class AttemptsService {
 
                 achievementService.evaluateAndGrant(studentId, attempt, sop, streak);
 
-                try {
-                        var invSample = attemptMetrics.startInvalidationTimer();
-                        advisorClient.invalidateRecommendations(studentId);
-                        attemptMetrics.stopInvalidationTimer(invSample, "success");
-                } catch (Exception ex) {
-                        attemptMetrics.stopInvalidationTimer(attemptMetrics.startInvalidationTimer(), "error");
-                }
+                // invalidación post-commit
+                events.publishEvent(new AttemptPersistedEvent(this, studentId));
+        }
+
+        /** Normaliza tag de métrica para evitar null/blank y cardinalidad excesiva. */
+        private static String safeTag(String v) {
+                if (v == null)
+                        return "unknown";
+                String t = v.trim();
+                return t.isEmpty() ? "unknown" : t;
         }
 }

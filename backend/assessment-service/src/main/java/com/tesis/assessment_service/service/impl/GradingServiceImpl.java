@@ -26,15 +26,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Calificación manual/ajuste de ítems.
- * Cuando falla el post a progress-service, se persiste outbox (JSONB real).
- */
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -73,13 +70,20 @@ public class GradingServiceImpl implements GradingService {
     it.setFeedbackJson(req.feedback() == null ? null : req.feedback().value()); // JSONB
     it.setCheckedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
-    // Intento de notificar progreso (best-effort) + outbox fallback
+    // Meta común
     ObjectNode meta = mapper.createObjectNode();
     meta.put("assignmentId", a.getId().toString());
     meta.put("submissionId", s.getId().toString());
     meta.put("submissionItemId", it.getId().toString());
     meta.put("gradingMode", it.getGradingMode() == null ? GradingMode.AUTO.name() : it.getGradingMode().name());
 
+    // Normalización 0..1
+    BigDecimal normalized = null;
+    if (it.getScore() != null && it.getPoints() != null && it.getPoints() > 0) {
+      normalized = it.getScore().divide(BigDecimal.valueOf(it.getPoints()), 3, RoundingMode.HALF_UP);
+    }
+
+    // Payload para outbox (JSONB real) — usa claves nuevas
     ObjectNode payload = mapper.createObjectNode();
     payload.put("studentId", s.getStudentId().toString());
     payload.put("source", "ASSESSMENT");
@@ -87,19 +91,27 @@ public class GradingServiceImpl implements GradingService {
     payload.put("exerciseId", it.getExerciseId().toString());
     if (it.getCorrect() != null)
       payload.put("correct", it.getCorrect());
+    if (normalized != null)
+      payload.put("normalizedScore", normalized);
     if (it.getScore() != null)
-      payload.put("score", it.getScore());
-    payload.put("points", it.getPoints() == null ? 0 : it.getPoints());
+      payload.put("awardedPoints", it.getScore().intValue());
+    if (it.getPoints() != null)
+      payload.put("maxPoints", it.getPoints());
     payload.put("objectiveId", it.getObjectiveId().toString());
     payload.set("metadata", meta);
 
+    // Envío best-effort + fallback
     try {
       var reqP = new ProgressClient.AttemptRequest(
-          s.getStudentId(), "ASSESSMENT",
+          s.getStudentId(),
+          "ASSESSMENT",
           a.getTemplate().getCurriculumId(),
           it.getExerciseId(),
-          it.getCorrect(), it.getScore(),
-          it.getPoints(), it.getObjectiveId(),
+          it.getCorrect(),
+          normalized, // normalizedScore 0..1
+          it.getScore() == null ? null : it.getScore().intValue(), // awardedPoints
+          it.getPoints(), // maxPoints
+          it.getObjectiveId(),
           meta);
       progressClient.postAttempt(reqP);
     } catch (Exception ex) {
@@ -112,7 +124,7 @@ public class GradingServiceImpl implements GradingService {
       outboxRepo.save(out);
     }
 
-    // Recalcular totales y estado del submission
+    // Recalcular totales / estado
     List<AssessmentSubmissionItem> items = itemRepo.findBySubmission_IdOrderByPositionAsc(s.getId());
     boolean allScored = items.stream().allMatch(x -> x.getScore() != null);
 
@@ -127,7 +139,7 @@ public class GradingServiceImpl implements GradingService {
       s.setStatus(SubmissionStatus.GRADED);
       s.setGradedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
-      // Encola evento para AI Advisor
+      // Evento para AI Advisor
       advisorEventService.enqueueGradedEvent(s);
     } else {
       if (s.getStatus() == SubmissionStatus.IN_PROGRESS) {

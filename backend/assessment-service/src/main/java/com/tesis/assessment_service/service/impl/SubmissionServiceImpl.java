@@ -24,6 +24,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
@@ -468,6 +469,12 @@ public class SubmissionServiceImpl implements SubmissionService {
   }
 
   /** Envío a progress-service con outbox fallback. */
+  private static BigDecimal norm(BigDecimal score, Integer points) {
+    if (score == null || points == null || points <= 0)
+      return null;
+    return score.divide(BigDecimal.valueOf(points), 3, RoundingMode.HALF_UP);
+  }
+
   private void postAttemptBestEffort(AssessmentSubmission s, AssessmentSubmissionItem it, UUID objectiveId) {
     try {
       ObjectNode meta = mapper.createObjectNode();
@@ -476,14 +483,17 @@ public class SubmissionServiceImpl implements SubmissionService {
       meta.put("submissionItemId", it.getId().toString());
       meta.put("gradingMode", it.getGradingMode().name());
 
+      BigDecimal normalized = norm(it.getScore(), it.getPoints());
+
       var req = new ProgressClient.AttemptRequest(
           s.getStudentId(),
           "ASSESSMENT",
           s.getAssignment().getTemplate().getCurriculumId(),
           it.getExerciseId(),
           it.getCorrect(),
-          it.getScore(),
-          it.getPoints(),
+          normalized, // normalizedScore 0..1
+          it.getScore() == null ? null : it.getScore().intValue(), // awardedPoints
+          it.getPoints(), // maxPoints
           (objectiveId != null ? objectiveId : it.getObjectiveId()),
           meta);
       progressClient.postAttempt(req);
@@ -514,9 +524,17 @@ public class SubmissionServiceImpl implements SubmissionService {
       root.put("exerciseId", it.getExerciseId().toString());
       if (it.getCorrect() != null)
         root.put("correct", it.getCorrect());
+
+      BigDecimal normalized = (it.getScore() == null || it.getPoints() == null || it.getPoints() <= 0)
+          ? null
+          : it.getScore().divide(BigDecimal.valueOf(it.getPoints()), 3, RoundingMode.HALF_UP);
+
+      if (normalized != null)
+        root.put("normalizedScore", normalized);
       if (it.getScore() != null)
-        root.put("score", it.getScore());
-      root.put("points", it.getPoints());
+        root.put("awardedPoints", it.getScore().intValue());
+      if (it.getPoints() != null)
+        root.put("maxPoints", it.getPoints());
 
       UUID obj = (objectiveId != null ? objectiveId : it.getObjectiveId());
       if (obj != null)

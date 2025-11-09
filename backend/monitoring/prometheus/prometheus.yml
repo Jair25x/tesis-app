@@ -1,71 +1,172 @@
 global:
   scrape_interval: 15s
+  scrape_timeout: 10s
   evaluation_interval: 30s
   external_labels:
-    env: prod
+    env: prod # <-- si este archivo también se usa en DEV, cámbialo a 'dev' allí
 
 rule_files:
   - /etc/prometheus/alerts.yml
 
 scrape_configs:
-  # Java via Actuator
+  # -------------------------
+  # SPRING BOOT (Actuator)
+  # -------------------------
+
   - job_name: "gateway-service"
     metrics_path: /actuator/prometheus
+    scheme: http
+    scrape_interval: 10s # gateway y progress con un poco más de frecuencia
+    scrape_timeout: 7s
+    honor_labels: true
     static_configs:
       - targets: ["gateway-service:8080"]
         labels: { app: gateway, team: core }
+    # Evita alta cardinalidad por paths muy variables
+    metric_relabel_configs:
+      # Normaliza label 'uri' con IDs (UUID) a :id
+      - source_labels: [uri]
+        regex: "(.*)/(?:[0-9a-fA-F-]{8,36})(.*)"
+        target_label: uri
+        replacement: "${1}/:id${2}"
+        action: replace
+      # (Opcional) elimina series de /swagger, /v3/api-docs, si no te interesan
+      - source_labels: [uri]
+        regex: "^/(swagger-ui.*|v3/api-docs.*)$"
+        action: drop
 
   - job_name: "progress-service"
     metrics_path: /actuator/prometheus
+    scheme: http
+    scrape_interval: 10s
+    scrape_timeout: 7s
+    honor_labels: true
     static_configs:
       - targets: ["progress-service:8083"]
         labels: { app: progress, team: core }
+    sample_limit: 20000
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: "(.*)/(?:[0-9a-fA-F-]{8,36})(.*)"
+        target_label: uri
+        replacement: "${1}/:id${2}"
+        action: replace
+      - source_labels: [uri]
+        regex: "^/(swagger-ui.*|v3/api-docs.*)$"
+        action: drop
 
   - job_name: "curriculum-service"
     metrics_path: /actuator/prometheus
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 7s
+    honor_labels: true
+    sample_limit: 15000
     static_configs:
       - targets: ["curriculum-service:8082"]
         labels: { app: curriculum, team: core }
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: "(.*)/(?:[0-9a-fA-F-]{8,36})(.*)"
+        target_label: uri
+        replacement: "${1}/:id${2}"
+        action: replace
+      - source_labels: [uri]
+        regex: "^/(swagger-ui.*|v3/api-docs.*)$"
+        action: drop
 
   - job_name: "classroom-service"
     metrics_path: /actuator/prometheus
+    scheme: http
+    honor_labels: true
     static_configs:
       - targets: ["classroom-service:8084"]
         labels: { app: classroom, team: core }
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: "(.*)/(?:[0-9a-fA-F-]{8,36})(.*)"
+        target_label: uri
+        replacement: "${1}/:id${2}"
+        action: replace
+      - source_labels: [uri]
+        regex: "^/(swagger-ui.*|v3/api-docs.*)$"
+        action: drop
 
   - job_name: "assessment-service"
     metrics_path: /actuator/prometheus
+    scheme: http
+    honor_labels: true
     static_configs:
       - targets: ["assessment-service:8085"]
         labels: { app: assessment, team: core }
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: "(.*)/(?:[0-9a-fA-F-]{8,36})(.*)"
+        target_label: uri
+        replacement: "${1}/:id${2}"
+        action: replace
+      - source_labels: [uri]
+        regex: "^/(swagger-ui.*|v3/api-docs.*)$"
+        action: drop
 
-  # Infra Spring
   - job_name: "eureka-server"
     metrics_path: /actuator/prometheus
+    scheme: http
+    honor_labels: true
     static_configs:
       - targets: ["eureka-server:8761"]
         labels: { app: eureka, team: core }
 
   - job_name: "config-service"
     metrics_path: /actuator/prometheus
+    scheme: http
+    honor_labels: true
     static_configs:
       - targets: ["config-service:8888"]
         labels: { app: config, team: core }
 
-  # FastAPI (exponen /metrics nativo)
+  # (Opcional) Spring Boot Admin si quieres métricas del admin
+  - job_name: "admin-monitoring-service"
+    metrics_path: /actuator/prometheus
+    scheme: http
+    honor_labels: true
+    static_configs:
+      - targets: ["admin-monitoring-service:9090"]
+        labels: { app: admin, team: core }
+
+  # -------------------------
+  # FASTAPI (Prometheus client)
+  # -------------------------
   - job_name: "ai-advisor"
     metrics_path: /metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 7s
+    honor_labels: true
     static_configs:
       - targets: ["ai-advisor-service:8086"]
         labels: { app: ai-advisor, team: core }
 
   - job_name: "duels-service"
     metrics_path: /metrics
+    scheme: http
+    honor_labels: true
     static_configs:
       - targets: ["duels-service:8087"]
         labels: { app: duels, team: core }
 
-  # Exporters opcionales (cuando los agregues)
+  # -------------------------
+  # PROMETHEUS SELF-SCRAPE
+  # -------------------------
+  - job_name: "prometheus"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels: { app: prometheus, team: core }
+
+  # -------------------------
+  # Exporters (cuando los agregues)
+  # -------------------------
   # - job_name: "redis"
   #   static_configs:
   #     - targets: ["redis-exporter:9121"]
@@ -73,5 +174,11 @@ scrape_configs:
   #
   # - job_name: "postgres"
   #   static_configs:
-  #     - targets: ["pg-exporter-auth:9187", "pg-exporter-duels:9187"]
+  #     - targets:
+  #         - "pg-exporter-auth:9187"
+  #         - "pg-exporter-content:9187"
+  #         - "pg-exporter-progress:9187"
+  #         - "pg-exporter-assessment:9187"
+  #         - "pg-exporter-advisor:9187"
+  #         - "pg-exporter-duels:9187"
   #       labels: { app: postgres }
