@@ -13,11 +13,13 @@ import {
 } from "../../services/curriculumService";
 import { useRecommendations } from "../../hooks/ai/useRecommendations";
 import { postRecoEvent } from "../../services/aiService";
+import RecoEmpty from "./RecoEmpty";
 
 type Props = {
   limit?: number;
   subject?: "math" | "lang";
   onResolve?: (ex: RecommendationItem) => void;
+  title?: string;
 };
 
 function difficultyPill(d?: "EASY" | "MEDIUM" | "HARD" | null) {
@@ -51,10 +53,26 @@ function fmtAgo(iso?: string) {
   return `actualizado hace ${mins} min`;
 }
 
+async function ensureCurriculumSelected(): Promise<boolean> {
+  try {
+    const current = getCurrentCurriculumId();
+    if (current) return true;
+    const list = await getActiveCurricula();
+    if (Array.isArray(list) && list.length > 0) {
+      localStorage.setItem("app:curriculumId", list[0].id);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export default function RecommendationsPanel({
-  limit = 8,
+  limit = 6,
   subject = "math",
   onResolve,
+  title = "🌟 Recomendado para ti",
 }: Props) {
   const { goToExercise } = useExerciseDeepLink();
   const [ensuring, setEnsuring] = useState(false);
@@ -63,15 +81,8 @@ export default function RecommendationsPanel({
   const { data, isLoading, isError, error } = useRecommendations(args);
 
   if (isLoading) {
-    return (
-      <div
-        className="text-sm text-muted-foreground"
-        role="status"
-        aria-live="polite"
-      >
-        Cargando recomendaciones…
-      </div>
-    );
+    // Mantén la pantalla limpia: sin placeholder ruidoso.
+    return null;
   }
   if (isError) {
     const msg =
@@ -79,49 +90,26 @@ export default function RecommendationsPanel({
         ? error.message
         : "Error al cargar recomendaciones.";
     return (
-      <div className="text-sm text-red-500" role="alert">
+      <div
+        className="rounded-xl border p-4 text-sm text-red-500 dark:border-gray-700"
+        role="alert"
+      >
         {msg}
       </div>
     );
   }
 
   const items = data?.items ?? [];
-  if (items.length === 0) {
-    return (
-      <div
-        className="text-sm text-muted-foreground"
-        role="status"
-        aria-live="polite"
-      >
-        No hay recomendaciones por ahora.
-      </div>
-    );
-  }
-
-  async function ensureCurriculumSelected(): Promise<boolean> {
-    try {
-      const current = getCurrentCurriculumId();
-      if (current) return true;
-      setEnsuring(true);
-      const list = await getActiveCurricula();
-      if (Array.isArray(list) && list.length > 0) {
-        localStorage.setItem("app:curriculumId", list[0].id);
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    } finally {
-      setEnsuring(false);
-    }
-  }
 
   const handleResolve = async (item: RecommendationItem) => {
     if (onResolve) {
       onResolve(item);
       return;
     }
+    setEnsuring(true);
     const ok = await ensureCurriculumSelected();
+    setEnsuring(false);
+
     if (!ok) {
       showToast.warning("Selecciona un currículo antes de abrir ejercicios.");
       return;
@@ -131,83 +119,84 @@ export default function RecommendationsPanel({
       return;
     }
 
-    // Correlación para atribución + evento CTR
+    // Correlación + atribución (consumida por el Player)
     const refId = newSourceRefId();
-
-    // Guardamos atribución (consumida por el Player) y opcionalmente recordamos el refId
     setRecoAttribution(item.exerciseId, {
       source: "AI_RECO",
-      objectiveId: item.objectiveId,
+      objectiveId: item.objectiveId, // string (no null aquí por el guard)
       at: new Date().toISOString(),
       sourceRefId: refId,
     });
-    try {
-      sessionStorage.setItem("lastSourceRefId", refId);
-    } catch {
-      /* noop */
-    }
 
-    // Disparamos evento CTR (fire & forget para no bloquear navegación)
+    // Evento CTR (fire & forget)
     void postRecoEvent({
       event: "OPEN",
       exerciseId: item.exerciseId,
-      objectiveId: item.objectiveId || undefined,
+      objectiveId: item.objectiveId,
       sourceRefId: refId,
       ts: new Date().toISOString(),
-      difficulty: item.difficulty || undefined,
+      difficulty: item.difficulty ?? undefined,
     });
 
-    // Ir al ejercicio
+    // Deep-link
     goToExercise(item.exerciseId, item.objectiveId);
   };
 
   return (
-    <div className="space-y-2">
-      {/* etiqueta de frescura */}
-      {data?.generatedAt && (
-        <div className="text-xs text-muted-foreground">
-          {fmtAgo(data.generatedAt)}
+    <section aria-label="Recomendaciones personalizadas" className="mt-2">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-base md:text-lg font-semibold text-emerald-700 dark:text-emerald-300">
+          {title}
+        </h3>
+        {data?.generatedAt && (
+          <div className="text-xs text-muted-foreground">
+            {fmtAgo(data.generatedAt)}
+          </div>
+        )}
+      </div>
+
+      {items.length === 0 ? (
+        <RecoEmpty />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {items.slice(0, limit).map((rec) => {
+            const displayTitle =
+              (rec.title ?? "").trim() ||
+              `Ejercicio ${rec.exerciseId.slice(0, 8)}`;
+            return (
+              <article
+                key={rec.exerciseId}
+                className="rounded-2xl border shadow-sm bg-white/90 dark:bg-gray-900/40 dark:border-gray-800 p-4 hover:shadow-md transition"
+                aria-label={`Recomendación: ${displayTitle}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <h4 className="font-semibold leading-snug text-gray-900 dark:text-gray-100">
+                    {displayTitle}
+                  </h4>
+                  {difficultyPill(rec.difficulty ?? null)}
+                </div>
+
+                {rec.reason && (
+                  <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
+                    {rec.reason}
+                  </p>
+                )}
+
+                <div className="mt-3">
+                  <button
+                    onClick={() => void handleResolve(rec)}
+                    disabled={ensuring}
+                    className="w-full rounded-lg px-3 py-2 border hover:bg-gray-50 dark:hover:bg-gray-800 transition text-sm"
+                    aria-label={`Resolver ejercicio recomendado: ${displayTitle}`}
+                  >
+                    {ensuring ? "Preparando…" : "Resolver"}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {items.map((item) => {
-          const fallbackTitle = `Ejercicio ${item.exerciseId.slice(0, 8)}`;
-          const displayTitle = (item.title ?? "").trim() || fallbackTitle;
-
-          return (
-            <article
-              key={item.exerciseId}
-              className="rounded-2xl border shadow-sm bg-white/90 dark:bg-gray-900/40 dark:border-gray-800 p-4 hover:shadow-md transition"
-              aria-label={`Recomendación: ${displayTitle}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <h3 className="font-semibold leading-snug text-gray-900 dark:text-gray-100">
-                  {displayTitle}
-                </h3>
-                {difficultyPill(item.difficulty)}
-              </div>
-
-              {item.reason && (
-                <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
-                  {item.reason}
-                </p>
-              )}
-
-              <div className="mt-3">
-                <button
-                  onClick={() => void handleResolve(item)}
-                  disabled={ensuring}
-                  className="w-full rounded-lg px-3 py-2 border hover:bg-gray-50 dark:hover:bg-gray-800 transition text-sm"
-                  aria-label={`Resolver ejercicio recomendado: ${displayTitle}`}
-                >
-                  {ensuring ? "Preparando…" : "Resolver"}
-                </button>
-              </div>
-            </article>
-          );
-        })}
-      </div>
-    </div>
+    </section>
   );
 }
