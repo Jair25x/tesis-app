@@ -11,11 +11,11 @@ management:
   endpoints:
     web:
       exposure:
-        include: "*"     # en dev lo filtramos por perfil
+        include: "*"
   endpoint:
     prometheus:
-      access: unrestricted    # reemplaza .enabled
+      access: unrestricted
   prometheus:
     metrics:
       export:
-        enabled: true         # reemplaza management.metrics.export.prometheus.enabled
+        enabled: true

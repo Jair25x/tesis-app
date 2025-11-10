@@ -2,6 +2,7 @@ spring:
   config:
     activate:
       on-profile: prod
+
   cloud:
     config:
       server:
@@ -11,6 +12,9 @@ spring:
           search-paths: .
           username: Jair25x
           password: ${GITHUB_TOKEN}
+          clone-on-start: true
+          timeout: 30
+          force-pull: true
 
 eureka:
   client:
@@ -27,6 +31,10 @@ management:
     access:
       default: read-only
   endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
     prometheus:
       access: unrestricted
   prometheus:

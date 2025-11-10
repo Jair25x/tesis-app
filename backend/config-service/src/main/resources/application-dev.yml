@@ -11,6 +11,7 @@ spring:
             user:
               name: admin
               password: admin
+
   cloud:
     config:
       server:
@@ -20,6 +21,10 @@ spring:
           search-paths: .
           username: Jair25x
           password: ${GITHUB_TOKEN}
+          clone-on-start: true
+          timeout: 30
+          force-pull: true
+
   cache:
     type: caffeine
     caffeine:
@@ -31,3 +36,20 @@ eureka:
     fetch-registry: true
     service-url:
       defaultZone: http://eureka-server:8761/eureka/
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+    prometheus:
+      access: unrestricted
+  prometheus:
+    metrics:
+      export:
+        enabled: true

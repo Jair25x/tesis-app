@@ -15,12 +15,22 @@ x-jvm-opts: &jvm-opts
     -XX:+ExitOnOutOfMemoryError
     -Duser.timezone=America/Lima
 
-# Healthcheck estándar: usa localhost y SERVER_PORT (fallback 8080)
-x-health-http: &health-http
-  test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-8080}/actuator/health | grep '\"status\":\"UP\"' >/dev/null || exit 1"]
+# Healthcheck nativo Spring: liveness (más estable en arranque)
+# Usamos wget (BusyBox suele incluirlo) para evitar dependencia de curl.
+x-health-http-liveness: &health-http-liveness
+  test:
+    - CMD-SHELL
+    - |
+      if command -v wget >/dev/null 2>&1; then
+        wget -qO- "http://localhost:${SERVER_PORT:-8080}/actuator/health/liveness" >/dev/null || exit 1
+      elif command -v curl >/dev/null 2>&1; then
+        curl -sf "http://localhost:${SERVER_PORT:-8080}/actuator/health/liveness" >/dev/null || exit 1
+      else
+        echo "No wget/curl available in container"; exit 1
+      fi
   interval: 15s
   timeout: 5s
-  retries: 12
+  retries: 20
   start_period: 40s
 
 networks:
@@ -54,7 +64,8 @@ services:
     logging: *default-logging
     # Para eureka basta comprobar el root
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8761/ >/dev/null || exit 1"]
+      test:
+        ["CMD-SHELL", "wget -qO- http://localhost:8761/ >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 12
@@ -76,12 +87,7 @@ services:
     restart: on-failure
     networks: [tesis-network]
     logging: *default-logging
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9090/actuator/health | grep '\"status\":\"UP\"' >/dev/null || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
+    healthcheck: *health-http-liveness
 
   config-service:
     build:
@@ -101,11 +107,20 @@ services:
     networks: [tesis-network]
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8888/actuator/health | grep '\"status\":\"UP\"' >/dev/null || exit 1"]
+      test:
+        - CMD-SHELL
+        - |
+          if command -v wget >/dev/null 2>&1; then
+            wget -qO- "http://localhost:${SERVER_PORT:-8888}/actuator/health/liveness" >/dev/null || exit 1
+          elif command -v curl >/dev/null 2>&1; then
+            curl -sf "http://localhost:${SERVER_PORT:-8888}/actuator/health/liveness" >/dev/null || exit 1
+          else
+            echo "No wget/curl available in container"; exit 1
+          fi
       interval: 15s
       timeout: 5s
-      retries: 12
-      start_period: 20s
+      retries: 40
+      start_period: 90s
 
   advisor-redis:
     image: redis:7-alpine
@@ -116,7 +131,7 @@ services:
       && echo 'requirepass ${REDIS_PASSWORD:-devredis}' >> /etc/redis.conf
       && redis-server /etc/redis.conf"
     ports: ["6380:6379"]
-    volumes: [ "redis-data:/data" ]
+    volumes: ["redis-data:/data"]
     restart: unless-stopped
     networks: [tesis-network]
     logging: *default-logging
@@ -135,7 +150,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD:-misan}
     ports: ["5432:5432"]
-    volumes: [ "auth-profile-db-data:/var/lib/postgresql/data" ]
+    volumes: ["auth-profile-db-data:/var/lib/postgresql/data"]
     restart: unless-stopped
     networks: [tesis-network]
     logging: *default-logging
@@ -153,7 +168,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_CONTENT_PASSWORD:-misan}
     ports: ["5433:5432"]
-    volumes: [ "content-db-data:/var/lib/postgresql/data" ]
+    volumes: ["content-db-data:/var/lib/postgresql/data"]
     restart: unless-stopped
     networks: [tesis-network]
     logging: *default-logging
@@ -171,7 +186,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PROGRESS_PASSWORD:-misan}
     ports: ["5444:5432"]
-    volumes: [ "progress-db-data:/var/lib/postgresql/data" ]
+    volumes: ["progress-db-data:/var/lib/postgresql/data"]
     restart: unless-stopped
     networks: [tesis-network]
     logging: *default-logging
@@ -189,7 +204,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_CLASSROOM_PASSWORD:-misan}
     ports: ["5445:5432"]
-    volumes: [ "classroom-db-data:/var/lib/postgresql/data" ]
+    volumes: ["classroom-db-data:/var/lib/postgresql/data"]
     restart: unless-stopped
     networks: [tesis-network]
     logging: *default-logging
@@ -207,7 +222,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_ASSESSMENT_PASSWORD:-misan}
     ports: ["5446:5432"]
-    volumes: [ "assessment-db-data:/var/lib/postgresql/data" ]
+    volumes: ["assessment-db-data:/var/lib/postgresql/data"]
     restart: unless-stopped
     networks: [tesis-network]
     logging: *default-logging
@@ -225,7 +240,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_ADVISOR_PASSWORD:-misan}
     ports: ["5447:5432"]
-    volumes: [ "advisor-db-data:/var/lib/postgresql/data" ]
+    volumes: ["advisor-db-data:/var/lib/postgresql/data"]
     restart: unless-stopped
     networks: [tesis-network]
     logging: *default-logging
@@ -243,7 +258,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_DUELS_PASSWORD:-misan}
     ports: ["5448:5432"]
-    volumes: [ "duels-db-data:/var/lib/postgresql/data" ]
+    volumes: ["duels-db-data:/var/lib/postgresql/data"]
     restart: unless-stopped
     networks: [tesis-network]
     logging: *default-logging
@@ -278,7 +293,7 @@ services:
     restart: on-failure
     networks: [tesis-network]
     logging: *default-logging
-    healthcheck: *health-http
+    healthcheck: *health-http-liveness
 
   auth-service:
     build:
@@ -306,7 +321,7 @@ services:
     restart: on-failure
     networks: [tesis-network]
     logging: *default-logging
-    healthcheck: *health-http
+    healthcheck: *health-http-liveness
 
   curriculum-service:
     build:
@@ -335,7 +350,7 @@ services:
     restart: on-failure
     networks: [tesis-network]
     logging: *default-logging
-    healthcheck: *health-http
+    healthcheck: *health-http-liveness
 
   progress-service:
     build:
@@ -362,7 +377,7 @@ services:
     restart: on-failure
     networks: [tesis-network]
     logging: *default-logging
-    healthcheck: *health-http
+    healthcheck: *health-http-liveness
 
   classroom-service:
     build:
@@ -389,7 +404,7 @@ services:
     restart: on-failure
     networks: [tesis-network]
     logging: *default-logging
-    healthcheck: *health-http
+    healthcheck: *health-http-liveness
 
   assessment-service:
     build:
@@ -416,7 +431,7 @@ services:
     restart: on-failure
     networks: [tesis-network]
     logging: *default-logging
-    healthcheck: *health-http
+    healthcheck: *health-http-liveness
 
   # === Microservicios Python (dev) ===
   ai-advisor-service:
@@ -466,7 +481,11 @@ services:
     networks: [tesis-network]
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-8086}/healthz | grep -i 'ok' >/dev/null || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:${SERVER_PORT:-8086}/healthz | grep -i 'ok' >/dev/null || exit 1",
+        ]
       interval: 15s
       timeout: 5s
       retries: 12
@@ -507,7 +526,11 @@ services:
     networks: [tesis-network]
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-8087}/healthz | grep -i 'ok' >/dev/null || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:${SERVER_PORT:-8087}/healthz | grep -i 'ok' >/dev/null || exit 1",
+        ]
       interval: 15s
       timeout: 5s
       retries: 12
