@@ -244,11 +244,12 @@ def create_app() -> FastAPI:
             raw = (await request.body()).decode("utf-8", "ignore")
         except Exception:
             raw = "<unavailable>"
-        # Nota: si logueas headers, sanitiza Authorization en tu LoggingMiddleware
-        logger.warning("request_validation_error: %s", exc.errors())
+        logging.getLogger("uvicorn.error").warning("request_validation_error: %s", exc.errors())
+        # 🔁 422 -> 400 para que haga match con tus 400
         return ORJSONResponse(
-            status_code=422,
+            status_code=400,
             content={
+                "error": "bad_request",
                 "detail": "Invalid request body",
                 "errors": exc.errors(),
                 "path": str(request.url),
@@ -287,7 +288,16 @@ def create_app() -> FastAPI:
             except Exception:
                 as_json = None
             return {"headers": dict(request.headers), "raw": raw, "json": as_json}
-
+        
+    if settings.ENV.lower() != "prod":
+        @app.post("/__diag/echo_in")
+        async def echo_in(request: Request):
+            body = (await request.body()).decode("utf-8", "ignore")
+            try:
+                as_json = await request.json()
+            except Exception:
+                as_json = None
+            return {"headers": dict(request.headers), "raw": body, "json": as_json}
     return app
 
 

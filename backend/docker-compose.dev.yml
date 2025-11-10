@@ -437,6 +437,9 @@ services:
       dockerfile: ./ai-advisor-service/Dockerfile
     container_name: ai-advisor-service
     environment:
+      LOG_LEVEL: DEBUG
+      UVICORN_LOG_LEVEL: debug
+      UVICORN_ACCESS_LOG: "1"
       ENV: dev
       SERVER_PORT: 8086
       DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_ADVISOR_PASSWORD:-misan}@advisor-db:5432/advisordb

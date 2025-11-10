@@ -1,9 +1,8 @@
-# app/core/rate_limit.py
 import functools
 import logging
 import os
 import time
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Tuple, Any
 
 import redis
 
@@ -15,10 +14,11 @@ log = logging.getLogger("advisor.rate_limit")
 _redis_client: Optional[redis.Redis] = None
 _rl_enabled: bool = False
 
+
 def init_rate_limiter(redis_url: Optional[str] = None) -> bool:
     """
     Inicializa el cliente Redis para rate-limit. Devuelve True si queda habilitado.
-    - Usa RATE_LIMIT_REDIS_URL, o cae a REDIS_URL si no se pasa explicitamente.
+    - Usa RATE_LIMIT_REDIS_URL, o cae a REDIS_URL si no se pasa explícitamente.
     - Fail-open si no hay URL o si falla la conexión (no bloquea el arranque).
     """
     global _redis_client, _rl_enabled
@@ -46,7 +46,7 @@ def init_rate_limiter(redis_url: Optional[str] = None) -> bool:
         client.ping()
         _redis_client = client
         _rl_enabled = True
-        log.info("RateLimit: conectado a Redis (%s).", url)
+        log.info("RateLimit: conectado a Redis.")
         return True
     except Exception as e:
         log.warning("RateLimit: no se pudo conectar a Redis (%s). Fail-open.", e)
@@ -54,9 +54,11 @@ def init_rate_limiter(redis_url: Optional[str] = None) -> bool:
         _rl_enabled = False
         return False
 
+
 def get_rate_limit_client() -> Optional[redis.Redis]:
     """Útil para diagnósticos."""
     return _redis_client
+
 
 def _parse_rule(rule: str) -> Tuple[int, int]:
     """
@@ -83,11 +85,23 @@ def _parse_rule(rule: str) -> Tuple[int, int]:
         w = 60
     return n, w
 
+
+def _find_in_args_kwargs(args: tuple, kwargs: dict, class_name: str) -> Optional[Any]:
+    """Busca por tipo (por nombre de clase) tanto en args como kwargs."""
+    try:
+        for v in list(args) + list(kwargs.values()):
+            if getattr(v, "__class__", None).__name__ == class_name:
+                return v
+    except Exception:
+        return None
+    return None
+
+
 def rate_limit(rule: str = "20/minute"):
     """
     Decorador de rate-limit con fail-open:
     - Si no hay Redis o hay errores → no bloquea la request.
-    - Bucket por ventana de tiempo; clave incluye user (AuthContext.sub) o IP si está disponible.
+    - Bucket por ventana de tiempo; clave incluye user (AuthContext.sub) o IP (Request.client.host).
     """
     limit, window = _parse_rule(rule)
 
@@ -98,27 +112,26 @@ def rate_limit(rule: str = "20/minute"):
             if not _rl_enabled or _redis_client is None:
                 return fn(*args, **kwargs)
 
-            # Construye clave base (fn + bucket temporal)
+            # Ventana actual
             now_bucket = int(time.time() // window)
             key_parts = [fn.__name__, str(now_bucket)]
 
-            # Intenta identidad de usuario (AuthContext) o IP (si Request está en kwargs)
+            # Usuario (AuthContext) si disponible
+            user_ctx = _find_in_args_kwargs(args, kwargs, "AuthContext")
             user_id = None
             try:
-                for v in kwargs.values():
-                    if getattr(v, "__class__", None).__name__ == "AuthContext":
-                        user_id = getattr(v, "sub", None) or getattr(v, "principal", None)
-                        break
+                if user_ctx is not None:
+                    user_id = getattr(user_ctx, "sub", None) or getattr(user_ctx, "principal", None)
             except Exception:
                 user_id = None
 
             if user_id:
                 key_parts.append(f"user:{user_id}")
             else:
+                # Fallback a IP (Request)
+                req = _find_in_args_kwargs(args, kwargs, "Request")
                 try:
-                    from fastapi import Request  # import perezoso
-                    req = kwargs.get("request")
-                    if isinstance(req, Request) and req.client:
+                    if req and getattr(req, "client", None):
                         key_parts.append(f"ip:{req.client.host}")
                 except Exception:
                     pass
@@ -144,5 +157,6 @@ def rate_limit(rule: str = "20/minute"):
         return wrapper
 
     return decorator
+
 
 __all__ = ["rate_limit", "init_rate_limiter", "get_rate_limit_client"]

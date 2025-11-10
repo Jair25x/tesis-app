@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# --- preflight: bloquea solo en prod (si aplica) ---
+# Opcional, si tienes validaciones extras para prod
 [ -f /scripts/preflight-env.sh ] && /scripts/preflight-env.sh || true
 
 log() {
@@ -84,6 +84,23 @@ migrate() {
   log "Migraciones aplicadas"
 }
 
+seed() {
+  # Si quieres sembrar sólo a demanda, controla con SEED_ON_BOOT=true
+  if [ "${SEED_ON_BOOT:-false}" = "true" ]; then
+    MANIFEST="${SEED_MANIFEST:-app/scripts/grade4_math_manifest.yml}"
+    log "Sembrando RAG desde YAML: ${MANIFEST}"
+    export PYTHONPATH="${PYTHONPATH:-/app}:/app"
+    # El script Python debe ser idempotente (ignorar duplicados o hacer upsert lógico)
+    if python -m app.scripts.seed_from_yaml --manifest "${MANIFEST}"; then
+      log "Seed RAG aplicado"
+    else
+      die "seed_from_yaml falló"
+    fi
+  else
+    log "SEED_ON_BOOT=false (omitido)"
+  fi
+}
+
 start() {
   workers="${UVICORN_WORKERS:-2}"
   bind_host="0.0.0.0"
@@ -103,4 +120,5 @@ log "ENV=${ENV:-dev} PORT=${PORT:-8086}"
 wait_for_db
 wait_for_redis
 migrate
+seed
 start

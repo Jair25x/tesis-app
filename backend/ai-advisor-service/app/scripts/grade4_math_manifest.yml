@@ -1,0 +1,169 @@
+subject: "math"
+grade: "4"
+units:
+  - unit: "numeros_naturales"
+    document_title: "Números naturales (4.º)"
+    chunks:
+      - title: "Recordemos"
+        body: >
+          Los números naturales comienzan en 0 o 1 según el contexto y se usan para contar. 
+          Recordar la notación posicional: unidades, decenas, centenas, millares. Identifica el valor 
+          de cada dígito según su posición. Practica con ejemplos simples y verifica leyendo en voz alta.
+      - title: "Números hasta el 100 000"
+        body: >
+          Para leer y escribir números hasta 100 000 usa grupos de tres cifras. 
+          Ejemplo: 45 308 se lee cuarenta y cinco mil trescientos ocho. 
+          Para escribir, ubica cada cifra en su posición: UM, C, D, U.
+      - title: "Comparando y ordenando números hasta el 100 000"
+        body: >
+          Compara primero la cantidad de cifras; si son iguales, compara desde la cifra más significativa.
+          Usa <, >, =. Ordena listas ascendentes o descendentes identificando el mayor o menor progresivamente.
+      - title: "Patrones numéricos hasta el 100 000"
+        body: >
+          Reconoce secuencias por suma, resta o multiplicación constante. 
+          Completa términos faltantes deduciendo la regla. Verifica con al menos tres términos consecutivos.
+      - title: "Redondeando números naturales"
+        body: >
+          Para redondear, observa la cifra siguiente al lugar pedido (decenas, centenas). 
+          Si es 5 o más, sube; si es 4 o menos, quédate. Ejemplo: 1 248 redondeado a centenas → 1 200.
+      - title: "Estimación"
+        body: >
+          La estimación permite verificar si un resultado es razonable. 
+          Aproxima números y realiza la operación mental. Luego compara con el cálculo exacto.
+  - unit: "factores_multiplos"
+    document_title: "Factores y múltiplos (4.º)"
+    chunks:
+      - title: "Factores"
+        body: >
+          Un factor es un número que divide exactamente a otro. Para factorizar, busca parejas de números. 
+          Usa descomposición en factores primos para verificar. Ejemplo: 36 = 2 × 2 × 3 × 3.
+      - title: "Múltiplos"
+        body: >
+          Un múltiplo de n se obtiene al multiplicar n por 1, 2, 3… 
+          Para hallar múltiplos comunes, genera listas y busca coincidencias. Ej.: múltiplos comunes de 3 y 4: 12, 24, 36…
+  - unit: "cuatro_operaciones"
+    document_title: "Cuatro operaciones con números naturales (4.º)"
+    chunks:
+      - title: "Multiplicación por un número de 1 cifra"
+        body: >
+          Multiplica cada dígito empezando por las unidades y lleva cuando sea necesario. 
+          Ejemplo: 238 × 4 = (8×4=32, escribo 2 y llevo 3), (3×4=12 + 3 = 15, escribo 5 y llevo 1), (2×4=8 + 1=9) → 952.
+      - title: "Multiplicación por un número de 2 cifras"
+        body: >
+          Multiplica primero por las unidades, luego por las decenas (agregando un cero o desplazando un lugar).
+          Suma los parciales. Comprueba con estimación. Ej.: 234×12 = 468 + 2340 = 2808.
+      - title: "División entre un número de 1 cifra"
+        body: >
+          Divide paso a paso: toma la cifra necesaria, calcula el cociente parcial, resta y baja la siguiente cifra. 
+          Verifica: cociente × divisor + residuo = dividendo.
+      - title: "Igualdades"
+        body: >
+          Una igualdad mantiene el mismo valor en ambos lados. 
+          Completa espacios en blanco asegurando que ambos lados valgan lo mismo. 
+          Usa equivalencias y propiedades básicas de las operaciones.
+      - title: "Resolución de problemas usando modelos"
+        body: >
+          Representa el problema con dibujos, tablas o diagramas. Identifica datos, pregunta, operación y estrategia. 
+          Resuelve, verifica con estimación y explica tu procedimiento.
+  - unit: "fracciones"
+    document_title: "Fracciones (4.º)"
+    chunks:
+      - title: "Números mixtos"
+        body: >
+          Un número mixto combina una parte entera y una fracción. Ej.: 2 1/3. 
+          Para convertir a impropia: (entero×denominador + numerador)/denominador.
+      - title: "Fracciones impropias"
+        body: >
+          Tienen numerador mayor o igual al denominador. 
+          Pueden convertirse en mixtas separando las partes enteras. Ej.: 7/3 = 2 1/3.
+      - title: "Conversión de fracciones"
+        body: >
+          Pasa de mixta a impropia y viceversa. Mantén el denominador y ajusta numerador con múltiplos. 
+          Simplifica si es posible.
+      - title: "Comparando y ordenando fracciones"
+        body: >
+          Con el mismo denominador, compara numeradores. Con distinto denominador, usa común denominador 
+          o conviértelas a decimales aproximados.
+      - title: "Adición y sustracción de fracciones"
+        body: >
+          Con igual denominador: suma/resta numeradores. Con distinto denominador: busca común denominador. 
+          Simplifica el resultado.
+      - title: "Fracción de un número natural"
+        body: >
+          Calcula (a/b) de N como (N×a)/b. Ej.: 3/4 de 20 = 15. 
+          Usa modelos (rectas, regiones) para visualizar.
+      - title: "Resolución de problemas usando modelos"
+        body: >
+          Representa partes de un conjunto o una región. Relaciona el dibujo con la fracción. 
+          Explica la estrategia y comprueba el resultado.
+  - unit: "angulos"
+    document_title: "Ángulos (4.º)"
+    chunks:
+      - title: "Nombrando ángulos"
+        body: >
+          Un ángulo se nombra por tres letras: punto en un lado, vértice, punto en el otro lado (ABC con B vértice).
+          Hay ángulos agudos (<90°), rectos (=90°), obtusos (entre 90° y 180°) y llanos (=180°).
+      - title: "Midiendo ángulos en grados"
+        body: >
+          Usa el transportador. Alinea el centro en el vértice y el 0° en uno de los lados. 
+          Lee la escala correcta para el otro lado.
+      - title: "Dibujando ángulos"
+        body: >
+          Dibuja un rayo base, marca la abertura con el transportador y traza el otro rayo. 
+          Revisa con la escala del instrumento.
+      - title: "Giros y direcciones"
+        body: >
+          Un giro de 1/4 es 90°, 1/2 es 180°, 3/4 es 270°, completo 360°. 
+          Las ocho direcciones de la brújula indican orientaciones estándares (N, NE, E, SE, S, SO, O, NO).
+  - unit: "cuadrados_rectangulos"
+    document_title: "Cuadrados y rectángulos (4.º)"
+    chunks:
+      - title: "Propiedades"
+        body: >
+          Rectángulo: lados opuestos paralelos e iguales; ángulos rectos. 
+          Cuadrado: caso especial con los cuatro lados iguales y ángulos rectos.
+      - title: "Dibujar figuras"
+        body: >
+          Usa regla y escuadra; verifica paralelismo y perpendicularidad. 
+          Mide lados y comprueba ángulos.
+      - title: "Lados y ángulos desconocidos"
+        body: >
+          Aplica propiedades: si dos lados son paralelos e iguales, y hay ángulos rectos, infiere medidas faltantes. 
+          Dibuja auxiliarmente para razonar.
+  - unit: "decimales"
+    document_title: "Decimales (4.º)"
+    chunks:
+      - title: "Décimos, centésimos, milésimos"
+        body: >
+          La parte decimal se lee por posiciones: décimas (0.1), centésimas (0.01), milésimas (0.001). 
+          3.406 = 3 + 4/10 + 0/100 + 6/1000.
+      - title: "Comparar y redondear decimales"
+        body: >
+          Compara parte entera; si es igual, compara décimas, centésimas, etc. 
+          Para redondear, observa la cifra siguiente al lugar pedido.
+      - title: "Convertir fracciones ↔ decimales"
+        body: >
+          Denominadores 10,100,1000 se convierten directo moviendo coma. 
+          Otros: divide numerador entre denominador o equilibra al común múltiplo de 10.
+      - title: "Suma y resta con decimales"
+        body: >
+          Alinea comas, suma/resta por columnas. Completa ceros si faltan cifras decimales.
+      - title: "Resolución de problemas con modelos"
+        body: >
+          Usa recta numérica o cuadriculado decimal para visualizar. 
+          Verifica la razonabilidad con estimaciones.
+  - unit: "simetria"
+    document_title: "Simetría (4.º)"
+    chunks:
+      - title: "Líneas de simetría"
+        body: >
+          Una figura es simétrica si puede doblarse por una línea y coincidir. 
+          Identifica líneas verticales, horizontales y diagonales de simetría.
+      - title: "Completar figuras simétricas"
+        body: >
+          En papel cuadriculado, refleja cada punto respecto a la línea de simetría. 
+          Cuenta cuadrículas para garantizar precisión.
+      - title: "Traslación en el plano"
+        body: >
+          Desplazar una figura sin rotarla ni reflejarla: suma un vector (dx, dy) a cada punto. 
+          Dibuja el original y el trasladado, compara correspondencias.
