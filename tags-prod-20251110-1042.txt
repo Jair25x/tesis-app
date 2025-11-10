@@ -1,0 +1,12 @@
+gateway-service=prod-20251110-1042
+ai-advisor-service=prod-20251110-1042
+auth-service=prod-20251110-1042
+classroom-service=prod-20251110-1042
+curriculum-service=prod-20251110-1042
+admin-monitoring-service=prod-20251110-1042
+frontend=prod-20251110-1042
+assessment-service=prod-20251110-1042
+config-service=prod-20251110-1042
+eureka-server=prod-20251110-1042
+progress-service=prod-20251110-1042
+duels-service=prod-20251110-1042
