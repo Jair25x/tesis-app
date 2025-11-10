@@ -47,11 +47,17 @@ services:
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
+    depends_on:
+      frontend: { condition: service_started }
+      gateway-service: { condition: service_started }
 
   # === Frontend (interno; Caddy lo publica) ===
   frontend:
     image: ghcr.io/jair25x/frontend:${FRONTEND_TAG}
     container_name: frontend
+    depends_on:
+      gateway-service:
+        condition: service_healthy
     ports: []
     networks: [tesis-network]
     restart: unless-stopped
