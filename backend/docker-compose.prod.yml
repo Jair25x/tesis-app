@@ -50,7 +50,7 @@ services:
 
   # === Frontend (interno; Caddy lo publica) ===
   frontend:
-    image: ghcr.io/jair25x/tesis-frontend:${FRONTEND_TAG}
+    image: ghcr.io/jair25x/frontend:${FRONTEND_TAG}
     container_name: frontend
     ports: []
     networks: [tesis-network]

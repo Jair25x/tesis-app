@@ -20,7 +20,7 @@ RUN apk add --no-cache curl
 COPY --from=build /app/dist /usr/share/nginx/html
 
 # Copia el vhost de Nginx (no usar nginx.conf global)
-COPY default.conf /etc/nginx/conf.d/default.conf
+COPY frontend/default.conf /etc/nginx/conf.d/default.conf
 
 # Healthcheck dentro de la imagen (chequea puerto local)
 HEALTHCHECK --interval=10s --timeout=5s --retries=10 --start-period=30s \
