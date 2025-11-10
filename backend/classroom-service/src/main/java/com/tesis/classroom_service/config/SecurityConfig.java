@@ -71,7 +71,7 @@ public class SecurityConfig {
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(auth -> auth
             .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").denyAll()
-            .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+            .requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
             .requestMatchers("/actuator/**").denyAll()
             // ⬇️ Endpoints internos protegidos por rol
             .requestMatchers("/internal/**").hasRole("INTERNAL")

@@ -14,6 +14,7 @@ volumes:
   advisor-db-data:
   duels-db-data:
   redis-data:
+  config-git-cache:
 
 x-logging: &default-logging
   driver: "json-file"
@@ -141,6 +142,8 @@ services:
     networks: [tesis-network]
     restart: unless-stopped
     logging: *default-logging
+    volumes:
+      - config-git-cache:/data/git
     healthcheck:
       test:
         [
@@ -188,15 +191,24 @@ services:
     image: redis:7-alpine
     container_name: advisor-redis
     env_file: [./.env]
-    command: [
-      "redis-server",
-      "--appendonly", "yes",
-      "--save", "60 1000",
-      "--rename-command", "CONFIG", "",
-      "--rename-command", "FLUSHALL", "",
-      "--requirepass", "${REDIS_PASSWORD}",
-      "--protected-mode", "yes"
-    ]
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--save",
+        "60 1000",
+        "--rename-command",
+        "CONFIG",
+        "",
+        "--rename-command",
+        "FLUSHALL",
+        "",
+        "--requirepass",
+        "${REDIS_PASSWORD}",
+        "--protected-mode",
+        "yes",
+      ]
     volumes:
       - redis-data:/data
     ports: []
@@ -568,7 +580,7 @@ services:
       EUREKA_APP_NAME: AI-ADVISOR-SERVICE
       ADVISOR_HOST: ai-advisor-service
       HEALTH_URL: http://ai-advisor-service:8086/healthz
-      HOME_URL:   http://ai-advisor-service:8086/docs
+      HOME_URL: http://ai-advisor-service:8086/docs
     depends_on:
       advisor-db: { condition: service_healthy }
       advisor-redis: { condition: service_healthy }
@@ -613,7 +625,7 @@ services:
       EUREKA_APP_NAME: DUELS-SERVICE
       DUELS_HOST: duels-service
       HEALTH_URL: http://duels-service:8087/healthz
-      HOME_URL:   http://duels-service:8087/docs
+      HOME_URL: http://duels-service:8087/docs
     depends_on:
       duels-db: { condition: service_healthy }
       advisor-redis: { condition: service_healthy }

@@ -12,9 +12,11 @@ spring:
           search-paths: .
           username: Jair25x
           password: ${GITHUB_TOKEN}
+          basedir: /data/git
           clone-on-start: true
           timeout: 30
           force-pull: true
+          refresh-rate: 30
 
 eureka:
   client:
