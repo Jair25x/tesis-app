@@ -120,10 +120,11 @@ public class GatewayConfig {
                                                                 .requestRateLimiter(rl -> rl
                                                                                 .setKeyResolver(userOrIpKeyResolver)
                                                                                 .setRateLimiter(standardLimiter))
-                                                // .circuitBreaker(c ->
-                                                // c.setName("advisor-cb").setFallbackUri("forward:/__fallback")) // ⛔️
-                                                // temporalmente fuera
-                                                )
+                                                                // 🔽 Añade estos (opcionales pero recomendados para
+                                                                // SSE):
+                                                                .setResponseHeader("X-Accel-Buffering", "no")
+                                                                .setResponseHeader("Cache-Control", "no-store")
+                                                                .dedupeResponseHeader("Connection", "RETAIN_UNIQUE"))
                                                 .uri("lb://AI-ADVISOR-SERVICE"))
 
                                 // DUELS — WS (regex case-insensitive para "websocket")
