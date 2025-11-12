@@ -23,6 +23,15 @@ public class S2SJwtFilter extends OncePerRequestFilter {
   protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
       throws ServletException, IOException {
 
+    String path = request.getRequestURI();
+    // Early return: no tocar Actuator ni Swagger
+    if (path.startsWith("/actuator")
+        || path.startsWith("/v3/api-docs")
+        || path.startsWith("/swagger-ui")) {
+      chain.doFilter(request, response);
+      return;
+    }
+
     String auth = request.getHeader("Authorization");
     if (auth != null && auth.startsWith("Bearer ")) {
       String token = auth.substring(7);
