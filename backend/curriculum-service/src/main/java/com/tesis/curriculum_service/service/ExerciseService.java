@@ -173,4 +173,10 @@ public interface ExerciseService {
          */
         ExerciseResponse getByIdFlat(UUID exerciseId, boolean examMode) throws ResourceNotFoundException;
 
+        /**
+         * Verifica respuesta recibiendo solo el exerciseId (atajo para rutas
+         * planas/internas).
+         */
+        CheckAnswerResponse checkAnswerByExerciseId(UUID exerciseId, CheckAnswerRequest request)
+                        throws ResourceNotFoundException;
 }

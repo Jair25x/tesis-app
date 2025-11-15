@@ -6,8 +6,6 @@ import com.tesis.curriculum_service.dto.CheckAnswerRequest;
 import com.tesis.curriculum_service.dto.CheckAnswerResponse;
 import com.tesis.curriculum_service.dto.ExerciseResponse;
 import com.tesis.curriculum_service.exception.ResourceNotFoundException;
-import com.tesis.curriculum_service.model.Exercise;
-import com.tesis.curriculum_service.repository.ExerciseRepository;
 import com.tesis.curriculum_service.service.ExerciseService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -26,7 +24,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ExerciseCheckShortcutController {
 
-  private final ExerciseRepository exerciseRepository;
   private final ExerciseService exerciseService;
   private final ObjectMapper objectMapper;
 
@@ -43,31 +40,28 @@ public class ExerciseCheckShortcutController {
     return ResponseEntity.ok(resp);
   }
 
-  @Operation(summary = "Verificar respuesta por exerciseId (ruta corta) [público]")
+  @Operation(summary = "Verificar respuesta por exerciseId (ruta corta)")
   @PreAuthorize("hasAnyRole('ADMIN','TEACHER','STUDENT')")
   @PostMapping("/{exerciseId}/check")
   public ResponseEntity<CheckAnswerResponse> checkByExerciseId(
       @PathVariable UUID exerciseId,
       @Valid @RequestBody Map<String, Object> body) throws ResourceNotFoundException {
 
-    Exercise ex = exerciseRepository.findById(exerciseId)
-        .orElseThrow(() -> new ResourceNotFoundException("Exercise not found"));
+    CheckAnswerRequest req = buildCheckAnswerRequest(objectMapper, body);
 
-    var lo = ex.getLearningObjective();
-    var std = lo.getStandard();
-    var comp = std.getCompetency();
-    var cur = comp.getCurriculum();
-
-    // Esperamos { "answer": ... } ; si no viene, se usa {} (evita NPE)
-    JsonNode answerNode = objectMapper.valueToTree(body.getOrDefault("answer", Map.of()));
-
-    CheckAnswerRequest req = CheckAnswerRequest.builder()
-        .answer(answerNode)
-        .build();
-
-    CheckAnswerResponse result = exerciseService.checkAnswer(
-        cur.getId(), comp.getId(), std.getId(), lo.getId(), ex.getId(), req);
+    CheckAnswerResponse result = exerciseService.checkAnswerByExerciseId(exerciseId, req);
 
     return ResponseEntity.ok(result);
+  }
+
+  private CheckAnswerRequest buildCheckAnswerRequest(ObjectMapper mapper, Map<String, Object> body) {
+    Object rawAnswer = body.get("answer");
+    JsonNode answerNode = (rawAnswer != null)
+        ? mapper.valueToTree(rawAnswer)
+        : mapper.valueToTree(body);
+
+    return CheckAnswerRequest.builder()
+        .answer(answerNode)
+        .build();
   }
 }

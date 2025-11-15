@@ -44,25 +44,24 @@ public class InternalExerciseController {
       @PathVariable UUID exerciseId,
       @Valid @RequestBody Map<String, Object> body) throws ResourceNotFoundException {
 
-    Exercise ex = exerciseRepository.findById(exerciseId)
-        .orElseThrow(() -> new ResourceNotFoundException("Exercise not found"));
+    CheckAnswerRequest req = buildCheckAnswerRequest(objectMapper, body);
 
-    var lo = ex.getLearningObjective();
-    var std = lo.getStandard();
-    var comp = std.getCompetency();
-    var cur = comp.getCurriculum();
-
-    JsonNode answerNode = objectMapper.valueToTree(body.getOrDefault("answer", Map.of()));
-
-    CheckAnswerRequest req = CheckAnswerRequest.builder()
-        .answer(answerNode)
-        .build();
-
-    CheckAnswerResponse result = exerciseService.checkAnswer(
-        cur.getId(), comp.getId(), std.getId(), lo.getId(), ex.getId(), req);
+    CheckAnswerResponse result = exerciseService.checkAnswerByExerciseId(exerciseId, req);
 
     return ResponseEntity.ok(result);
   }
+
+  private CheckAnswerRequest buildCheckAnswerRequest(ObjectMapper mapper, Map<String, Object> body) {
+    Object rawAnswer = body.get("answer");
+    JsonNode answerNode = (rawAnswer != null)
+        ? mapper.valueToTree(rawAnswer)
+        : mapper.valueToTree(body);
+
+    return CheckAnswerRequest.builder()
+        .answer(answerNode)
+        .build();
+  }
+
 
   // ============ NUEVO: detalle para RAG ============
 
@@ -99,16 +98,19 @@ public class InternalExerciseController {
         .toList();
 
     ExerciseDetailInternalResponse dto = new ExerciseDetailInternalResponse(
-        ex.getId(), objectiveId, difficulty, title, statementPlain, hints, steps
-    );
+        ex.getId(), objectiveId, difficulty, title, statementPlain, hints, steps);
     return ResponseEntity.ok(dto);
   }
 
   // ===== helpers =====
 
-  /** Convierte el enum interno a la etiqueta solicitada por el advisor: EASY|MEDIUM|HARD. */
+  /**
+   * Convierte el enum interno a la etiqueta solicitada por el advisor:
+   * EASY|MEDIUM|HARD.
+   */
   private String mapDifficultyToAdvisor(Exercise.Difficulty d) {
-    if (d == null) return null;
+    if (d == null)
+      return null;
     return switch (d) {
       case BASIC -> "EASY";
       case INTERMEDIATE -> "MEDIUM";
@@ -118,14 +120,18 @@ public class InternalExerciseController {
 
   /** Deriva un título corto desde el statement plano. */
   private String deriveTitle(String statementPlain) {
-    if (statementPlain == null) return null;
+    if (statementPlain == null)
+      return null;
     String oneLine = statementPlain.replaceAll("\\s+", " ").trim();
     return oneLine.length() <= 140 ? oneLine : (oneLine.substring(0, 137) + "…");
-    }
+  }
 
-  /** Quita etiquetas HTML simples y normaliza espacios (sin dependencias extra). */
+  /**
+   * Quita etiquetas HTML simples y normaliza espacios (sin dependencias extra).
+   */
   private String toPlain(String s) {
-    if (s == null) return null;
+    if (s == null)
+      return null;
     String noTags = s.replaceAll("<[^>]+>", " ");
     return noTags.replaceAll("\\s+", " ").trim();
   }

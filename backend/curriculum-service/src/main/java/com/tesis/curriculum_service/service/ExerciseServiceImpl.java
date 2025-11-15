@@ -466,6 +466,22 @@ public class ExerciseServiceImpl implements ExerciseService {
         .build();
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public CheckAnswerResponse checkAnswerByExerciseId(UUID exerciseId, CheckAnswerRequest request) {
+
+    Exercise ex = exerciseRepo.findByIdIncludingInactive(exerciseId)
+        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
+
+    var lo = ex.getLearningObjective();
+    var std = lo.getStandard();
+    var comp = std.getCompetency();
+    var cur = comp.getCurriculum();
+
+    // Delegar a la lógica ya existente
+    return checkAnswer(cur.getId(), comp.getId(), std.getId(), lo.getId(), ex.getId(), request);
+  }
+
   private CheckAnswerResponse validateFrequencyTableComplete(Exercise ex, JsonNode answerNode) {
     var params = asJson(ex.getParameters());
     var missing = params.path("missing");
