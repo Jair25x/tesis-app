@@ -14,11 +14,29 @@ from app.core.settings import settings
 from app.services.rag.embeddings import get_query_embedding
 
 # --- Config ---
-DB_URL: Optional[str] = os.getenv("DATABASE_URL") or getattr(settings, "DATABASE_URL", None)
+RAW_DB_URL: Optional[str] = os.getenv("DATABASE_URL") or getattr(settings, "DATABASE_URL", None)
 MANIFEST_PATH: str = os.getenv("SEED_MANIFEST", "app/scripts/grade4_math_manifest.yml")
 
 # Namespace constante para IDs deterministas
 NAMESPACE = uuid.UUID("00000000-0000-4000-8000-000000000001")
+
+def normalize_psycopg_dsn(url: str | None) -> str:
+    """
+    Acepta URLs estilo SQLAlchemy (postgresql+psycopg://) y las convierte
+    en URLs válidas para psycopg.connect (postgresql://).
+    """
+    if not url:
+        raise SystemExit("DATABASE_URL no configurado para seed_from_yaml")
+
+    url = url.strip()
+    if url.startswith("postgresql+"):
+        # Ej.: postgresql+psycopg://user:pass@host/db -> postgresql://user:pass@host/db
+        return "postgresql://" + url.split("://", 1)[1]
+    return url
+
+DB_URL = normalize_psycopg_dsn(RAW_DB_URL)
+
+print(f"[seed] Conectando a DB_URL={DB_URL.split('@')[-1]}", flush=True)
 
 def vec_literal(vec: List[float]) -> str:
     # Embedding literal para pgvector
