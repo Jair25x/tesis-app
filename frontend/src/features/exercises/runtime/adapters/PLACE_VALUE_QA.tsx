@@ -11,9 +11,22 @@ const MODULE: RuntimeAdapter<PlaceValueParams, Value> = {
   Render: PLACE_VALUE_QA.Render,
 
   write: (v: unknown) => {
-    if (typeof v === "number" && Number.isFinite(v)) return { value: v };
-    if (typeof v === "string") return { value: v.trim() };
-    return { value: "" };
+    if (typeof v === "number" && Number.isFinite(v)) {
+      return {
+        template: "PLACE_VALUE_QA",
+        value: v,
+      };
+    }
+    if (typeof v === "string") {
+      return {
+        template: "PLACE_VALUE_QA",
+        value: v.trim(),
+      };
+    }
+    return {
+      template: "PLACE_VALUE_QA",
+      value: "",
+    };
   },
 };
 

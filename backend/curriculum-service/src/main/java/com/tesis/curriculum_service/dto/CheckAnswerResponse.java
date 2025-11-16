@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
 import java.util.Map;
+import java.util.UUID;
 
 @Data
 @Builder
@@ -23,4 +24,18 @@ public class CheckAnswerResponse {
 
   @Schema(description = "Feedback breve para el estudiante. No incluir soluciones completas aquí.")
   private String feedback;
+
+  // ───────────── META OFICIAL PARA TRAZABILIDAD ─────────────
+
+  @Schema(description = "ID oficial del currículo al que pertenece el ejercicio.")
+  private UUID curriculumId;
+
+  @Schema(description = "ID oficial del objetivo de aprendizaje al que pertenece el ejercicio.")
+  private UUID learningObjectiveId;
+
+  @Schema(description = "Dificultad oficial del ejercicio (p.ej. BASIC, INTERMEDIATE, ADVANCED).")
+  private String difficulty;
+
+  @Schema(description = "Puntaje máximo posible para el ejercicio. Por defecto 1.0.")
+  private Double maxScore;
 }

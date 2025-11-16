@@ -18,6 +18,7 @@ import com.tesis.curriculum_service.service.template.ExerciseTemplateService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import static com.tesis.curriculum_service.util.AnswerUtils.*;
 
 import java.io.IOException;
@@ -215,6 +216,7 @@ public class ExerciseServiceImpl implements ExerciseService {
   }
 
   /* ──────────────────────── CHECK ANSWER ───────────────────────── */
+
   @Override
   @Transactional(readOnly = true)
   public CheckAnswerResponse checkAnswer(
@@ -228,51 +230,42 @@ public class ExerciseServiceImpl implements ExerciseService {
 
     var type = exercise.getTemplateType();
     if (type == null) {
-      return CheckAnswerResponse.builder()
-          .correct(false).score(0.0).feedback("El ejercicio no tiene templateType asignado.")
+      CheckAnswerResponse base = CheckAnswerResponse.builder()
+          .correct(false)
+          .score(0.0)
+          .feedback("El ejercicio no tiene templateType asignado.")
           .build();
+      return attachMeta(exercise, base);
     }
 
-    com.fasterxml.jackson.databind.JsonNode answerNode = Optional.ofNullable(request.getAnswer())
+    JsonNode answerNode = Optional.ofNullable(request.getAnswer())
         .orElse(objectMapper.createObjectNode());
 
     String templateInReq = answerNode.path("template").asText(null);
     if (templateInReq != null && !templateInReq.equalsIgnoreCase(type.name())) {
-      return CheckAnswerResponse.builder()
-          .correct(false).score(0.0)
+      CheckAnswerResponse base = CheckAnswerResponse.builder()
+          .correct(false)
+          .score(0.0)
           .feedback("La respuesta no corresponde al tipo de plantilla del ejercicio.")
           .build();
+      return attachMeta(exercise, base);
     }
 
-    switch (type) {
-      case EQUATION_SINGLE_CHOICE:
-        return validateEquationSingleChoice(exercise, answerNode);
-
-      case FREQUENCY_TABLE_QA:
-        return validateFrequencyTableQa(exercise, answerNode);
-
-      case FREQUENCY_TABLE_COMPLETE:
-        return validateFrequencyTableComplete(exercise, answerNode);
-
-      // === NUEVOS: validación por plantilla ===
-      case BASE_TEN_BLOCKS_QA:
-        return validateBaseTenBlocksQa(exercise, answerNode);
-
-      case NUMBER_SEQUENCE_QA:
-        return validateNumberSequenceQa(exercise, answerNode);
-
-      case PLACE_VALUE_QA:
-        return validatePlaceValueQa(exercise, answerNode);
-
-      case NUMBER_WORDS_BIDIR:
-        return validateNumberWordsBidir(exercise, answerNode);
-
-      default:
-        return validateLegacyByCorrectAnswer(exercise, answerNode);
-    }
+    // Delegamos a la validación específica de la plantilla
+    return switch (type) {
+      case EQUATION_SINGLE_CHOICE -> validateEquationSingleChoice(exercise, answerNode);
+      case FREQUENCY_TABLE_QA -> validateFrequencyTableQa(exercise, answerNode);
+      case FREQUENCY_TABLE_COMPLETE -> validateFrequencyTableComplete(exercise, answerNode);
+      case BASE_TEN_BLOCKS_QA -> validateBaseTenBlocksQa(exercise, answerNode);
+      case NUMBER_SEQUENCE_QA -> validateNumberSequenceQa(exercise, answerNode);
+      case PLACE_VALUE_QA -> validatePlaceValueQa(exercise, answerNode);
+      case NUMBER_WORDS_BIDIR -> validateNumberWordsBidir(exercise, answerNode);
+      default -> validateLegacyByCorrectAnswer(exercise, answerNode);
+    };
   }
 
-  /* === Validadores MVP === */
+  /* === Validadores MVP (ahora siempre usando attachMeta) === */
+
   // BASE_TEN_BLOCKS_QA: params.answer numérico
   private CheckAnswerResponse validateBaseTenBlocksQa(Exercise ex, JsonNode answerNode) {
     var params = asJson(ex.getParameters());
@@ -282,23 +275,24 @@ public class ExerciseServiceImpl implements ExerciseService {
     boolean ok = expected.isNumber() && (given.isNumber() || given.isTextual())
         && eqNumeric(given.isNumber() ? given.numberValue() : given.asText(), expected.numberValue());
 
-    return CheckAnswerResponse.builder()
-        .correct(ok).score(ok ? 1.0 : 0.0)
+    CheckAnswerResponse base = CheckAnswerResponse.builder()
+        .correct(ok)
+        .score(ok ? 1.0 : 0.0)
         .feedback(ok ? "¡Correcto!" : "Respuesta incorrecta.")
         .build();
+
+    return attachMeta(ex, base);
   }
 
   // NUMBER_SEQUENCE_QA: soporta answer (number) o answers (array)
   private CheckAnswerResponse validateNumberSequenceQa(Exercise ex, JsonNode answerNode) {
     var params = asJson(ex.getParameters());
 
-    // Si hay varios huecos → answers (array); si uno → answer (number)
     var expAnswers = params.path("answers");
     var expAnswer = params.path("answer");
 
     boolean ok = false;
 
-    // alumno puede enviar single (value) o múltiple (values)
     var givenValue = answerNode.path("value");
     var givenValues = answerNode.path("values");
 
@@ -319,7 +313,7 @@ public class ExerciseServiceImpl implements ExerciseService {
             }
           }
         }
-      } else if (givenValue.isArray()) { // por compatibilidad
+      } else if (givenValue.isArray()) { // compatibilidad legacy
         if (expAnswers.size() == givenValue.size()) {
           ok = true;
           for (int i = 0; i < expAnswers.size(); i++) {
@@ -338,15 +332,19 @@ public class ExerciseServiceImpl implements ExerciseService {
     } else if (expAnswer.isNumber()) {
       // único
       if (givenValue.isNumber() || givenValue.isTextual()) {
-        ok = eqNumeric(givenValue.isNumber() ? givenValue.numberValue() : givenValue.asText(),
+        ok = eqNumeric(
+            givenValue.isNumber() ? givenValue.numberValue() : givenValue.asText(),
             expAnswer.numberValue());
       }
     }
 
-    return CheckAnswerResponse.builder()
-        .correct(ok).score(ok ? 1.0 : 0.0)
+    CheckAnswerResponse base = CheckAnswerResponse.builder()
+        .correct(ok)
+        .score(ok ? 1.0 : 0.0)
         .feedback(ok ? "¡Bien!" : "Intenta otra vez.")
         .build();
+
+    return attachMeta(ex, base);
   }
 
   // PLACE_VALUE_QA: ask define si comparar como número o texto
@@ -370,14 +368,16 @@ public class ExerciseServiceImpl implements ExerciseService {
           eqText(given.asText(), expected.asText());
     }
 
-    return CheckAnswerResponse.builder()
-        .correct(ok).score(ok ? 1.0 : 0.0)
+    CheckAnswerResponse base = CheckAnswerResponse.builder()
+        .correct(ok)
+        .score(ok ? 1.0 : 0.0)
         .feedback(ok ? "¡Correcto!" : "Revisa el valor posicional / forma desarrollada.")
         .build();
+
+    return attachMeta(ex, base);
   }
 
-  // NUMBER_WORDS_BIDIR: si hay choices → texto; si DIGITS_TO_WORDS → texto; si
-  // WORDS_TO_DIGITS → número
+  // NUMBER_WORDS_BIDIR
   private CheckAnswerResponse validateNumberWordsBidir(Exercise ex, JsonNode answerNode) {
     var params = asJson(ex.getParameters());
     var choices = params.path("choices");
@@ -396,15 +396,20 @@ public class ExerciseServiceImpl implements ExerciseService {
       } else {
         // WORDS_TO_DIGITS → numérico
         if (expected.isNumber() && (given.isNumber() || given.isTextual())) {
-          ok = eqNumeric(given.isNumber() ? given.numberValue() : given.asText(), expected.numberValue());
+          ok = eqNumeric(
+              given.isNumber() ? given.numberValue() : given.asText(),
+              expected.numberValue());
         }
       }
     }
 
-    return CheckAnswerResponse.builder()
-        .correct(ok).score(ok ? 1.0 : 0.0)
+    CheckAnswerResponse base = CheckAnswerResponse.builder()
+        .correct(ok)
+        .score(ok ? 1.0 : 0.0)
         .feedback(ok ? "¡Bien!" : "Verifica la conversión palabras↔número.")
         .build();
+
+    return attachMeta(ex, base);
   }
 
   private CheckAnswerResponse validateEquationSingleChoice(Exercise ex, JsonNode answerNode) {
@@ -416,11 +421,14 @@ public class ExerciseServiceImpl implements ExerciseService {
     String given = answerNode.path("value").asText("");
 
     boolean ok = expected != null && expected.equalsIgnoreCase(given.trim());
-    return CheckAnswerResponse.builder()
+
+    CheckAnswerResponse base = CheckAnswerResponse.builder()
         .correct(ok)
         .score(ok ? 1.0 : 0.0)
         .feedback(ok ? "¡Correcto!" : "Respuesta incorrecta.")
         .build();
+
+    return attachMeta(ex, base);
   }
 
   private CheckAnswerResponse validateFrequencyTableQa(Exercise ex, JsonNode answerNode) {
@@ -429,10 +437,12 @@ public class ExerciseServiceImpl implements ExerciseService {
     var answersNode = answerNode.path("answers");
 
     if (!questions.isArray()) {
-      return CheckAnswerResponse.builder()
-          .correct(false).score(0.0)
+      CheckAnswerResponse baseError = CheckAnswerResponse.builder()
+          .correct(false)
+          .score(0.0)
           .feedback("Plantilla inválida: questions no es un arreglo.")
           .build();
+      return attachMeta(ex, baseError);
     }
 
     int total = questions.size();
@@ -458,28 +468,15 @@ public class ExerciseServiceImpl implements ExerciseService {
     }
 
     double score = total == 0 ? 0.0 : (double) correctCount / total;
-    return CheckAnswerResponse.builder()
+
+    CheckAnswerResponse base = CheckAnswerResponse.builder()
         .correct(score == 1.0)
         .score(score)
         .questionResults(perQuestion)
         .feedback(score == 1.0 ? "¡Muy bien!" : "Revisa las preguntas marcadas.")
         .build();
-  }
 
-  @Override
-  @Transactional(readOnly = true)
-  public CheckAnswerResponse checkAnswerByExerciseId(UUID exerciseId, CheckAnswerRequest request) {
-
-    Exercise ex = exerciseRepo.findByIdIncludingInactive(exerciseId)
-        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
-
-    var lo = ex.getLearningObjective();
-    var std = lo.getStandard();
-    var comp = std.getCompetency();
-    var cur = comp.getCurriculum();
-
-    // Delegar a la lógica ya existente
-    return checkAnswer(cur.getId(), comp.getId(), std.getId(), lo.getId(), ex.getId(), request);
+    return attachMeta(ex, base);
   }
 
   private CheckAnswerResponse validateFrequencyTableComplete(Exercise ex, JsonNode answerNode) {
@@ -488,10 +485,12 @@ public class ExerciseServiceImpl implements ExerciseService {
     var filled = answerNode.path("filled");
 
     if (!missing.isArray()) {
-      return CheckAnswerResponse.builder()
-          .correct(false).score(0.0)
+      CheckAnswerResponse baseError = CheckAnswerResponse.builder()
+          .correct(false)
+          .score(0.0)
           .feedback("Plantilla inválida: missing no es un arreglo.")
           .build();
+      return attachMeta(ex, baseError);
     }
 
     int total = missing.size();
@@ -512,22 +511,44 @@ public class ExerciseServiceImpl implements ExerciseService {
     }
 
     double score = total == 0 ? 0.0 : (double) correctCount / total;
-    return CheckAnswerResponse.builder()
+
+    CheckAnswerResponse base = CheckAnswerResponse.builder()
         .correct(score == 1.0)
         .score(score)
         .feedback(score == 1.0 ? "¡Excelente!" : "Algunas celdas no coinciden.")
         .build();
+
+    return attachMeta(ex, base);
   }
 
   private CheckAnswerResponse validateLegacyByCorrectAnswer(Exercise ex, JsonNode answerNode) {
     String expected = ex.getCorrectAnswer();
     String given = answerNode.path("value").asText("");
     boolean ok = expected != null && expected.trim().equalsIgnoreCase(given.trim());
-    return CheckAnswerResponse.builder()
+
+    CheckAnswerResponse base = CheckAnswerResponse.builder()
         .correct(ok)
         .score(ok ? 1.0 : 0.0)
         .feedback(ok ? "¡Correcto!" : "Intenta otra vez.")
         .build();
+
+    return attachMeta(ex, base);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public CheckAnswerResponse checkAnswerByExerciseId(UUID exerciseId, CheckAnswerRequest request) {
+
+    Exercise ex = exerciseRepo.findByIdIncludingInactive(exerciseId)
+        .orElseThrow(() -> new ResourceNotFoundException("Exercise", "id", exerciseId));
+
+    var lo = ex.getLearningObjective();
+    var std = lo.getStandard();
+    var comp = std.getCompetency();
+    var cur = comp.getCurriculum();
+
+    // Delegar a la lógica ya existente (que ahora siempre adjunta meta)
+    return checkAnswer(cur.getId(), comp.getId(), std.getId(), lo.getId(), ex.getId(), request);
   }
 
   private JsonNode asJson(Map<String, Object> map) {
@@ -716,6 +737,30 @@ public class ExerciseServiceImpl implements ExerciseService {
         .isDiagnostic(base.getIsDiagnostic())
 
         .correctAnswer(e.getCorrectAnswer())
+        .build();
+  }
+
+  /*
+   * ────────────────────── Decorador de meta en CheckAnswerResponse
+   * ─────────────────────
+   */
+
+  private CheckAnswerResponse attachMeta(Exercise ex, CheckAnswerResponse base) {
+    var lo = ex.getLearningObjective();
+    var std = lo.getStandard();
+    var comp = std.getCompetency();
+    var cur = comp.getCurriculum();
+
+    return CheckAnswerResponse.builder()
+        .correct(base.isCorrect())
+        .score(base.getScore())
+        .questionResults(base.getQuestionResults())
+        .feedback(base.getFeedback())
+        // meta oficial
+        .curriculumId(cur.getId())
+        .learningObjectiveId(lo.getId())
+        .difficulty(ex.getDifficulty() != null ? ex.getDifficulty().name() : null)
+        .maxScore(1.0) // hoy todas las plantillas están normalizadas 0..1
         .build();
   }
 

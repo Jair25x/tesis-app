@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tesis.curriculum_service.dto.CheckAnswerRequest;
 import com.tesis.curriculum_service.dto.CheckAnswerResponse;
 import com.tesis.curriculum_service.dto.ExerciseDetailInternalResponse;
+import com.tesis.curriculum_service.dto.ExerciseMetaInternalResponse;
 import com.tesis.curriculum_service.exception.ResourceNotFoundException;
 import com.tesis.curriculum_service.model.Exercise;
 import com.tesis.curriculum_service.model.Hint;
@@ -62,8 +63,38 @@ public class InternalExerciseController {
         .build();
   }
 
-
   // ============ NUEVO: detalle para RAG ============
+  @Operation(summary = "[INTERNAL] Metadatos jerárquicos del ejercicio (S2S)")
+  @PreAuthorize("hasRole('INTERNAL')")
+  @Transactional(readOnly = true)
+  @GetMapping("/{exerciseId}/meta")
+  public ResponseEntity<ExerciseMetaInternalResponse> metaInternal(@PathVariable UUID exerciseId) {
+
+    // Incluye inactivos para soportar intentos históricos
+    Exercise ex = exerciseRepository.findByIdIncludingInactive(exerciseId)
+        .orElseThrow(() -> new ResourceNotFoundException("Exercise not found"));
+
+    var lo = ex.getLearningObjective();
+    if (lo == null) {
+      // Inconsistencia fuerte en datos; mejor fallar
+      throw new ResourceNotFoundException("LearningObjective", "exerciseId", exerciseId);
+    }
+    var std = lo.getStandard();
+    var comp = std.getCompetency();
+    var cur = comp.getCurriculum();
+
+    ExerciseMetaInternalResponse dto = new ExerciseMetaInternalResponse(
+        ex.getId(),
+        lo.getId(),
+        std.getId(),
+        comp.getId(),
+        cur.getId(),
+        ex.getDifficulty() != null ? ex.getDifficulty().name() : null,
+        ex.getActive(),
+        ex.isDiagnostic());
+
+    return ResponseEntity.ok(dto);
+  }
 
   @Operation(summary = "[INTERNAL] Detalle para RAG: enunciado plano + hints + pasos (S2S)")
   @PreAuthorize("hasRole('INTERNAL')")

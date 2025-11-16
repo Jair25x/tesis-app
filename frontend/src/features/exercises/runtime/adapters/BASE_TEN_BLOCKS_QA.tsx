@@ -11,8 +11,16 @@ const MODULE: RuntimeAdapter<BaseTenBlocksParams, Value> = {
   Render: BASE_TEN_BLOCKS_QA.Render,
 
   write: (v: unknown) => {
-    if (typeof v === "number" && Number.isFinite(v)) return { value: v };
-    return { value: "" };
+    if (typeof v === "number" && Number.isFinite(v)) {
+      return {
+        template: "BASE_TEN_BLOCKS_QA",
+        value: v,
+      };
+    }
+    return {
+      template: "BASE_TEN_BLOCKS_QA",
+      value: "",
+    };
   },
 };
 

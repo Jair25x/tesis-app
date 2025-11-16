@@ -3,6 +3,7 @@ import type { ExerciseRequest } from "../types/exercise/ExerciseRequest";
 import type { ExerciseResponse } from "../types/exercise/ExerciseResponse";
 import type { ExamExerciseResponse } from "../types/exercise/ExamExerciseResponse";
 import type {
+  CheckAnswerPayload,
   CheckAnswerRequest,
   CheckAnswerResponse,
 } from "../types/exercise/CheckAnswer";
@@ -18,29 +19,22 @@ export async function getExercises(
   status: "active" | "all" | "inactive" = "active",
   signal?: AbortSignal
 ): Promise<ExerciseResponse[]> {
-  // Si piden "inactive", usamos /all y filtramos en FE por active=false.
-  const suffix =
-    status === "all" ? "/all" : status === "inactive" ? "/all" : "";
-
   const { data } = await api.get<ExerciseResponse[]>(
-    `${BASE_PATH}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises${suffix}`,
-    { signal }
+    `${BASE_PATH}/${curriculumId}/competencies/${competencyId}/standards/${standardId}/learning-objectives/${learningObjectiveId}/exercises`,
+    {
+      params: { status },
+      signal,
+    }
   );
 
   const list = data ?? [];
-  if (status === "inactive") {
-    return list.filter((e) => e.active === false);
-  }
-  if (status === "active") {
-    return list.filter((e) => e.active !== false); // tolerante si no viene el campo
-  }
   return list;
 }
 
 /** Alias semántico usado en varias vistas */
 export const getExercisesByObjective = getExercises;
 
-/** Obtener ejercicio por ID (vista estudiante) */
+/** Obtener ejercicio por ID (vista estudiante, ruta jerárquica) */
 export const getExerciseById = async (
   curriculumId: string,
   competencyId: string,
@@ -116,7 +110,7 @@ export const getDiagnosticExercises = async (): Promise<ExerciseResponse[]> => {
   const { data } = await api.get<ExerciseResponse[]>(
     "/curricula/exercises/diagnostic"
   );
-  return data;
+  return data ?? [];
 };
 
 export interface ExerciseAdminResponse extends ExerciseResponse {
@@ -138,24 +132,30 @@ export const getExerciseAdminById = async (
 };
 
 /**
- * ✅ Compatibilidad para hooks antiguos:
- * Verifica respuesta contra el atajo del curriculum-service (si existe).
- * Si tu BE no expone este endpoint, puedes eliminar esta función y
- * actualizar los imports de los hooks que lo usaban.
+ * Verificar respuesta de un ejercicio concreto usando el atajo plano:
+ *
+ *   POST /curricula/exercises/{exerciseId}/check
+ *
+ * El payload `answer` es el mismo que se envía en AttemptRequestDto.answer
+ * y el servicio lo envuelve como { answer: payload }.
  */
 export async function checkAnswer(
-  payload: CheckAnswerRequest
+  exerciseId: string,
+  answer: CheckAnswerPayload
 ): Promise<CheckAnswerResponse> {
+  const body: CheckAnswerRequest = { answer };
+
   const { data } = await api.post<CheckAnswerResponse>(
-    `/curricula/exercises/check`,
-    payload
+    `/curricula/exercises/${exerciseId}/check`,
+    body
   );
+
   return data;
 }
 
 /**
  * Obtener ejercicio para examen (sin hints/steps si el BE aplica examMode=true).
- * Ahora admite cancelación con AbortSignal.
+ * Usa el shortcut plano + mode=exam.
  */
 export const getExerciseForExam = async (
   exerciseId: string,
@@ -165,7 +165,7 @@ export const getExerciseForExam = async (
     `/curricula/exercises/${exerciseId}`,
     {
       params: { mode: "exam" },
-      signal, // ✅ cancelación real
+      signal,
     }
   );
   return data;

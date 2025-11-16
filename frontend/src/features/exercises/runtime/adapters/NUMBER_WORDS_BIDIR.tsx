@@ -12,10 +12,22 @@ const MODULE: RuntimeAdapter<NumberWordsParams, Value> = {
 
   // Serializa el valor actual a un objeto plano
   write: (v: unknown) => {
-    if (typeof v === "string") return { value: v.trim() };
-    if (typeof v === "number" && Number.isFinite(v))
-      return { value: String(v) };
-    return { value: "" };
+    if (typeof v === "string") {
+      return {
+        template: "NUMBER_WORDS_BIDIR",
+        value: v.trim(),
+      };
+    }
+    if (typeof v === "number" && Number.isFinite(v)) {
+      return {
+        template: "NUMBER_WORDS_BIDIR",
+        value: String(v),
+      };
+    }
+    return {
+      template: "NUMBER_WORDS_BIDIR",
+      value: "",
+    };
   },
 };
 

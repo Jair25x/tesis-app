@@ -11,14 +11,27 @@ const MODULE: RuntimeAdapter<NumberSequenceParams, Value> = {
   Render: NUMBER_SEQUENCE_QA.Render,
 
   write: (v: unknown) => {
-    if (typeof v === "number" && Number.isFinite(v)) return { value: v };
+    if (typeof v === "number" && Number.isFinite(v)) {
+      return {
+        template: "NUMBER_SEQUENCE_QA",
+        value: v,
+      };
+    }
+
     if (
       Array.isArray(v) &&
       v.every((x) => typeof x === "number" && Number.isFinite(x))
     ) {
-      return { value: v as number[] };
+      return {
+        template: "NUMBER_SEQUENCE_QA",
+        value: v as number[],
+      };
     }
-    return { value: "" };
+
+    return {
+      template: "NUMBER_SEQUENCE_QA",
+      value: "",
+    };
   },
 };
 

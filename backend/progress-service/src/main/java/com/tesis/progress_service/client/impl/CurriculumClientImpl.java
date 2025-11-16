@@ -1,8 +1,8 @@
-// src/main/java/com/tesis/progress_service/client/impl/CurriculumClientImpl.java
 package com.tesis.progress_service.client.impl;
 
 import com.tesis.progress_service.client.CurriculumClient;
 import com.tesis.progress_service.dto.CheckResultDto;
+import com.tesis.progress_service.dto.ExerciseMetaDto;
 import com.tesis.progress_service.exception.ExternalServiceException;
 import com.tesis.progress_service.http.S2SHeaders;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -32,6 +32,73 @@ public class CurriculumClientImpl implements CurriculumClient {
 
   @Value("${clients.curriculum.base-url:http://curriculum-service}")
   private String curriculumBase;
+
+  // ====== MAPPING RESPUESTA /internal/curricula/exercises/{id}/meta ======
+
+  private record ExerciseMetaResponse(
+      UUID exerciseId,
+      UUID learningObjectiveId,
+      UUID standardId,
+      UUID competencyId,
+      UUID curriculumId,
+      String difficulty,
+      Boolean active,
+      Boolean diagnostic) {
+  }
+
+  @Override
+  @CircuitBreaker(name = "curriculumClient", fallbackMethod = "metaFallback")
+  @Retry(name = "curriculumClient")
+  public ExerciseMetaDto getExerciseMeta(UUID exerciseId) {
+    try {
+      ExerciseMetaResponse resp = webClientBuilder.build()
+          .get()
+          .uri(curriculumBase + "/internal/curricula/exercises/{exerciseId}/meta", exerciseId)
+          .headers(s2sHeaders::enrich) // añade X-Internal-Call, Authorization S2S, etc.
+          .retrieve()
+          .onStatus(HttpStatusCode::is4xxClientError, r -> r.bodyToMono(String.class)
+              .defaultIfEmpty("Solicitud inválida hacia curriculum-service (exercise meta)")
+              .flatMap(msg -> Mono.error(new ResponseStatusException(r.statusCode(), msg))))
+          .bodyToMono(ExerciseMetaResponse.class)
+          .block();
+
+      if (resp == null) {
+        throw new ExternalServiceException(
+            "Respuesta vacía desde curriculum-service /internal/curricula/exercises/" + exerciseId + "/meta");
+      }
+
+      return ExerciseMetaDto.builder()
+          .exerciseId(resp.exerciseId())
+          .learningObjectiveId(resp.learningObjectiveId())
+          .standardId(resp.standardId())
+          .competencyId(resp.competencyId())
+          .curriculumId(resp.curriculumId())
+          .difficulty(resp.difficulty())
+          .active(resp.active())
+          .diagnostic(resp.diagnostic())
+          .build();
+
+    } catch (WebClientResponseException wce) {
+      if (wce.getStatusCode().is4xxClientError()) {
+        // Para 4xx devuelves como error de cliente (datos inconsistentes desde FE)
+        throw new ResponseStatusException(wce.getStatusCode(), wce.getResponseBodyAsString());
+      }
+      log.error("Error llamando a curriculum /meta id={}: {}", exerciseId, wce.getMessage());
+      throw wce;
+    } catch (Exception e) {
+      log.error("Error llamando a curriculum /meta id={}: {}", exerciseId, e.toString());
+      throw e;
+    }
+  }
+
+  @SuppressWarnings("unused")
+  private ExerciseMetaDto metaFallback(UUID exerciseId, Throwable t) {
+    log.error("Fallback curriculum /meta exerciseId={} por excepción:\n", exerciseId, t);
+    throw new ExternalServiceException(
+        "No se pudo obtener metadatos del ejercicio " + exerciseId + " desde curriculum-service", t);
+  }
+
+  // ====== /api/curricula/exercises/{id}/check ======
 
   @Override
   @CircuitBreaker(name = "curriculumClient", fallbackMethod = "checkAnswerFallback")
@@ -76,14 +143,39 @@ public class CurriculumClientImpl implements CurriculumClient {
         "No se pudo evaluar el ejercicio " + exerciseId + " en curriculum-service", t);
   }
 
-  private record CheckAnswerResponseLite(boolean correct, Double score, String feedback) {
+  // Debe reflejar los campos de CheckAnswerResponse
+  private record CheckAnswerResponseLite(
+      boolean correct,
+      Double score,
+      Map<String, Boolean> questionResults,
+      String feedback,
+      UUID curriculumId,
+      UUID learningObjectiveId,
+      String difficulty,
+      Double maxScore) {
   }
 
   private CheckResultDto toCheckResultDto(CheckAnswerResponseLite src) {
+    Map<String, Object> fb = null;
+    if (src.feedback() != null || src.questionResults() != null) {
+      fb = new LinkedHashMap<>();
+      if (src.feedback() != null) {
+        fb.put("text", src.feedback());
+      }
+      if (src.questionResults() != null) {
+        fb.put("questionResults", src.questionResults());
+      }
+    }
+
     return CheckResultDto.builder()
         .correct(src.correct())
         .score(src.score() == null ? null : BigDecimal.valueOf(src.score()))
-        .feedback(src.feedback() == null ? null : Map.of("text", src.feedback()))
+        .feedback(fb)
+        .curriculumId(src.curriculumId())
+        .learningObjectiveId(src.learningObjectiveId())
+        .difficulty(src.difficulty())
+        .maxScore(src.maxScore() == null ? null : BigDecimal.valueOf(src.maxScore()))
+        .questionResults(src.questionResults())
         .build();
   }
 
@@ -107,7 +199,7 @@ public class CurriculumClientImpl implements CurriculumClient {
       ExerciseCountsResponse resp = webClientBuilder.build()
           .post()
           .uri(curriculumBase + "/internal/objectives/exercise-counts")
-          .headers(s2sHeaders::enrich) // << USA EL BEAN
+          .headers(s2sHeaders::enrich)
           .bodyValue(body)
           .retrieve()
           .onStatus(HttpStatusCode::is4xxClientError, r -> r.bodyToMono(String.class)
