@@ -59,6 +59,25 @@ export function pushRecentObjective(item: RecentObjectiveItem): void {
 }
 
 /**
+ * Elimina un objetivo de la lista de "Recientes" por objectiveId.
+ * Pensado para usarse desde el botón "X" en la UI.
+ */
+export function removeRecentObjective(objectiveId: string): void {
+  if (!objectiveId) return;
+  const list = readRecentObjectives();
+  const filtered = list.filter((x) => x.objectiveId !== objectiveId);
+  writeRecentObjectives(filtered);
+}
+
+/**
+ * Limpia por completo la lista de "Recientes".
+ * Útil para un botón "Borrar todo" o para resets manuales.
+ */
+export function clearRecentObjectives(): void {
+  writeRecentObjectives([]);
+}
+
+/**
  * Backfill de nombres para un subconjunto por objectiveId.
  */
 export function backfillNames(

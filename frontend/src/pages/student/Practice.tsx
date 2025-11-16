@@ -13,6 +13,13 @@ import ExerciseCard from "../../components/student/ExerciseCard";
 import { showToast } from "../../utils/showToast";
 import { pushRecentObjective } from "../../utils/recentObjectives";
 
+type ObjectiveMeta = {
+  curriculumName: string;
+  competencyName: string;
+  standardName: string;
+  objectiveName: string;
+};
+
 export default function Practice() {
   const { curriculumId, competencyId, standardId, learningObjectiveId } =
     useParams<{
@@ -27,11 +34,13 @@ export default function Practice() {
   const [error, setError] = useState("");
 
   // Metadatos para “Recientes”
-  const [meta, setMeta] = useState<{
-    competencyName: string;
-    standardName: string;
-    objectiveName: string;
-  }>({ competencyName: "", standardName: "", objectiveName: "" });
+  const [meta, setMeta] = useState<ObjectiveMeta>({
+    curriculumName: "",
+    competencyName: "",
+    standardName: "",
+    objectiveName: "",
+  });
+  const [metaLoaded, setMetaLoaded] = useState(false);
 
   // Evita empujar a recientes más de una vez por montaje / set de IDs
   const pushedRef = useRef<boolean>(false);
@@ -43,6 +52,7 @@ export default function Practice() {
       setLoading(false);
       return;
     }
+
     const ac = new AbortController();
 
     (async () => {
@@ -69,12 +79,14 @@ export default function Practice() {
     return () => ac.abort();
   }, [curriculumId, competencyId, standardId, learningObjectiveId]);
 
-  // Carga de nombres (competencia/estándar/objetivo) desde el currículo completo
+  // Carga de nombres (currículo / competencia / estándar / objetivo) desde el currículo completo
   useEffect(() => {
     if (!curriculumId || !competencyId || !standardId || !learningObjectiveId) {
       return;
     }
+
     const ac = new AbortController();
+    setMetaLoaded(false);
 
     (async () => {
       try {
@@ -90,23 +102,28 @@ export default function Practice() {
         );
 
         setMeta({
+          curriculumName: tree.name ?? "",
           competencyName: comp?.name ?? "",
           standardName: std?.name ?? "",
           objectiveName: lo?.name ?? "",
         });
+        setMetaLoaded(true);
       } catch (e) {
         if (isAbortError(e)) return;
-        // No rompemos la práctica si falla el árbol; solo quedarán nombres vacíos.
         console.warn("No se pudo resolver nombres para recientes:", e);
+        // Marcamos como “cargado” aunque no tengamos nombres,
+        // para no bloquear el push en caso de error de red.
+        setMetaLoaded(true);
       }
     })();
 
     return () => ac.abort();
   }, [curriculumId, competencyId, standardId, learningObjectiveId]);
 
-  // Empujar a “Recientes” (una sola vez por combinación de IDs)
+  // Empujar a “Recientes” (una sola vez por combinación de IDs, después de metaLoaded)
   useEffect(() => {
     if (pushedRef.current) return;
+    if (!metaLoaded) return;
 
     if (curriculumId && competencyId && standardId && learningObjectiveId) {
       pushedRef.current = true; // marca para evitar duplicados
@@ -114,17 +131,26 @@ export default function Practice() {
       pushRecentObjective({
         curriculumId,
         competencyId,
-        competencyName: meta.competencyName, // puede ir vacío si aún no cargó
         standardId,
-        standardName: meta.standardName, // puede ir vacío si aún no cargó
         objectiveId: learningObjectiveId,
-        objectiveName: meta.objectiveName, // puede ir vacío si aún no cargó
+        curriculumName: meta.curriculumName || undefined,
+        competencyName: meta.competencyName || undefined,
+        standardName: meta.standardName || undefined,
+        objectiveName: meta.objectiveName || undefined,
         ts: new Date().toISOString(),
       });
     }
-    // Solo depende de los IDs; los nombres pueden llegar luego y se actualizarán la próxima visita
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curriculumId, competencyId, standardId, learningObjectiveId]);
+  }, [
+    curriculumId,
+    competencyId,
+    standardId,
+    learningObjectiveId,
+    metaLoaded,
+    meta.curriculumName,
+    meta.competencyName,
+    meta.standardName,
+    meta.objectiveName,
+  ]);
 
   if (loading) return <LoadingScreen />;
   if (error) {

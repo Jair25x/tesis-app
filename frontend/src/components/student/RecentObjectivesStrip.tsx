@@ -1,9 +1,12 @@
-import { memo, useEffect, useMemo, useState } from "react";
+// src/components/student/RecentObjectivesStrip.tsx
+import { memo, useEffect, useMemo, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   readRecentObjectives,
   writeRecentObjectives,
   backfillNames,
+  removeRecentObjective,
+  clearRecentObjectives,
   type RecentObjectiveItem,
 } from "../../utils/recentObjectives";
 import { getCurriculumFull } from "../../services/curriculumService";
@@ -14,6 +17,7 @@ import type { CurriculumFullResponse } from "../../types/curriculum/CurriculumFu
  * - Usa nombres de objetivo/competencia cuando están disponibles.
  * - Hace backfill de nombres contra el currículo actual (una sola vez por montaje).
  * - Muestra un pequeño texto de "Última vez: hace X" para dar contexto temporal.
+ * - Permite quitar objetivos individuales (✕) o limpiar toda la lista.
  */
 
 type Props = {
@@ -123,6 +127,16 @@ export default memo(function RecentObjectivesStrip({
 
   const visible = useMemo(() => items.slice(0, limit), [items, limit]);
 
+  const handleDismiss = useCallback((objectiveId: string) => {
+    removeRecentObjective(objectiveId);
+    setItems((prev) => prev.filter((it) => it.objectiveId !== objectiveId));
+  }, []);
+
+  const handleClear = useCallback(() => {
+    clearRecentObjectives();
+    setItems([]);
+  }, []);
+
   if (visible.length === 0) return null;
 
   return (
@@ -130,13 +144,25 @@ export default memo(function RecentObjectivesStrip({
       aria-label="Recientes"
       className="mb-6 rounded-xl border p-3 md:p-4 dark:border-gray-700 bg-white/80 dark:bg-gray-900/40"
     >
-      <header className="mb-2 flex items-center justify-between">
-        <h3 className="text-base md:text-lg font-semibold text-gray-800 dark:text-gray-100">
-          🕒 Recientes
-        </h3>
-        <p className="hidden text-xs text-gray-500 dark:text-gray-400 md:block">
-          Retoma rápidamente lo último que estuviste practicando.
-        </p>
+      <header className="mb-2 flex items-center justify-between gap-2">
+        <div>
+          <h3 className="text-base md:text-lg font-semibold text-gray-800 dark:text-gray-100">
+            🕒 Recientes
+          </h3>
+          <p className="hidden text-xs text-gray-500 dark:text-gray-400 md:block">
+            Retoma rápidamente lo último que estuviste practicando.
+          </p>
+        </div>
+
+        {visible.length > 0 && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="text-xs rounded-full border px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+          >
+            Limpiar
+          </button>
+        )}
       </header>
 
       <div
@@ -173,28 +199,42 @@ export default memo(function RecentObjectivesStrip({
               role="listitem"
               className="min-w-[240px] max-w-[320px] shrink-0 rounded-lg border bg-white dark:bg-gray-900 dark:border-gray-800 p-3 hover:shadow-sm transition"
             >
-              <div className="text-sm text-gray-700 dark:text-gray-200 font-semibold line-clamp-2">
-                {title}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1">
+                  <div className="text-sm text-gray-700 dark:text-gray-200 font-semibold line-clamp-2">
+                    {title}
+                  </div>
+
+                  {contextLine && (
+                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
+                      {contextLine}
+                    </div>
+                  )}
+
+                  {when && (
+                    <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+                      Última vez: {when}
+                    </div>
+                  )}
+
+                  {!hasNames && (
+                    <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+                      (Este objetivo se guardó antes de que se actualizaran los
+                      nombres. Se resolverá automáticamente al seguir
+                      practicando.)
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleDismiss(it.objectiveId)}
+                  className="mt-1 inline-flex h-6 w-6 flex-none items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                  aria-label="Quitar de recientes"
+                >
+                  ✕
+                </button>
               </div>
-
-              {contextLine && (
-                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
-                  {contextLine}
-                </div>
-              )}
-
-              {when && (
-                <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
-                  Última vez: {when}
-                </div>
-              )}
-
-              {!hasNames && (
-                <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
-                  (Este objetivo se guardó antes de que se actualizaran los
-                  nombres. Se resolverá automáticamente al seguir practicando.)
-                </div>
-              )}
 
               <div className="mt-3">
                 <Link
