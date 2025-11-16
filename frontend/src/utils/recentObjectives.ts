@@ -16,7 +16,12 @@ export type RecentObjectiveItem = {
   standardName?: string;
   objectiveName?: string;
 
-  ts: string; // ISO
+  /**
+   * Momento en que el estudiante abrió/practicó este objetivo.
+   * ISO-8601 (ej: "2025-11-16T14:23:00.000Z").
+   * Se usa para ordenar y mostrar "Última vez: hace X".
+   */
+  ts: string;
 };
 
 const STORAGE_KEY = "app:recentObjectives";

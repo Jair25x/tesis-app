@@ -1,4 +1,3 @@
-// src/components/student/RecentObjectivesStrip.tsx
 import { memo, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -12,14 +11,35 @@ import type { CurriculumFullResponse } from "../../types/curriculum/CurriculumFu
 
 /**
  * Renderiza una tira horizontal con los últimos objetivos visitados.
- * Corrige el bug de texto extraño (• / “Continuar” huérfano) asegurando un layout limpio.
- * Si faltan nombres, hace backfill contra el currículo actual (ligero y una sola vez por montaje).
+ * - Usa nombres de objetivo/competencia cuando están disponibles.
+ * - Hace backfill de nombres contra el currículo actual (una sola vez por montaje).
+ * - Muestra un pequeño texto de "Última vez: hace X" para dar contexto temporal.
  */
 
 type Props = {
   curriculumId: string;
   limit?: number;
 };
+
+function formatRelativeTime(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const ts = new Date(iso);
+  if (Number.isNaN(ts.getTime())) return null;
+
+  const now = new Date();
+  const diffMs = now.getTime() - ts.getTime();
+  if (diffMs < 0) return null;
+
+  const diffMin = Math.floor(diffMs / (1000 * 60));
+  const diffHrs = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHrs / 24);
+
+  if (diffMin < 1) return "hace unos segundos";
+  if (diffMin < 60) return `hace ${diffMin} min`;
+  if (diffHrs < 24) return `hace ${diffHrs} h`;
+  if (diffDays === 1) return "hace 1 día";
+  return `hace ${diffDays} días`;
+}
 
 export default memo(function RecentObjectivesStrip({
   curriculumId,
@@ -37,6 +57,7 @@ export default memo(function RecentObjectivesStrip({
   // Backfill de nombres (una sola vez por montaje)
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       if (didBackfill) return;
       if (!curriculumId) return;
@@ -54,7 +75,7 @@ export default memo(function RecentObjectivesStrip({
         const tree: CurriculumFullResponse = await getCurriculumFull(
           curriculumId
         );
-        // Indexar por objectiveId para parchear rápido
+
         const byObjectiveId: Record<
           string,
           {
@@ -64,9 +85,9 @@ export default memo(function RecentObjectivesStrip({
           }
         > = {};
 
-        for (const comp of tree.competencies) {
-          for (const std of comp.standards) {
-            for (const lo of std.learningObjectives) {
+        for (const comp of tree.competencies ?? []) {
+          for (const std of comp.standards ?? []) {
+            for (const lo of std.learningObjectives ?? []) {
               byObjectiveId[lo.id] = {
                 competencyName: comp.name,
                 standardName: std.name,
@@ -80,23 +101,25 @@ export default memo(function RecentObjectivesStrip({
 
         const patched = backfillNames(items, byObjectiveId);
         setItems(patched.slice(0, limit));
+
         // Persistimos el parche para que la próxima carga sea limpia
-        // (manteniendo orden del storage completo)
         const all = readRecentObjectives();
         const allPatched = backfillNames(all, byObjectiveId);
         writeRecentObjectives(allPatched);
       } catch {
-        // Si falla, no rompemos UI
+        // Si falla el backfill no rompemos la UI, solo dejamos los textos por defecto
       } finally {
         if (!cancelled) setDidBackfill(true);
       }
     })();
+
     return () => {
       cancelled = true;
     };
-    // Sólo queremos correr cuando cambia curriculumId o el set inicial de items
+    // Queremos disparar si cambia curriculumId o el nº de elementos
+    // (evitamos dependencias profundas para no entrar en loops)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curriculumId, items.length]);
+  }, [curriculumId, items.length, didBackfill]);
 
   const visible = useMemo(() => items.slice(0, limit), [items, limit]);
 
@@ -111,6 +134,9 @@ export default memo(function RecentObjectivesStrip({
         <h3 className="text-base md:text-lg font-semibold text-gray-800 dark:text-gray-100">
           🕒 Recientes
         </h3>
+        <p className="hidden text-xs text-gray-500 dark:text-gray-400 md:block">
+          Retoma rápidamente lo último que estuviste practicando.
+        </p>
       </header>
 
       <div
@@ -119,10 +145,25 @@ export default memo(function RecentObjectivesStrip({
         aria-label="Lista de objetivos recientes"
       >
         {visible.map((it) => {
+          const hasNames =
+            !!it.objectiveName || !!it.standardName || !!it.competencyName;
+
           const title =
-            it.objectiveName && it.competencyName
-              ? `${it.competencyName} — ${it.objectiveName}`
-              : it.objectiveName || it.standardName || "Objetivo reciente";
+            it.objectiveName ||
+            it.standardName ||
+            it.competencyName ||
+            "Objetivo de aprendizaje reciente";
+
+          const contextLine = (() => {
+            if (it.competencyName && it.standardName) {
+              return `${it.competencyName} · ${it.standardName}`;
+            }
+            if (it.competencyName) return it.competencyName;
+            if (it.standardName) return it.standardName;
+            return null;
+          })();
+
+          const when = formatRelativeTime(it.ts);
 
           const to = `/student/practice/${it.curriculumId}/${it.competencyId}/${it.standardId}/${it.objectiveId}`;
 
@@ -132,14 +173,29 @@ export default memo(function RecentObjectivesStrip({
               role="listitem"
               className="min-w-[240px] max-w-[320px] shrink-0 rounded-lg border bg-white dark:bg-gray-900 dark:border-gray-800 p-3 hover:shadow-sm transition"
             >
-              <div className="text-sm text-gray-700 dark:text-gray-200 font-medium line-clamp-2">
+              <div className="text-sm text-gray-700 dark:text-gray-200 font-semibold line-clamp-2">
                 {title}
               </div>
-              {it.standardName && (
+
+              {contextLine && (
                 <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
-                  {it.standardName}
+                  {contextLine}
                 </div>
               )}
+
+              {when && (
+                <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+                  Última vez: {when}
+                </div>
+              )}
+
+              {!hasNames && (
+                <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+                  (Este objetivo se guardó antes de que se actualizaran los
+                  nombres. Se resolverá automáticamente al seguir practicando.)
+                </div>
+              )}
+
               <div className="mt-3">
                 <Link
                   to={to}

@@ -23,6 +23,81 @@ import {
 /** Adapters de runtime (player de práctica) */
 import { runtimeRegistry } from "../../features/exercises/runtime/registry";
 
+/** ===== Tipos auxiliares ===== */
+
+type SopSnapshot = {
+  learningObjectiveId?: string;
+  attemptsCount?: number | null;
+  correctCount?: number | null;
+  streakCorrect?: number | null;
+  accuracy?: number | null;
+  status?: string | null;
+  masteryLevel?: string | null;
+};
+
+type UpdatedStreak = {
+  current: number;
+  longest: number;
+  lastUpdated?: string;
+};
+
+type ResultState = {
+  mode: "correct" | "incorrect";
+  feedback?: string;
+  score?: number;
+  sop?: SopSnapshot;
+  updatedStreak?: UpdatedStreak;
+  statusMessage?: string;
+};
+
+/** ===== Mensajes motivacionales por estado de objetivo ===== */
+
+const MOTIVATIONAL_MESSAGES: Record<string, string[]> = {
+  MASTERED: [
+    "¡Lo estás dominando! Puedes con retos aún más grandes. ✨",
+    "Este tipo de problema ya es pan comido para ti, ¡felicitaciones! 🎉",
+    "¡Excelente! Ya tienes mucha práctica en este objetivo. 🌟",
+  ],
+  COMPLETED: [
+    "¡Objetivo completado! Estás avanzando muy bien. 🎯",
+    "¡Genial! Este objetivo ya lo manejas muy bien. 💪",
+  ],
+  IN_PROGRESS: [
+    "Vas por muy buen camino, cada intento te hace más fuerte. 💪",
+    "Sigue practicando, estás construyendo una gran base. 📚",
+    "Muy bien, estás aprendiendo paso a paso. 🌱",
+  ],
+  NOT_STARTED: [
+    "Es uno de tus primeros intentos, ¡bien por animarte a empezar! 💫",
+    "Cada camino empieza con un primer paso. ¡Sigue adelante! 🚶‍♀️",
+  ],
+};
+
+function pickStatusMessage(
+  status: string | null | undefined,
+  correct: boolean
+): string | undefined {
+  if (!status) return undefined;
+  const key = status.toUpperCase();
+
+  let pool: string[] | undefined = MOTIVATIONAL_MESSAGES[key];
+  if (!pool || pool.length === 0) {
+    // Fallback si llega algo inesperado
+    pool = correct
+      ? [
+          "¡Muy bien, sigue así! 🌟",
+          "¡Buen trabajo, estás aprendiendo mucho! 📘",
+        ]
+      : [
+          "Equivocarse también es parte de aprender. Inténtalo de nuevo. 💡",
+          "No pasa nada si fallas, lo importante es seguir intentando. 💜",
+        ];
+  }
+
+  const idx = Math.floor(Math.random() * pool.length);
+  return pool[idx];
+}
+
 export default function ExercisePlayerByHierarchy() {
   const navigate = useNavigate();
   const [wbOpen, setWbOpen] = useState(false);
@@ -64,21 +139,7 @@ export default function ExercisePlayerByHierarchy() {
 
   const [startedAt, setStartedAt] = useState<number>(() => Date.now());
 
-  const [result, setResult] = useState<{
-    mode: "correct" | "incorrect";
-    feedback?: string;
-    score?: number;
-    sop?: {
-      learningObjectiveId?: string;
-      attemptsCount?: number | null;
-      correctCount?: number | null;
-      streakCorrect?: number | null;
-      accuracy?: number | null;
-      status?: string | null;
-      masteryLevel?: string | null;
-    };
-    updatedStreak?: { current: number; longest: number; lastUpdated?: string };
-  } | null>(null);
+  const [result, setResult] = useState<ResultState | null>(null);
 
   const [showExitConfirm, setShowExitConfirm] = useState(false);
 
@@ -167,7 +228,7 @@ export default function ExercisePlayerByHierarchy() {
     }
   }, [exercise]);
 
-  const retry = () => {
+  const retry = (): void => {
     setResult(null);
     setStartedAt(Date.now());
   };
@@ -192,7 +253,7 @@ export default function ExercisePlayerByHierarchy() {
     return value != null;
   }, [moduleForTpl, paramsForTpl, value]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (): Promise<void> => {
     if (!exercise || isSubmitting || !moduleForTpl || !paramsForTpl) return;
 
     const answer = moduleForTpl.write(value as never);
@@ -225,16 +286,19 @@ export default function ExercisePlayerByHierarchy() {
           : extractFeedbackText(res.feedback);
 
       if (res.correct) {
+        const statusMessage = pickStatusMessage(res.sop?.status ?? null, true);
+
         setResult({
           mode: "correct",
           feedback: fb,
           score: typeof res.score === "number" ? res.score : undefined,
           sop: res.sop,
           updatedStreak: res.updatedStreak,
+          statusMessage,
         });
         showToast.success(fb ?? "¡Correcto! 🎉");
 
-        // 👇 Logros sólo en práctica (no en examen)
+        // Logros sólo en práctica (no en examen)
         if (!exercise.examMode) {
           res.awardedAchievements?.forEach((a) => {
             showAchievementToast({
@@ -245,12 +309,15 @@ export default function ExercisePlayerByHierarchy() {
           });
         }
       } else {
+        const statusMessage = pickStatusMessage(res.sop?.status ?? null, false);
+
         setResult({
           mode: "incorrect",
           feedback: fb,
           score: typeof res.score === "number" ? res.score : undefined,
           sop: res.sop,
           updatedStreak: res.updatedStreak,
+          statusMessage,
         });
         showToast.info(fb ?? "Sigue intentando 😉");
       }
@@ -259,24 +326,26 @@ export default function ExercisePlayerByHierarchy() {
     }
   };
 
-  const handleShowHint = () => {
+  const handleShowHint = (): void => {
     if (!exercise?.hints?.length) return;
     setRevealedHints((n) => Math.min(n + 1, exercise.hints.length));
   };
-  const handleShowStep = () => {
+
+  const handleShowStep = (): void => {
     if (!exercise?.solutionSteps?.length) return;
     setRevealedSteps((n) => Math.min(n + 1, exercise.solutionSteps.length));
   };
 
-  const handleExit = () => setShowExitConfirm(true);
-  const confirmExit = () => {
+  const handleExit = (): void => setShowExitConfirm(true);
+
+  const confirmExit = (): void => {
     setShowExitConfirm(false);
     navigate(`/student/roadmap/${curriculumId}`);
   };
 
   if (loading || !exercise) return <LoadingScreen />;
 
-  const formatAccuracy = (acc?: number | null) =>
+  const formatAccuracy = (acc?: number | null): string =>
     typeof acc === "number" && acc >= 0 ? `${Math.round(acc * 100)}%` : "—";
 
   return (
@@ -384,7 +453,7 @@ export default function ExercisePlayerByHierarchy() {
               params: paramsForTpl as never,
               value: value as never,
               onChange: (next: unknown) => setValue(next),
-              submissionItemId: practiceKey, // 👈 requerido por CoreModule
+              submissionItemId: practiceKey, // requerido por CoreModule
             })
           )}
 
@@ -422,6 +491,13 @@ export default function ExercisePlayerByHierarchy() {
                   : "Respuesta incorrecta"}
               </div>
 
+              {/* Mensaje motivacional amigable */}
+              {result.statusMessage && (
+                <div className="mb-2 text-sm text-emerald-900 dark:text-emerald-100">
+                  {result.statusMessage}
+                </div>
+              )}
+
               {result.feedback && (
                 <div className="mb-3 text-sm opacity-90">{result.feedback}</div>
               )}
@@ -432,11 +508,6 @@ export default function ExercisePlayerByHierarchy() {
                     Precisión:{" "}
                     <strong>{formatAccuracy(result.sop.accuracy)}</strong>
                   </span>
-                  {result.sop.status ? (
-                    <span className="mr-3">
-                      Estado: <strong>{result.sop.status}</strong>
-                    </span>
-                  ) : null}
                   {typeof result.sop.streakCorrect === "number" ? (
                     <span>
                       Racha OA: <strong>{result.sop.streakCorrect}</strong>
