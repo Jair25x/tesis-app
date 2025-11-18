@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 from uuid import UUID
+import logging
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -22,15 +23,20 @@ from app.observability.metrics import (
     advisor_reco_recent_skips_total,
 )
 
+logger = logging.getLogger(__name__)
+
+
 # ---------------- util tiempo ----------------
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
 
 def _days_since(dt: Optional[datetime]) -> float:
     if not dt:
         return 365.0
     delta = _now_utc() - dt
     return max(delta.total_seconds() / 86_400.0, 0.0)
+
 
 def _parse_iso8601(value: Optional[str]) -> Optional[datetime]:
     if not value:
@@ -43,6 +49,7 @@ def _parse_iso8601(value: Optional[str]) -> Optional[datetime]:
     except Exception:
         return None
 
+
 def _fmt_pct(p: float) -> str:
     if p <= 0:
         return "0%"
@@ -53,7 +60,11 @@ def _fmt_pct(p: float) -> str:
 
 
 # ---------------- prioridad por objetivo ----------------
-def _score_objective(attempts: int, corrects: int, last_attempt_at: Optional[datetime]) -> float:
+def _score_objective(
+    attempts: int,
+    corrects: int,
+    last_attempt_at: Optional[datetime],
+) -> float:
     correct_rate = (corrects / attempts) if attempts > 0 else 0.0
     mastery_penalty = 1.0 - correct_rate
     age_norm = min(_days_since(last_attempt_at) / 14.0, 1.0)
@@ -61,6 +72,7 @@ def _score_objective(attempts: int, corrects: int, last_attempt_at: Optional[dat
     if attempts > 0:
         base = min(base + 0.05, 1.0)
     return base
+
 
 def _difficulty_from_stats(attempts: int, corrects: int) -> str:
     if attempts <= 0:
@@ -79,13 +91,15 @@ def _latest_phase(db: Session, student_id: str) -> Optional[str]:
     Devuelve la fase más reciente registrada (INITIAL|MID|FINAL).
     """
     row = db.execute(
-        text("""
+        text(
+            """
             SELECT phase
             FROM student_level_history
             WHERE student_id = :sid
             ORDER BY snapshot_at DESC
             LIMIT 1
-        """),
+        """
+        ),
         {"sid": student_id},
     ).mappings().first()
     if not row:
@@ -94,16 +108,18 @@ def _latest_phase(db: Session, student_id: str) -> Optional[str]:
     return p if p in {"INITIAL", "MID", "FINAL"} else None
 
 
-def _phase_aware_difficulty(stats_diff: str,
-                            rf_level: Optional[int],
-                            phase: Optional[str],
-                            attempts: int,
-                            corrects: int) -> str:
+def _phase_aware_difficulty(
+    stats_diff: str,
+    rf_level: Optional[int],
+    phase: Optional[str],
+    attempts: int,
+    corrects: int,
+) -> str:
     """
     Mezcla por fase:
-      - INITIAL: 70% EASY, 30% MEDIUM
-      - MID:     20% EASY, 60% MEDIUM, 20% HARD (HARD si acc >= 0.8 y algo de racha)
-      - FINAL:   10% EASY, 40% MEDIUM, 50% HARD (evita HARD si acc < 0.3)
+      - INITIAL: 70% EASY, 30% MEDIUM (no fuerza HARD)
+      - MID:     permite HARD sólo si acc >= 0.8
+      - FINAL:   empuja a HARD salvo que la accuracy sea muy baja
     """
     # base: combinación RF + stats
     base = _choose_difficulty(stats_diff, rf_level)
@@ -146,8 +162,6 @@ def _rag_to_score(distance: Optional[float]) -> float:
         d = 0.0
     return 1.0 / (1.0 + d)
 
-# (rank_with_ml sin cambios; lo omitimos por brevedad de parche)
-
 
 # ---------------- dificultad combinada (stats + RF) ----------------
 def _choose_difficulty(stats_diff: str, rf_level: Optional[int]) -> str:
@@ -157,9 +171,7 @@ def _choose_difficulty(stats_diff: str, rf_level: Optional[int]) -> str:
     if rf_level is None:
         return s
     if s == "MEDIUM":
-        if rf_level == 1:
-            return "MEDIUM"
-        if rf_level == 2:
+        if rf_level in (1, 2):
             return "MEDIUM"
         return "HARD"
     # s == "HARD"
@@ -198,39 +210,44 @@ def _pick_exercise_candidate_for_objective(
     *,
     rdb=None,
     student_id: Optional[UUID] = None,
-) -> Optional[UUID]:
+) -> Optional[Dict[str, Any]]:
     """
-    Pide un pequeño batch y filtra el primero que no esté en “recientes”.
+    Pide un pequeño batch y devuelve el primer ejercicio candidato
+    (shape "lite" de curriculum-service: { id/exerciseId, objectiveId, difficulty, title, ... }),
+    filtrando los que están en “recientes”.
+
+    Devuelve el dict completo del ejercicio para poder usar title, difficulty, etc.
     """
-    # 1) intenta con dificultad pedida
     for attempt in (("with_diff", desired_diff), ("fallback", None)):
         try:
             diff = attempt[1]
-            items = client.get_exercises_for_objective(
+            raw = client.get_exercises_for_objective(
                 objective_id=str(objective_id),
-                limit=5,           # ✅ pedimos algunos para poder filtrar
+                limit=5,  # pedimos algunos para poder filtrar
                 random=False,
                 active=True,
                 difficulty=diff,
                 order="desc",
             ) or []
-            arr = items if isinstance(items, list) else (items.get("items") or [])
-            # convierte a lista de UUIDs
-            candidates: List[UUID] = []
-            for it in arr:
-                exid = it.get("exerciseId") or it.get("id")
-                if exid:
-                    try:
-                        candidates.append(UUID(str(exid)))
-                    except Exception:
-                        continue
 
-            # filtra por “recientes”
-            for ex in candidates:
-                if student_id and _is_recent(rdb, student_id, ex):
+            items = raw if isinstance(raw, list) else (raw.get("items") or [])
+
+            for it in items:
+                exid = it.get("exerciseId") or it.get("id")
+                if not exid:
+                    continue
+                try:
+                    ex_uuid = UUID(str(exid))
+                except Exception:
+                    continue
+
+                # filtro de “recientes”
+                if student_id and _is_recent(rdb, student_id, ex_uuid):
                     advisor_reco_recent_skips_total.inc()
                     continue
-                return ex
+
+                # devolvemos el item completo (incluye title, difficulty, ...)
+                return it
         except Exception:
             continue
 
@@ -244,7 +261,7 @@ def _build_reason(
     corrects_total: int,
     last_attempt_at: Optional[datetime],
     desired_diff: str,
-    enriched: Optional[Dict[str, Any]] = None
+    enriched: Optional[Dict[str, Any]] = None,
 ) -> str:
     parts: List[str] = []
 
@@ -275,7 +292,9 @@ def _build_reason(
             parts.append("Sin historial reciente: empecemos por la base.")
         else:
             rate = (corrects_total / attempts_total) if attempts_total > 0 else 0.0
-            parts.append(f"Histórico: {corrects_total}/{attempts_total} ({_fmt_pct(rate)}).")
+            parts.append(
+                f"Histórico: {corrects_total}/{attempts_total} ({_fmt_pct(rate)})."
+            )
             if rate < 0.5:
                 parts.append("Refuerzo recomendado (baja precisión).")
             else:
@@ -283,6 +302,116 @@ def _build_reason(
 
     parts.append(f"Sugerencia: nivel {str(desired_diff).upper()}.")
     return " ".join(parts)
+
+
+# ---------------- COLD START (sin stats por objetivo) ----------------
+def _cold_start_recommendations(
+    db: Session,
+    *,
+    student_id: UUID,
+    limit: int,
+    subject: Optional[str],
+    curriculum_client: Optional[CurriculumClient],
+    rdb=None,
+) -> List[RecommendationItem]:
+    """
+    Fallback cuando no hay filas en student_objective_stats para el estudiante.
+    Usa nivel RF global + fase + objetivos "semilla" desde currícula.
+    """
+    if not curriculum_client:
+        return []
+
+    # 1) Nivel global desde RF
+    try:
+        feats = build_diagnostic_features(
+            db,
+            student_id=str(student_id),
+            window_start=None,
+            window_end=None,
+        )
+        lvl, _probs, _ver = classify_level(feats)
+        rf_level = int(lvl)
+    except Exception as e:
+        logger.warning("COLD_START_RF_FAIL student=%s err=%s", student_id, e)
+        rf_level = 1  # baseline conservador
+
+    phase = _latest_phase(db, str(student_id))
+
+    # 2) Obtener objetivos "semilla" desde currícula.
+    #    ⚠️ Este método debe devolver una lista de UUIDs (objetivos).
+    try:
+        starter_objectives: List[UUID] = curriculum_client.get_starter_objectives(
+            subject=subject or "math",
+            limit=max(limit * 2, limit),
+        )
+    except Exception as e:
+        logger.warning("COLD_START_NO_OBJECTIVES student=%s err=%s", student_id, e)
+        return []
+
+    picked: List[RecommendationItem] = []
+
+    for idx, obj_id in enumerate(starter_objectives):
+        if len(picked) >= limit:
+            break
+
+        # Para cold start, asumimos stats_diff = EASY (sin intentos),
+        # y dejamos que la fase + RF ajusten.
+        stats_diff = "EASY"
+        desired_diff = _phase_aware_difficulty(
+            stats_diff, rf_level, phase, attempts=0, corrects=0
+        )
+
+        ex_lite = _pick_exercise_candidate_for_objective(
+            db,
+            curriculum_client,
+            obj_id,
+            desired_diff,
+            rdb=rdb,
+            student_id=student_id,
+        )
+        if not ex_lite:
+            continue
+
+        raw_id = ex_lite.get("exerciseId") or ex_lite.get("id")
+        try:
+            ex_uuid = UUID(str(raw_id))
+        except Exception:
+            continue
+
+        title = (
+            ex_lite.get("title")
+            or ex_lite.get("name")
+            or ex_lite.get("code")
+            or None
+        )
+
+        reason = (
+            "Recomendación basada en tu diagnóstico inicial. "
+            f"Empezamos este objetivo con ejercicios de nivel {desired_diff.upper()}."
+        )
+
+        picked.append(
+            RecommendationItem(
+                objectiveId=obj_id,
+                exerciseId=ex_uuid,
+                score=0.5,  # score neutro en cold start
+                confidence=None,
+                reason=reason,
+                source="HEURISTIC",
+                difficulty=desired_diff,
+                citations=[],
+                title=title,
+            )
+        )
+
+    logger.info(
+        "COLD_START_RECO student=%s phase=%s level=%s picked=%d",
+        str(student_id),
+        str(phase),
+        str(rf_level),
+        len(picked),
+    )
+    return picked
 
 
 # ---------------- recomendaciones por objetivo ----------------
@@ -304,21 +433,40 @@ def recommend_for_student(
         params["oid"] = str(objective_id)
 
     rows = db.execute(
-        text(f"""
+        text(
+            f"""
             SELECT objective_id, attempts, corrects, avg_score, last_attempt_at, streak
             FROM student_objective_stats
             {where}
-        """),
+        """
+        ),
         params,
     ).mappings().all()
+
+    # 🧊 Cold start: sin stats -> usar diagnóstico + currícula
+    if not rows:
+        return _cold_start_recommendations(
+            db=db,
+            student_id=student_id,
+            limit=limit,
+            subject=subject,
+            curriculum_client=curriculum_client,
+            rdb=rdb,
+        )
 
     # nivel RF (global)
     level: Optional[int] = None
     try:
-        feats = build_diagnostic_features(db, student_id=str(student_id), window_start=None, window_end=None)
+        feats = build_diagnostic_features(
+            db,
+            student_id=str(student_id),
+            window_start=None,
+            window_end=None,
+        )
         lvl, _pr, _ver = classify_level(feats)
         level = int(lvl)
-    except Exception:
+    except Exception as e:
+        logger.warning("RECO_RF_FAIL student=%s err=%s", student_id, e)
         level = None
 
     # fase actual (INITIAL | MID | FINAL)
@@ -341,12 +489,16 @@ def recommend_for_student(
         top_ids = [str(c[0]) for c in candidates[: max(limit * 3, limit)]]
         try:
             with advisor_progress_batch_seconds.time():
-                arr = progress_client.get_objective_stats_batch(str(student_id), top_ids) or []
+                arr = progress_client.get_objective_stats_batch(
+                    str(student_id), top_ids
+                ) or []
             for item in arr:
                 oid = str(item.get("objectiveId"))
                 if oid:
                     stats_by_obj[oid] = item
-            advisor_reason_enrich_total.labels(result="hit" if stats_by_obj else "miss").inc()
+            advisor_reason_enrich_total.labels(
+                result="hit" if stats_by_obj else "miss"
+            ).inc()
         except Exception:
             advisor_reason_enrich_total.labels(result="error").inc()
             stats_by_obj = {}
@@ -358,15 +510,31 @@ def recommend_for_student(
             break
 
         stats_diff = _difficulty_from_stats(attempts, corrects)
-        desired_diff = _phase_aware_difficulty(stats_diff, level, phase, attempts, corrects)
+        desired_diff = _phase_aware_difficulty(
+            stats_diff, level, phase, attempts, corrects
+        )
 
-        ex_id = None
+        ex_lite: Optional[Dict[str, Any]] = None
         if client:
-            ex_id = _pick_exercise_candidate_for_objective(
+            ex_lite = _pick_exercise_candidate_for_objective(
                 db, client, obj, desired_diff, rdb=rdb, student_id=student_id
             )
-        if not ex_id:
+
+        if not ex_lite:
             continue
+
+        raw_id = ex_lite.get("exerciseId") or ex_lite.get("id")
+        try:
+            ex_uuid = UUID(str(raw_id))
+        except Exception:
+            continue
+
+        title = (
+            ex_lite.get("title")
+            or ex_lite.get("name")
+            or ex_lite.get("code")
+            or None
+        )
 
         enr = stats_by_obj.get(str(obj))
         reason = _build_reason(
@@ -380,23 +548,35 @@ def recommend_for_student(
         picked.append(
             RecommendationItem(
                 objectiveId=obj,
-                exerciseId=ex_id,
+                exerciseId=ex_uuid,
                 score=round(float(base_score), 4),
                 confidence=None,
                 reason=reason,
                 source="HEURISTIC",
                 difficulty=desired_diff,
                 citations=[],
+                title=title,
             )
         )
 
+    logger.info(
+        "RECO_DEBUG student=%s rows=%d candidates=%d picked=%d level=%s phase=%s",
+        str(student_id),
+        len(rows),
+        len(candidates),
+        len(picked),
+        str(level),
+        str(phase),
+    )
     return picked
+
 
 def _normalize_phase(phase: Optional[str]) -> str:
     p = (phase or "").strip().upper()
     if p not in {"INITIAL", "MID", "FINAL"}:
         raise ValueError(f"phase inválido: {phase!r} (esperado: INITIAL|MID|FINAL)")
     return p
+
 
 def _upsert_student_level(
     db: Session,
@@ -434,6 +614,7 @@ def _upsert_student_level(
     )
     db.execute(stmt)
 
+
 def commit_student_level(
     db: Session,
     *,
@@ -452,7 +633,6 @@ def commit_student_level(
     phase_norm = _normalize_phase(phase)
 
     # 1) Construye features en la ventana (si se provee)
-    #    build_diagnostic_features admite window_start/window_end=None (todo histórico)
     feats = build_diagnostic_features(
         db,
         student_id=str(student_id),
@@ -461,17 +641,14 @@ def commit_student_level(
     )
 
     # 2) Clasifica nivel con tu RF
-    #    Nota: según tu uso previo, classify_level(feats) devuelve (lvl, probs, version)
     lvl, probs, model_ver = None, None, None
     try:
         lvl, probs, model_ver = classify_level(feats)
         lvl = int(lvl)
         # Normaliza probs a dict[str,float]
         if isinstance(probs, dict):
-            # ok
             pass
         elif probs is not None:
-            # intenta convertir listas/tuplas tipo [p1,p2,p3] -> {"1":..., "2":..., "3":...}
             try:
                 probs = {str(i + 1): float(p) for i, p in enumerate(probs)}
             except Exception:
@@ -491,8 +668,7 @@ def commit_student_level(
         model_version=str(model_ver) if model_ver is not None else None,
     )
 
-    # 4) No commiteamos aquí si lo hará el router;
-    #    tu router ya hace db.commit(), pero si lo llamas desde otro lado, conviene proteger:
+    # 4) Commit opcional
     if force:
         try:
             db.commit()

@@ -18,26 +18,19 @@ log = logging.getLogger("duels.ws")
 
 
 def _extract_token(headers: Dict[str, Any], query_params: Dict[str, Any]) -> Optional[str]:
-    """
-    Extrae bearer token del header Authorization o de query params (token|access_token).
-    """
+    """Extrae bearer token del header Authorization o de query params (token|access_token)."""
     auth = headers.get("authorization") or headers.get("Authorization")
     if auth and isinstance(auth, str) and auth.lower().startswith("bearer "):
         return auth[7:].strip()
     for k in ("token", "access_token"):
-        if k in query_params:
-            return str(query_params[k])
+        if k in query_params and query_params[k]:
+            return str(query_params[k]).strip()
     return None
 
 
 def _parse_user(token: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Devuelve (user_id, username_mostrable).
-    - userId | sub
-    - username | preferred_username | name | given_name + family_name
-    Valida expiración con pequeña tolerancia de reloj.
-    """
     if not token or not JWT_KEY_BYTES:
+        log.warning("WS _parse_user: missing token or JWT_KEY_BYTES")
         return None, None
     try:
         claims = jwt.decode(
@@ -45,7 +38,7 @@ def _parse_user(token: str) -> Tuple[Optional[str], Optional[str]]:
             key=JWT_KEY_BYTES,
             algorithms=JWT_ALGS,
             options={"verify_aud": False, "verify_exp": True},
-            leeway=10,  # 10s de tolerancia
+            leeway=10,
         )
         uid = claims.get("userId") or claims.get("sub")
         uname = (
@@ -59,9 +52,10 @@ def _parse_user(token: str) -> Tuple[Optional[str], Optional[str]]:
             f = (claims.get("family_name") or "").strip()
             if g or f:
                 uname = f"{g} {f}".strip()
+        log.info("WS _parse_user ok uid=%s uname=%s", uid, uname)
         return (str(uid) if uid else None, str(uname) if uname else None)
     except Exception as e:
-        log.warning("JWT decode error: %s", e)
+        log.warning("WS JWT decode error: %s", e)
         return None, None
 
 
@@ -103,8 +97,30 @@ async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
     duels_ws_connections.labels(state="open").inc()
     try:
-        token = _extract_token(websocket.headers, dict(websocket.query_params))
-        user_id, username = _parse_user(token) if token else (None, None)
+        # ============================
+        # 1) Preferir identidad del gateway
+        # ============================
+        headers_lower = {k.lower(): v for k, v in websocket.headers.items()}
+        gw_user_id = headers_lower.get("x-user-id")
+        gw_username = headers_lower.get("x-user-name") or headers_lower.get("x-user-username")
+
+        if gw_user_id:
+            user_id = gw_user_id
+            username = gw_username
+            log.info("WS handshake (gateway headers): uid=%s uname=%s", user_id, username)
+        else:
+            # ============================
+            # 2) Fallback: token (query/header)
+            # ============================
+            qp_dict = dict(websocket.query_params)
+            token = _extract_token(websocket.headers, qp_dict)
+            log.info(
+                "WS handshake (token): has_token=%s qp=%s",
+                bool(token),
+                qp_dict,
+            )
+            user_id, username = _parse_user(token) if token else (None, None)
+
         if not user_id:
             await _safe_send_json(websocket, {"type": "error", "message": "unauthorized"})
             await _safe_close(websocket, 1008)
@@ -119,7 +135,7 @@ async def ws_endpoint(websocket: WebSocket):
         # Forzar matchId en querystring para compat hacia abajo
         websocket.scope["query_string"] = f"matchId={match_id}".encode("utf-8")  # type: ignore[index]
 
-        # Feedback inmediato para el cliente
+        # Feedback inmediato
         await _safe_send_json(
             websocket,
             {"type": "state", "status": "WAITING", "round": 0, "code": code_norm},

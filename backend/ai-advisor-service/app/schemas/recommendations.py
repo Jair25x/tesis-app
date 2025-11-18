@@ -19,6 +19,9 @@ class RecommendationItem(BaseModel):
     # ✅ ahora opcional para soportar recos “genéricas” si haces A/B o cápsulas
     objectiveId: Optional[UUID] = None
     exerciseId: UUID
+    # 🔹 NUEVO: título amigable para mostrar en UI
+    title: Optional[str] = None
+
     score: float = Field(ge=0.0, le=1.0)
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     reason: Optional[str] = None

@@ -1,4 +1,3 @@
-// curriculum-service/src/main/java/com/tesis/curriculum_service/controller/InternalObjectiveController.java
 package com.tesis.curriculum_service.controller;
 
 import com.tesis.curriculum_service.dto.ObjectiveExerciseCountsRequest;
@@ -28,7 +27,8 @@ public class InternalObjectiveController {
 
   public InternalObjectiveController(
       ExerciseRepository exerciseRepository,
-      LearningObjectiveRepository learningObjectiveRepository) {
+      LearningObjectiveRepository learningObjectiveRepository
+  ) {
     this.exerciseRepository = exerciseRepository;
     this.learningObjectiveRepository = learningObjectiveRepository;
   }
@@ -70,16 +70,18 @@ public class InternalObjectiveController {
     return ResponseEntity.ok(Map.of("items", items));
   }
 
-  // ---------------- Batch: conteo de ejercicios por objetivo (con difficulty)
-  // ----------------
+  // ---------------- Batch: conteo de ejercicios por objetivo (con difficulty) ----------------
 
   @Operation(summary = "Conteo de ejercicios por objetivo (batch) — uso interno")
   @PreAuthorize("hasRole('INTERNAL')")
   @PostMapping("/exercise-counts")
   public ResponseEntity<ObjectiveExerciseCountsResponse> exerciseCounts(
-      @RequestBody ObjectiveExerciseCountsRequest request) {
+      @RequestBody ObjectiveExerciseCountsRequest request
+  ) {
     if (request == null || request.getIds() == null || request.getIds().isEmpty()) {
-      return ResponseEntity.ok(ObjectiveExerciseCountsResponse.builder().counts(Map.of()).build());
+      return ResponseEntity.ok(
+          ObjectiveExerciseCountsResponse.builder().counts(Map.of()).build()
+      );
     }
 
     // active=true por defecto (lo que ves en alumno)
@@ -87,12 +89,16 @@ public class InternalObjectiveController {
     // difficulty opcional (BASIC|INTERMEDIATE|ADVANCED)
     String difficulty = normalizeDbDifficulty(request.getDifficulty());
 
-    List<Object[]> rows = exerciseRepository.countByObjectiveIdsWithFilters(request.getIds(), active, difficulty);
+    List<Object[]> rows = exerciseRepository.countByObjectiveIdsWithFilters(
+        request.getIds(), active, difficulty
+    );
     Map<String, Integer> counts = new LinkedHashMap<>();
 
     for (Object[] r : rows) {
       UUID oid = (UUID) r[0];
-      int total = (r[1] instanceof Number) ? ((Number) r[1]).intValue() : Integer.parseInt(String.valueOf(r[1]));
+      int total = (r[1] instanceof Number)
+          ? ((Number) r[1]).intValue()
+          : Integer.parseInt(String.valueOf(r[1]));
       counts.put(oid.toString(), total);
     }
 
@@ -101,11 +107,55 @@ public class InternalObjectiveController {
       counts.putIfAbsent(id.toString(), 0);
     }
 
-    return ResponseEntity.ok(ObjectiveExerciseCountsResponse.builder().counts(counts).build());
+    return ResponseEntity.ok(
+        ObjectiveExerciseCountsResponse.builder().counts(counts).build()
+    );
   }
 
-  // ---------------- Siguiente objetivo por grado (igual que ya tenías)
-  // ----------------
+  // ---------------- Objetivos "semilla" para cold start ----------------
+
+  @Operation(summary = "Objetivos 'semilla' para recomendaciones en frío — uso interno")
+  @PreAuthorize("hasRole('INTERNAL')")
+  @GetMapping("/starter")
+  public ResponseEntity<List<UUID>> getStarterObjectives(
+      @RequestParam String grade,
+      @RequestParam(required = false) String subject,
+      @RequestParam(name = "limit", defaultValue = "10") int limit
+  ) {
+    int safeLimit = Math.max(1, Math.min(limit, 50));
+    String g = normalizeGrade(grade);
+    if (g == null) {
+      // grade inválido -> 400 sin cuerpo
+      return ResponseEntity.badRequest().build();
+    }
+
+    // Usamos la misma lógica de grado normalizado que nextObjective
+    List<LearningObjective> ordered =
+        learningObjectiveRepository.findOrderedByGradeNormalized(g);
+
+    List<UUID> ids;
+
+    if (ordered.isEmpty()) {
+      // Fallback: últimos objetivos creados si por alguna razón no hay para ese grado
+      List<LearningObjective> recent = learningObjectiveRepository.findRecent(safeLimit);
+      if (recent.isEmpty()) {
+        return ResponseEntity.ok(List.of());
+      }
+      ids = recent.stream()
+          .limit(safeLimit)
+          .map(LearningObjective::getId)
+          .toList();
+    } else {
+      ids = ordered.stream()
+          .limit(safeLimit)
+          .map(LearningObjective::getId)
+          .toList();
+    }
+
+    return ResponseEntity.ok(ids);
+  }
+
+  // ---------------- Siguiente objetivo por grado ----------------
 
   @Operation(summary = "Devuelve el siguiente objetivo programático para grade (orden por code), con fallback si no hay datos")
   @PreAuthorize("hasRole('INTERNAL')")
@@ -113,13 +163,15 @@ public class InternalObjectiveController {
   public ResponseEntity<Map<String, Object>> nextObjective(
       @RequestParam String grade,
       @RequestParam(required = false) String subject,
-      @RequestParam(required = false) UUID after) {
+      @RequestParam(required = false) UUID after
+  ) {
     String g = normalizeGrade(grade);
     if (g == null) {
       return ResponseEntity.badRequest().body(Map.of("error", "grade inválido"));
     }
 
-    List<LearningObjective> ordered = learningObjectiveRepository.findOrderedByGradeNormalized(g);
+    List<LearningObjective> ordered =
+        learningObjectiveRepository.findOrderedByGradeNormalized(g);
     if (ordered.isEmpty()) {
       List<LearningObjective> recent = learningObjectiveRepository.findRecent(1);
       if (recent.isEmpty()) {
@@ -167,6 +219,8 @@ public class InternalObjectiveController {
     return ResponseEntity.ok(payload);
   }
 
+  // ---------------- Ejercicios para duelos ----------------
+
   @Operation(summary = "Primeros ejercicios por objetivo (shape para duels-service) — uso interno")
   @PreAuthorize("hasRole('INTERNAL')")
   @GetMapping("/{objectiveId}/exercises-for-duels")
@@ -200,16 +254,20 @@ public class InternalObjectiveController {
         "id", e.getId(),
         "active", Boolean.TRUE.equals(e.getActive()),
         "difficulty", mapDifficultyToAdvisor(e.getDifficulty()),
-        "createdAt", e.getCreatedAt())).toList();
+        "createdAt", e.getCreatedAt()
+    )).toList();
 
     return ResponseEntity.ok(Map.of("items", items));
   }
+
+  // ---------------- Validación de ejercicios por objetivo ----------------
 
   @PostMapping("/{objectiveId}/validate-exercises")
   @PreAuthorize("hasRole('INTERNAL')")
   public ResponseEntity<Map<String, Object>> validateExercisesForObjective(
       @PathVariable UUID objectiveId,
-      @RequestBody Map<String, Object> body) {
+      @RequestBody Map<String, Object> body
+  ) {
 
     @SuppressWarnings("unchecked")
     List<String> raw = (List<String>) body.getOrDefault("ids", List.of());
@@ -224,13 +282,15 @@ public class InternalObjectiveController {
         ids.add(UUID.fromString(s));
       } catch (IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(Map.of(
-            "error", "Invalid UUID in 'ids': " + s));
+            "error", "Invalid UUID in 'ids': " + s
+        ));
       }
     }
     ids = ids.stream().distinct().limit(500).toList();
 
     if (ids.isEmpty())
       return ResponseEntity.ok(Map.of("items", List.of()));
+
     var rows = exerciseRepository.findStatusByObjectiveAndIds(objectiveId, ids);
 
     Map<UUID, ExerciseRepository.ExStatusRow> byId = new HashMap<>();

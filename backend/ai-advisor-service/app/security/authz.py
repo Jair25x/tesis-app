@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable, Any
+import logging
 
 from fastapi import Header, HTTPException, status
 
@@ -16,6 +17,8 @@ from app.security.jwt import (
     resolve_s2s_secret,
     pick_effective_user,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -60,6 +63,9 @@ def authorize_request(
     2) Si no hay X-Internal-Call, validamos Bearer normal.
     """
 
+    # Materializamos allowed_roles por si nos pasan un generador y para logging.
+    allowed_list = list(allowed_roles)
+
     # 1) Camino interno por headers del gateway (preferido cuando estén completos)
     if x_internal_call:
         roles_hdr, principal_hdr = _from_internal_headers(
@@ -68,7 +74,17 @@ def authorize_request(
             x_user_id=x_user_id,
         )
         if roles_hdr and principal_hdr:
-            verify_roles(roles_hdr, allowed_roles)
+            try:
+                verify_roles(roles_hdr, allowed_list)
+            except HTTPException as exc:
+                logger.warning(
+                    "AUTHZ_INTERNAL_HEADERS_ROLES_FAIL roles=%s allowed=%s detail=%s",
+                    roles_hdr,
+                    allowed_list,
+                    getattr(exc, "detail", None),
+                )
+                raise
+
             principal = pick_effective_user(
                 principal_from_headers=principal_hdr,
                 principal_from_claims=None,
@@ -86,11 +102,40 @@ def authorize_request(
     # 2) Camino por Bearer (público o s2s según prefer_public)
     secret = resolve_public_secret() if prefer_public else resolve_s2s_secret()
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token requerido")
+        logger.warning(
+            "AUTHZ_MISSING_BEARER x_internal_call=%s allowed=%s prefer_public=%s",
+            bool(x_internal_call),
+            allowed_list,
+            prefer_public,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Bearer token requerido",
+        )
 
-    claims = verify_bearer(authorization, secret)
+    try:
+        claims = verify_bearer(authorization, secret)
+    except HTTPException as exc:
+        logger.warning(
+            "AUTHZ_BEARER_FAIL prefer_public=%s detail=%s",
+            prefer_public,
+            getattr(exc, "detail", None),
+        )
+        raise
+
     roles = extract_roles(claims.get("roles"))
-    verify_roles(roles, allowed_roles)
+
+    try:
+        verify_roles(roles, allowed_list)
+    except HTTPException as exc:
+        logger.warning(
+            "AUTHZ_BEARER_ROLES_FAIL roles=%s allowed=%s prefer_public=%s detail=%s",
+            roles,
+            allowed_list,
+            prefer_public,
+            getattr(exc, "detail", None),
+        )
+        raise
 
     principal_claims = pick_principal(claims)
     principal = pick_effective_user(

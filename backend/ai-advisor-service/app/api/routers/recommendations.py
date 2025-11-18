@@ -46,8 +46,10 @@ def _cache_key(
     # Puedes versionar el contrato si cambias estructura
     return f"reco:v1:{student_id}:{subj}:{obj}:limit{limit}"
 
+
 def _index_key(student_id: UUID) -> str:
     return f"reco:index:{student_id}"
+
 
 def _recent_key(student_id: UUID) -> str:
     # ZSET con score = epoch seconds del OPEN
@@ -87,6 +89,7 @@ def _get_or_set_cache(
     key: str,
     compute_fn: Callable[[], Dict[str, Any]],
     *,
+
     student_id: Optional[UUID] = None,
 ) -> dict:
     if rdb:
@@ -278,8 +281,8 @@ def recommend_for_student_path(
 )
 def post_reco_event(
     evt: RecoEventIn = Body(...),
-    ctx: AuthContext = Depends(require_public_roles("ROLE_STUDENT")) ,
-    rdb = Depends(get_redis),
+    ctx: AuthContext = Depends(require_public_roles("ROLE_STUDENT")),
+    rdb=Depends(get_redis),
 ):
     student_uuid = parse_principal_uuid_or_forbid(ctx.principal)
 
@@ -316,7 +319,6 @@ def post_reco_event(
     return
 
 
-# ✅ Endpoint para contar impresiones (desde el FE al montar panel/strip)
 @router.post(
     "/recommendations/impressions",
     status_code=204,
@@ -335,14 +337,21 @@ def post_reco_impression(
     "/internal/recommendations/invalidate",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="[INTERNAL] Invalida caché de recos para un estudiante",
-    dependencies=[Depends(require_internal("ROLE_INTERNAL"))],
 )
-def invalidate_recommendations(studentId: UUID = Query(...), rdb = Depends(get_redis)):
+def invalidate_recommendations_internal(
+    studentId: UUID = Query(..., alias="studentId"),
+    ctx: AuthContext = Depends(require_internal("ROLE_INTERNAL")),
+    rdb=Depends(get_redis),
+):
+    """
+    Endpoint interno para invalidar el caché de recomendaciones de un estudiante.
+    Lo llama progress-service cuando persiste un Attempt (AttemptPersistedEvent).
+    """
     if not rdb:
         return
+
     try:
         pattern = f"reco:v1:{studentId}:*"
-        # scan & delete
         cur = 0
         while True:
             cur, keys = rdb.scan(cur, match=pattern, count=100)
@@ -350,9 +359,18 @@ def invalidate_recommendations(studentId: UUID = Query(...), rdb = Depends(get_r
                 rdb.delete(*keys)
             if cur == 0:
                 break
+
         # índice también
         rdb.delete(_index_key(studentId))
-        advisor_reco_invalidate_total.labels(source="manual").inc()
+        advisor_reco_invalidate_total.labels(source="progress").inc()
+
+        logger.info(
+            "RECO_CACHE_INVALIDATED studentId=%s by=%s roles=%s",
+            str(studentId),
+            ctx.principal,
+            ctx.roles,
+        )
     except Exception as e:
-        logger.warning("RECO_INVALIDATE_FAIL: %s", e)
+        logger.warning("RECO_INVALIDATE_FAIL: studentId=%s err=%s", str(studentId), e)
+
     return
