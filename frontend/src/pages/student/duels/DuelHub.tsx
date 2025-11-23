@@ -196,7 +196,7 @@ const DuelHub: React.FC = () => {
             aria-label="Configurar un duelo avanzado"
           >
             <span className="mr-2">⚙️</span>
-            Avanzado
+            Duelo Avanzado
           </Link>
         </div>
       </div>

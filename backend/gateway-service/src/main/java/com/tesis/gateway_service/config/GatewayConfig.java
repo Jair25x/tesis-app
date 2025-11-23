@@ -134,6 +134,10 @@ public class GatewayConfig {
                                                 .header("Upgrade", "(?i)websocket")
                                                 .filters(f -> f
                                                                 .filter(this::attachRequestId)
+                                                                // ✅ Volvemos a aplicar JwtGatewayFilter, ahora con
+                                                                // lógica especial para WS
+                                                                .filter(jwtFilter)
+                                                                // El duels-service expone /ws
                                                                 .rewritePath("/api/duels/ws", "/ws")
                                                                 .addRequestHeader("X-Internal-Call", "gateway")
                                                                 .removeRequestHeader("Cookie")

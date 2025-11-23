@@ -517,6 +517,7 @@ services:
       UVICORN_LOG_LEVEL: info
       HEALTH_URL: http://duels-service:8087/healthz
       HOME_URL: http://duels-service:8087/docs
+      BEHIND_GATEWAY: "true"
     ports: ["8087:8087"]
     depends_on:
       duels-db: { condition: service_healthy }

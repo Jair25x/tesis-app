@@ -62,7 +62,6 @@ class MatchPlayer(Base):
 
 
 class Round(Base):
-    """Legacy: ejercicio de q=1 por ronda (compatibilidad)."""
     __tablename__ = "rounds"
 
     match_id: Mapped[str] = mapped_column(
@@ -71,7 +70,10 @@ class Round(Base):
         primary_key=True
     )
     n: Mapped[int] = mapped_column(Integer, primary_key=True)
-    exercise_id: Mapped[str] = mapped_column(UUID(as_uuid=False))
+
+    # Ahora coherente con la migración:
+    exercise_id: Mapped[Optional[str]] = mapped_column(UUID(as_uuid=False), nullable=True)
+
     objective_id: Mapped[Optional[str]] = mapped_column(UUID(as_uuid=False), nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     ended_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)

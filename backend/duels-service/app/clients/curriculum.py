@@ -27,8 +27,10 @@ _counts_cache: Dict[str, Tuple[float, Dict[str, int]]] = {}
 _first_cache: Dict[str, Tuple[float, List[dict]]] = {}
 _validate_cache: Dict[str, Tuple[float, Dict[str, Dict[str, Any]]]] = {}
 
+
 def _now() -> float:
     return time.time()
+
 
 def _cache_get(store: dict, key: str):
     item = store.get(key)
@@ -40,8 +42,10 @@ def _cache_get(store: dict, key: str):
     store.pop(key, None)
     return None
 
+
 def _cache_put(store: dict, key: str, ttl: float, value):
     store[key] = (_now() + ttl, value)
+
 
 @asynccontextmanager
 async def _client():
@@ -60,6 +64,7 @@ async def _client():
     ) as c:
         yield c
 
+
 # ----------------------------
 # Helpers de mapeo dificultad
 # ----------------------------
@@ -70,22 +75,35 @@ _UI_TO_DB = {
 }
 _DB_TO_UI = {v: k for k, v in _UI_TO_DB.items()}
 
+
 def ui_to_db_difficulty(d: Optional[str]) -> Optional[str]:
     if not d:
         return None
     up = str(d).strip().upper()
-    return _UI_TO_DB.get(up) or (up if up in ("BASIC", "INTERMEDIATE", "ADVANCED") else None)
+    return _UI_TO_DB.get(up) or (
+        up if up in ("BASIC", "INTERMEDIATE", "ADVANCED") else None
+    )
+
 
 def db_to_ui_difficulty(d: Optional[str]) -> Optional[str]:
     if not d:
         return None
     up = str(d).strip().upper()
-    return _DB_TO_UI.get(up) or (up if up in ("EASY", "MEDIUM", "HARD") else None)
+    return _DB_TO_UI.get(up) or (
+        up if up in ("EASY", "MEDIUM", "HARD") else None
+    )
+
 
 # ----------------------------
 # Requests con reintentos
 # ----------------------------
-async def _retry_json(method: str, url: str, *, json_body: Any = None, params: Dict[str, Any] | None = None):
+async def _retry_json(
+    method: str,
+    url: str,
+    *,
+    json_body: Any = None,
+    params: Dict[str, Any] | None = None,
+):
     last_exc = None
     for attempt in range(_RETRIES + 1):
         try:
@@ -104,19 +122,25 @@ async def _retry_json(method: str, url: str, *, json_body: Any = None, params: D
                 raise
     raise last_exc  # pragma: no cover
 
+
 async def _backoff(attempt: int):
     # backoff lineal simple (suficiente para este volumen)
     ms = _BACKOFF_BASE_MS * max(1, attempt + 1)
     await _sleep_ms(ms)
 
+
 async def _sleep_ms(ms: int):
     import asyncio
     await asyncio.sleep(ms / 1000.0)
 
+
 # ----------------------------
 # Endpoints internos
 # ----------------------------
-async def check_answer(exercise_id: str, answer: dict) -> tuple[bool, float | None, str | None]:
+async def check_answer(
+    exercise_id: str,
+    answer: dict,
+) -> tuple[bool, float | None, str | None]:
     with duels_check_latency_seconds.time():
         data = await _retry_json(
             "POST",
@@ -125,7 +149,13 @@ async def check_answer(exercise_id: str, answer: dict) -> tuple[bool, float | No
         )
     return bool(data.get("correct")), data.get("score"), data.get("feedback")
 
-async def count_exercises(objective_ids: List[str], *, active: bool = True, difficulty_ui: Optional[str] = None) -> Dict[str, int]:
+
+async def count_exercises(
+    objective_ids: List[str],
+    *,
+    active: bool = True,
+    difficulty_ui: Optional[str] = None,
+) -> Dict[str, int]:
     if not objective_ids:
         return {}
     diff_db = ui_to_db_difficulty(difficulty_ui)
@@ -136,10 +166,15 @@ async def count_exercises(objective_ids: List[str], *, active: bool = True, diff
     if cached is not None:
         return cached
 
-    data = await _retry_json("POST", "/internal/objectives/exercise-counts", json_body=body)
+    data = await _retry_json(
+        "POST",
+        "/internal/objectives/exercise-counts",
+        json_body=body,
+    )
     counts = data.get("counts", {}) or {}
     _cache_put(_counts_cache, key, _TTL_COUNTS_SEC, counts)
     return counts
+
 
 async def first_exercises(
     objective_id: str,
@@ -150,28 +185,48 @@ async def first_exercises(
     random: bool = True,
     order: str = "desc",
 ) -> List[dict]:
-    params = {
+    """
+    Devuelve una lista de ejercicios para un OA:
+      - Si random=true → NO se cachea (la respuesta debe ser aleatoria).
+      - Si random=false → se cachea (respuesta determinista).
+    """
+    params: Dict[str, Any] = {
         "limit": max(1, min(limit, 20)),
         "active": "true" if active else "false",
         "random": "true" if random else "false",
         "order": order if order in ("asc", "desc") else "desc",
     }
+
     diff_db = ui_to_db_difficulty(difficulty_ui)
     if diff_db:
         params["difficulty"] = diff_db
 
-    key = f"first:{objective_id}:{params}"
-    cached = _cache_get(_first_cache, key)
-    if cached is not None:
-        return cached
+    # ⚠️ Solo cacheamos cuando la respuesta es determinista:
+    # random=false → el backend debe devolver siempre lo mismo
+    cacheable = (params["random"] == "false")
 
-    data = await _retry_json("GET", f"/internal/objectives/{objective_id}/exercises", params=params)
+    key = f"first:{objective_id}:{params}"
+
+    if cacheable:
+        cached = _cache_get(_first_cache, key)
+        if cached is not None:
+            return cached
+
+    data = await _retry_json(
+        "GET",
+        f"/internal/objectives/{objective_id}/exercises",
+        params=params,
+    )
     items = list(data.get("items", []) or [])
-    _cache_put(_first_cache, key, _TTL_FIRST_EXS_SEC, items)
+
+    if cacheable:
+        _cache_put(_first_cache, key, _TTL_FIRST_EXS_SEC, items)
+
     return items
 
+
 # ----------------------------
-# Nuevo: VALIDACIÓN batch de exercises
+# VALIDACIÓN batch de exercises
 # ----------------------------
 async def validate_exercises(
     objective_id: Optional[str],
@@ -184,6 +239,7 @@ async def validate_exercises(
     """
     if not ids:
         return {}
+
     # Cache
     key = f"validate:{objective_id}:{sorted(ids)}"
     cached = _cache_get(_validate_cache, key)
@@ -191,7 +247,7 @@ async def validate_exercises(
         return cached
 
     if objective_id:
-        # Endpoint interno batch (recomendado para validar OA + estado + dificultad)
+        # Endpoint interno batch (OA + estado + dificultad)
         data = await _retry_json(
             "POST",
             f"/internal/objectives/{objective_id}/validate-exercises",
@@ -212,7 +268,6 @@ async def validate_exercises(
         return out
     else:
         # Sin OA: validar 'active' y 'difficulty' usando un endpoint general
-        # Fallback genérico: /internal/exercises/lookup (IDs → {active,difficulty})
         data = await _retry_json(
             "POST",
             "/internal/exercises/lookup",

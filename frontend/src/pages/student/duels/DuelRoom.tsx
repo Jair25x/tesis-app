@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../context/useAuth";
 import type {
   ServerMsg,
@@ -38,9 +38,7 @@ type WsOpts =
   | { token: string; matchId?: undefined; code: string };
 
 /** Ejercicio completo (ya con templateType/params) */
-function isCompleteExercise(
-  ex: DuelExercise
-): ex is DuelExercise & {
+function isCompleteExercise(ex: DuelExercise): ex is DuelExercise & {
   templateType: TemplateType;
   params: Record<string, unknown>;
 } {
@@ -73,6 +71,8 @@ type ServerFinalMsgWithExtras = Extract<ServerMsg, { type: "final" }> & {
   playersInfo?: PlayerInfo[];
 };
 
+type ViewStatus = "WAITING" | "COUNTDOWN" | "ROUND" | "RESULTS";
+
 /* ================================ Componente ================================ */
 
 const DuelRoom: React.FC = () => {
@@ -80,12 +80,11 @@ const DuelRoom: React.FC = () => {
   const [search] = useSearchParams();
   const codeFromUrl = search.get("code") || undefined;
 
+  const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
   const myId: string = user?.id != null ? String(user.id) : "";
 
-  const [status, setStatus] = useState<
-    "WAITING" | "COUNTDOWN" | "ROUND" | "RESULTS"
-  >("WAITING");
+  const [status, setStatus] = useState<ViewStatus>("WAITING");
   const [round, setRound] = useState<number>(0);
   const [qIndex, setQIndex] = useState<number>(1);
   const [qTotal, setQTotal] = useState<number>(1);
@@ -102,6 +101,9 @@ const DuelRoom: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loadingExerciseMeta, setLoadingExerciseMeta] = useState(false);
   const [exerciseLoadErr, setExerciseLoadErr] = useState<string | null>(null);
+
+  // Meta del match (bestOf)
+  const [bestOf, setBestOf] = useState<number | null>(null);
 
   // Lobby
   const [readyCount, setReadyCount] = useState<number | undefined>(undefined);
@@ -139,7 +141,7 @@ const DuelRoom: React.FC = () => {
 
   // De-dupe de meta de ejercicio
   const lastExerciseKeyRef = useRef<string | null>(null);
-  const inFlightRef = useRef<Record<string, boolean>>({});
+  const inFlightRef = useRef<Record<string, boolean>>({ });
   const fetchAbortRef = useRef<AbortController | null>(null);
 
   // Montado (evitar setState tras unmount)
@@ -181,7 +183,7 @@ const DuelRoom: React.FC = () => {
   // Validaciones básicas
   useEffect(() => {
     if (!isAuthenticated) {
-      setError("No hay sesión activa. Inicia sesión.");
+      setError("No hay sesión activa. Inicia sesión para unirte al duelo.");
       return;
     }
     if (!token) {
@@ -190,15 +192,17 @@ const DuelRoom: React.FC = () => {
     }
   }, [isAuthenticated, token]);
 
-  // Resolver shortCode si entro con :matchId
+  // Resolver shortCode y bestOf si entro con :matchId
   useEffect(() => {
     const run = async () => {
       if (shortCode || !matchIdParam || !token) return;
       try {
         const m = await getMatch(matchIdParam, token);
-        if (mountedRef.current && m?.shortCode) setShortCode(m.shortCode);
+        if (!mountedRef.current) return;
+        if (m?.shortCode) setShortCode(m.shortCode);
+        if (typeof m?.bestOf === "number") setBestOf(m.bestOf);
       } catch {
-        /* noop silencioso */
+        // Silencioso: si falla, al menos el WS intentará resolver
       }
     };
     void run();
@@ -219,13 +223,14 @@ const DuelRoom: React.FC = () => {
     };
   }, []);
 
-  const normalizeStatus = (s: unknown):
-    | "WAITING"
-    | "COUNTDOWN"
-    | "ROUND"
-    | "RESULTS" => {
+  const normalizeStatus = (s: unknown): ViewStatus => {
     const v = typeof s === "string" ? s.toUpperCase() : "";
-    if (v === "WAITING" || v === "COUNTDOWN" || v === "ROUND" || v === "RESULTS")
+    if (
+      v === "WAITING" ||
+      v === "COUNTDOWN" ||
+      v === "ROUND" ||
+      v === "RESULTS"
+    )
       return v;
     // fallback seguro
     return "WAITING";
@@ -313,9 +318,19 @@ const DuelRoom: React.FC = () => {
       });
   }, [exercise?.id]);
 
+  const submissionKey = useMemo(
+    () =>
+      exercise
+        ? `duel:${
+            shortCode || matchIdParam || "code"
+          }:r${round}:q${qIndex}:ex:${exercise.id}`
+        : `duel:pending`,
+    [shortCode, matchIdParam, round, qIndex, exercise]
+  );
+
   // Auto “ready” al reconectar si ya estabas listo
   useEffect(() => {
-    if (!connected || !iAmReady || status === "RESULTS") return;
+    if (!connected || iAmReady || status === "RESULTS") return;
     const res = send({ type: "ready" });
     if (!res.ok) {
       // no bloqueante
@@ -328,7 +343,6 @@ const DuelRoom: React.FC = () => {
 
     switch (lastMsg.type) {
       case "answer_progress": {
-        // Coincidir exactamente ronda y pregunta (1-based)
         const sameRound = lastMsg.round === round;
         const sameQuestion = lastMsg.qIndex === qIndex;
         if (sameRound && sameQuestion) {
@@ -496,7 +510,6 @@ const DuelRoom: React.FC = () => {
         setTimeLeftMs(0);
         setResponded(0);
         setRespondedTotal(0);
-        // limpia draft local usando la misma clave que guardamos
         try {
           if (submissionKey) {
             localStorage.removeItem(`duel:ans:${submissionKey}`);
@@ -551,15 +564,20 @@ const DuelRoom: React.FC = () => {
         break;
       }
     }
-  }, [lastMsg, shortCode, submitAnswer, qIndex, round, matchIdParam]); // (exercise) intencionalmente fuera
+  }, [
+    lastMsg,
+    shortCode,
+    submitAnswer,
+    qIndex,
+    round,
+    matchIdParam,
+    submissionKey,
+  ]);
 
   const onReady = () => {
     if (iAmReady) return;
     const res = send({ type: "ready" });
-    if (!res.ok) {
-      // no bloqueante
-      return;
-    }
+    if (!res.ok) return;
     setIAmReady(true);
   };
 
@@ -589,20 +607,12 @@ const DuelRoom: React.FC = () => {
     return other ? score[other] ?? 0 : 0;
   }, [score, myId]);
 
-  const submissionKey = useMemo(
-    () =>
-      exercise
-        ? `duel:${shortCode || matchIdParam || "code"}:r${round}:q${qIndex}:ex:${
-            exercise.id
-          }`
-        : `duel:pending`,
-    [shortCode, matchIdParam, round, qIndex, exercise]
-  );
-
   const matchLabel = shortCode
-    ? `Código: ${shortCode}`
+    ? `Código: ${shortCode}${bestOf ? ` · Mejor de ${bestOf}` : ""}`
     : matchIdParam
-    ? `Match: ${matchIdParam}`
+    ? `Match: ${matchIdParam}${bestOf ? ` · Mejor de ${bestOf}` : ""}`
+    : bestOf
+    ? `Mejor de ${bestOf}`
     : "";
 
   // Tiempo
@@ -630,39 +640,60 @@ const DuelRoom: React.FC = () => {
     [playersMap, readyIds, myId]
   );
 
-  // Helper UI: barra respondidos/total
   const respondedPct = useMemo(() => {
     if (respondedTotal <= 0) return 0;
     return Math.min(100, Math.max(0, (responded / respondedTotal) * 100));
   }, [responded, respondedTotal]);
 
+  const statusLabel = (() => {
+    switch (status) {
+      case "WAITING":
+        return "En sala";
+      case "COUNTDOWN":
+        return "Preparados...";
+      case "ROUND":
+        return "Respondiendo";
+      case "RESULTS":
+        return "Resultados";
+      default:
+        return status;
+    }
+  })();
+
   return (
-    <div className="mx-auto max-w-3xl p-4">
-      <header className="mb-3 flex items-center justify-between gap-3">
-        <h1 className="text-xl font-bold sm:text-2xl">⚔️ Duelo</h1>
-        <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
-          <span
-            className={`rounded-full px-2.5 py-1 ${
-              connected
-                ? "bg-emerald-100 text-emerald-800"
-                : "bg-amber-100 text-amber-800"
-            }`}
-            aria-live="polite"
-          >
-            {connected ? "Conectado" : "Reconectando…"}
-          </span>
-          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-800">
-            Estado: {status}
+    <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-3xl flex-col p-4">
+      {/* Header sticky en móvil */}
+      <header className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-3 border-b bg-gray-50/80 pb-2 backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 sm:static sm:border-0 sm:bg-transparent sm:pb-0 sm:backdrop-blur-none">
+        <div>
+          <h1 className="text-lg font-bold sm:text-2xl">⚔️ Duelo</h1>
+          {matchLabel && (
+            <p className="text-[11px] text-gray-500 sm:text-xs">{matchLabel}</p>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1 text-[11px] sm:flex-row sm:items-center sm:text-xs">
+          {/* Estado de conexión solo mientras el duelo no ha terminado */}
+          {status !== "RESULTS" && (
+            <span
+              className={`rounded-full px-2.5 py-1 ${
+                connected
+                  ? "bg-emerald-100 text-emerald-800"
+                  : "bg-amber-100 text-amber-800"
+              }`}
+              aria-live="polite"
+            >
+              {connected ? "Conectado" : "Reconectando…"}
+            </span>
+          )}
+          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-800 dark:bg-blue-900/30 dark:text-blue-100">
+            {status === "RESULTS" ? "Duelo finalizado" : statusLabel}
           </span>
           {status !== "RESULTS" && (
-            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-800">
+            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-100">
               {meScore} — {oppScore}
             </span>
           )}
         </div>
       </header>
-
-      <p className="mb-2 text-xs opacity-70 sm:text-sm">{matchLabel}</p>
 
       {!!error && (
         <div
@@ -673,295 +704,17 @@ const DuelRoom: React.FC = () => {
         </div>
       )}
 
-      {/* Scoreboard N jugadores */}
-      {Object.keys(score).length > 0 && (
-        <section className="mb-3">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-            {entries.map((e, idx) => (
-              <div
-                key={e.id}
-                className={`rounded-lg border p-3 text-sm dark:border-gray-700 ${
-                  e.id === myId
-                    ? "bg-emerald-50 dark:bg-emerald-900/10"
-                    : "bg-white dark:bg-gray-800"
-                }`}
-                title={e.id}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[11px] opacity-70">
-                    {String(idx + 1).padStart(2, "0")}
-                  </span>
-                  <span className="text-lg font-bold">{e.points}</span>
-                </div>
-                <div className="mt-1 truncate text-xs opacity-80">
-                  {displayName(e.id)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {status === "WAITING" && (
-        <div className="rounded-xl border bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="mb-2 text-base">Esperando jugadores…</div>
-          {(playersCount || readyCount || maxPlayers) && (
-            <div className="mb-2 text-xs opacity-80 sm:text-sm">
-              Conectados:{" "}
-              <b>{playersCount ?? Object.keys(playersMap).length}</b>
-              {typeof maxPlayers === "number" ? (
-                <>
-                  {" "}
-                  / <b>{maxPlayers}</b>
-                </>
-              ) : null}
-              {" · "} Listos: <b>{readyCount ?? readyIds.size}</b>
-            </div>
-          )}
-
-          {/* Lista de conectados */}
-          {lobbyPlayers.length > 0 && (
-            <ul className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {lobbyPlayers.map((p) => (
-                <li
-                  key={p.id}
-                  className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm dark:border-gray-700 ${
-                    p.id === myId
-                      ? "bg-emerald-50 dark:bg-emerald-900/10"
-                      : "bg-white dark:bg-gray-800"
-                  }`}
-                >
-                  <span className="truncate">{p.name}</span>
-                  <span
-                    className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs ${
-                      p.ready
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                    title={p.ready ? "Listo" : "No listo"}
-                    aria-label={p.ready ? "Listo" : "No listo"}
-                  >
-                    {p.ready ? "✔ Listo" : "Pendiente"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <p className="mb-3 text-sm opacity-80">
-            Comparte el enlace o el código y pulsa “¡Estoy listo!” cuando todos
-            estén en la sala.
-          </p>
-
-          {/* Panel compartir */}
-          <div className="mb-3 flex flex-col gap-2">
-            {shortCode ? (
-              <>
-                <div className="text-sm">
-                  Código: <b className="font-mono">{shortCode}</b>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <input
-                    readOnly
-                    className="w-full rounded border px-2 py-2 text-xs dark:border-gray-700 dark:bg-gray-900 sm:text-sm"
-                    value={
-                      shortCode
-                        ? `${window.location.origin}/student/duels/join?code=${encodeURIComponent(
-                            shortCode
-                          )}`
-                        : ""
-                    }
-                    aria-label="Enlace para compartir"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      className="rounded bg-gray-800 px-3 py-2 text-xs text-white hover:bg-black"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(
-                            `${window.location.origin}/student/duels/join?code=${encodeURIComponent(
-                              shortCode ?? ""
-                            )}`
-                          );
-                        } catch {
-                          /* noop */
-                        }
-                      }}
-                    >
-                      Copiar
-                    </button>
-                    <button
-                      className="rounded bg-indigo-600 px-3 py-2 text-xs text-white hover:bg-indigo-700"
-                      onClick={async () => {
-                        const link = shortCode
-                          ? `${window.location.origin}/student/duels/join?code=${encodeURIComponent(
-                              shortCode
-                            )}`
-                          : null;
-                        if (!link) return;
-                        try {
-                          if (navigator.share) {
-                            await navigator.share({
-                              title: "Únete a mi duelo",
-                              text: "Entra con este enlace:",
-                              url: link,
-                            });
-                          } else {
-                            await navigator.clipboard.writeText(link);
-                          }
-                        } catch {
-                          /* noop */
-                        }
-                      }}
-                    >
-                      Compartir
-                    </button>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="text-xs opacity-60">Generando código…</div>
-            )}
-          </div>
-
-          <button
-            className={`rounded-lg px-4 py-2 text-white focus-visible:ring-2 focus-visible:ring-offset-2 ${
-              iAmReady ? "bg-emerald-600" : "bg-indigo-600 hover:bg-indigo-700"
-            }`}
-            onClick={onReady}
-            disabled={!connected || iAmReady}
-            aria-disabled={!connected || iAmReady}
-          >
-            {iAmReady ? "¡Listo! ✔" : "¡Estoy listo!"}
-          </button>
+      {/* Si no hay sesión, no sigas renderizando lógica de duelo */}
+      {!isAuthenticated || !token ? (
+        <div className="mt-4 rounded-xl border bg-white p-4 text-sm dark:border-gray-700 dark:bg-gray-800">
+          Inicia sesión para poder unirte a un duelo.
         </div>
-      )}
-
-      {status === "COUNTDOWN" && (
-        <div
-          className="rounded-xl border bg-white p-6 text-center dark:border-gray-700 dark:bg-gray-800"
-          aria-live="polite"
-        >
-          <div className="text-base">La ronda comienza en…</div>
-          <div className="text-5xl font-extrabold">{countdown}</div>
-        </div>
-      )}
-
-      {status === "ROUND" && (
-        <div className="space-y-3" aria-live="polite">
-          {/* Banner de tiempo */}
-          {timeLeftMs > 0 && (
-            <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="mb-1 flex items-center justify-between text-xs sm:text-sm">
-                <span className="opacity-80">Tiempo restante</span>
-                <span className="font-semibold">{fmtTime(timeLeftMs)}</span>
-              </div>
-              <div className="h-2 w-full rounded bg-gray-200 dark:bg-gray-700">
-                <div
-                  className="h-2 rounded bg-emerald-500"
-                  style={{ width: `${progressPct}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {sent && (
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200 sm:text-sm">
-              Respuesta enviada — esperando al resto…
-            </div>
-          )}
-
-          {/* Progreso global (barra + contador) */}
-          {(responded > 0 || respondedTotal > 0) && (
-            <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center justify-between text-xs sm:text-sm">
-                <span className="opacity-80">Respuestas recibidas</span>
-                <span className="font-mono">
-                  {responded}/{respondedTotal}
-                </span>
-              </div>
-              <div className="mt-2 h-2 w-full rounded bg-gray-200 dark:bg-gray-700">
-                <div
-                  className="h-2 rounded bg-blue-500 transition-all"
-                  style={{ width: `${respondedPct}%` }}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round(respondedPct)}
-                  role="progressbar"
-                  aria-label="Progreso de respuestas de los participantes"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Fin de tiempo */}
-          {timeLeftMs <= 0 && deadlineRef.current && !sent && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200 sm:text-sm">
-              Se acabó el tiempo para esta pregunta.
-            </div>
-          )}
-
-          <div className="text-sm opacity-70">
-            Ronda {round}
-            {qTotal > 1 ? ` — Pregunta ${qIndex}/${qTotal}` : null}
-          </div>
-
-          {loadingExerciseMeta ||
-          !exercise?.id ||
-          !exercise.templateType ||
-          !exercise.params ? (
-            <div className="rounded-md border bg-white p-4 text-sm opacity-80 dark:border-gray-700 dark:bg-gray-800">
-              {exerciseLoadErr ? (
-                <div>
-                  <div className="mb-2 text-rose-700 dark:text-rose-300">
-                    {exerciseLoadErr}
-                  </div>
-                  <button
-                    className="rounded bg-rose-600 px-3 py-1.5 text-xs text-white hover:bg-rose-700"
-                    onClick={retryExerciseMeta}
-                  >
-                    Reintentar
-                  </button>
-                </div>
-              ) : (
-                "Cargando ejercicio…"
-              )}
-            </div>
-          ) : (
-            <DuelExerciseRenderer
-              templateType={exercise.templateType}
-              params={exercise.params}
-              submissionKey={submissionKey}
-              onSubmit={onSubmit}
-              // ⬇️ permitir envío cuando no hay deadline (o mientras queda tiempo) y no se ha enviado aún
-              disabled={
-                !(
-                  status === "ROUND" &&
-                  !sent &&
-                  (timeLeftMs > 0 || !deadlineRef.current)
-                )
-              }
-              statementHtml={exerciseHtml}
-            />
-          )}
-        </div>
-      )}
-
-      {status === "RESULTS" && (
-        <div className="rounded-xl border bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-          <div className="mb-2 text-2xl font-bold">
-            {finalWinner
-              ? finalWinner === myId
-                ? "¡Ganaste! 🏆"
-                : `${displayName(finalWinner)} ganó`
-              : "¡Empate!"}
-          </div>
-
-          {/* Leaderboard final */}
-          {entries.length > 0 && (
-            <div className="mb-4">
-              <div className="mb-2 text-sm font-semibold">Clasificación</div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      ) : (
+        <>
+          {/* Scoreboard N jugadores (mientras no haya resultados finales) */}
+          {Object.keys(score).length > 0 && status !== "RESULTS" && (
+            <section className="mb-3">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
                 {entries.map((e, idx) => (
                   <div
                     key={e.id}
@@ -970,44 +723,434 @@ const DuelRoom: React.FC = () => {
                         ? "bg-emerald-50 dark:bg-emerald-900/10"
                         : "bg-white dark:bg-gray-800"
                     }`}
+                    title={e.id}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border text-xs font-semibold dark:border-gray-600">
-                          {idx + 1}
-                        </span>
-                        <span className="truncate">{displayName(e.id)}</span>
-                      </div>
+                      <span className="font-mono text-[11px] opacity-70">
+                        {String(idx + 1).padStart(2, "0")}
+                      </span>
                       <span className="text-lg font-bold">{e.points}</span>
+                    </div>
+                    <div className="mt-1 truncate text-xs opacity-80">
+                      {displayName(e.id)}
                     </div>
                   </div>
                 ))}
               </div>
+            </section>
+          )}
+
+          {status === "WAITING" && (
+            <div className="rounded-xl border bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <div className="mb-2 text-base">Esperando jugadores…</div>
+              {(playersCount || readyCount || maxPlayers) && (
+                <div className="mb-2 text-xs opacity-80 sm:text-sm">
+                  Conectados:{" "}
+                  <b>{playersCount ?? Object.keys(playersMap).length}</b>
+                  {typeof maxPlayers === "number" ? (
+                    <>
+                      {" "}
+                      / <b>{maxPlayers}</b>
+                    </>
+                  ) : null}
+                  {" · "} Listos: <b>{readyCount ?? readyIds.size}</b>
+                </div>
+              )}
+
+              {/* Lista de conectados */}
+              {lobbyPlayers.length > 0 && (
+                <ul className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {lobbyPlayers.map((p) => (
+                    <li
+                      key={p.id}
+                      className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm dark:border-gray-700 ${
+                        p.id === myId
+                          ? "bg-emerald-50 dark:bg-emerald-900/10"
+                          : "bg-white dark:bg-gray-800"
+                      }`}
+                    >
+                      <span className="truncate">{p.name}</span>
+                      <span
+                        className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs ${
+                          p.ready
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                        }`}
+                        title={p.ready ? "Listo" : "No listo"}
+                        aria-label={p.ready ? "Listo" : "No listo"}
+                      >
+                        {p.ready ? "✔ Listo" : "Pendiente"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <p className="mb-3 text-sm opacity-80">
+                Comparte el enlace o el código y pulsa “¡Estoy listo!” cuando
+                todos estén en la sala.
+              </p>
+
+              {/* Panel compartir */}
+              <div className="mb-3 flex flex-col gap-2">
+                {shortCode ? (
+                  <>
+                    <div className="text-sm">
+                      Código: <b className="font-mono">{shortCode}</b>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <input
+                        readOnly
+                        className="w-full rounded border px-2 py-2 text-xs dark:border-gray-700 dark:bg-gray-900 sm:text-sm"
+                        value={
+                          shortCode
+                            ? `${
+                                window.location.origin
+                              }/student/duels/join?code=${encodeURIComponent(
+                                shortCode
+                              )}`
+                            : ""
+                        }
+                        aria-label="Enlace para compartir"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="rounded bg-gray-800 px-3 py-2 text-xs text-white hover:bg-black"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(
+                                `${
+                                  window.location.origin
+                                }/student/duels/join?code=${encodeURIComponent(
+                                  shortCode ?? ""
+                                )}`
+                              );
+                            } catch {
+                              /* noop */
+                            }
+                          }}
+                        >
+                          Copiar
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-indigo-600 px-3 py-2 text-xs text-white hover:bg-indigo-700"
+                          onClick={async () => {
+                            const link = shortCode
+                              ? `${
+                                  window.location.origin
+                                }/student/duels/join?code=${encodeURIComponent(
+                                  shortCode
+                                )}`
+                              : null;
+                            if (!link) return;
+                            try {
+                              if (navigator.share) {
+                                await navigator.share({
+                                  title: "Únete a mi duelo",
+                                  text: "Entra con este enlace:",
+                                  url: link,
+                                });
+                              } else {
+                                await navigator.clipboard.writeText(link);
+                              }
+                            } catch {
+                              /* noop */
+                            }
+                          }}
+                        >
+                          Compartir
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-xs opacity-60">Generando código…</div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className={`rounded-lg px-4 py-2 text-white focus-visible:ring-2 focus-visible:ring-offset-2 ${
+                  iAmReady
+                    ? "bg-emerald-600"
+                    : "bg-indigo-600 hover:bg-indigo-700"
+                }`}
+                onClick={onReady}
+                disabled={!connected || iAmReady}
+                aria-disabled={!connected || iAmReady}
+              >
+                {iAmReady ? "¡Listo! ✔" : "¡Estoy listo!"}
+              </button>
             </div>
           )}
 
-          <div className="text-sm">
-            {finalByRound.map((r) => (
-              <div key={r.round}>
-                Ronda {r.round}:{" "}
-                {r.noParticipation
-                  ? "nadie respondió"
-                  : r.winnerId
-                  ? r.winnerId === myId
-                    ? "tú"
-                    : displayName(r.winnerId)
-                  : "empate"}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+          {status === "COUNTDOWN" && (
+            <div
+              className="mt-2 rounded-xl border bg-white p-6 text-center dark:border-gray-700 dark:bg-gray-800"
+              aria-live="polite"
+            >
+              <div className="text-base">La ronda comienza en…</div>
+              <div className="text-5xl font-extrabold">{countdown}</div>
+            </div>
+          )}
 
-      {!connected && wsEnabled && status !== "RESULTS" && (
-        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
-          Reconectando con el servidor… Si tarda, revisa tu conexión o recarga
-          la página.
-        </div>
+          {status === "ROUND" && (
+            <div className="mt-2 space-y-3" aria-live="polite">
+              {/* Banner de tiempo */}
+              {timeLeftMs > 0 && (
+                <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                  <div className="mb-1 flex items-center justify-between text-xs sm:text-sm">
+                    <span className="opacity-80">Tiempo restante</span>
+                    <span className="font-semibold">{fmtTime(timeLeftMs)}</span>
+                  </div>
+                  <div className="h-2 w-full rounded bg-gray-200 dark:bg-gray-700">
+                    <div
+                      className="h-2 rounded bg-emerald-500"
+                      style={{ width: `${progressPct}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {sent && (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200 sm:text-sm">
+                  Respuesta enviada — esperando al resto…
+                </div>
+              )}
+
+              {/* Progreso global (barra + contador) */}
+              {(responded > 0 || respondedTotal > 0) && (
+                <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+                  <div className="flex items-center justify-between text-xs sm:text-sm">
+                    <span className="opacity-80">Respuestas recibidas</span>
+                    <span className="font-mono">
+                      {responded}/{respondedTotal}
+                    </span>
+                  </div>
+                  <div className="mt-2 h-2 w-full rounded bg-gray-200 dark:bg-gray-700">
+                    <div
+                      className="h-2 rounded bg-blue-500 transition-all"
+                      style={{ width: `${respondedPct}%` }}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(respondedPct)}
+                      role="progressbar"
+                      aria-label="Progreso de respuestas de los participantes"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Fin de tiempo */}
+              {timeLeftMs <= 0 && deadlineRef.current && !sent && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200 sm:text-sm">
+                  Se acabó el tiempo para esta pregunta.
+                </div>
+              )}
+
+              <div className="text-sm opacity-70">
+                Ronda {round}
+                {qTotal > 1 ? ` — Pregunta ${qIndex}/${qTotal}` : null}
+              </div>
+
+              {loadingExerciseMeta ||
+              !exercise?.id ||
+              !exercise.templateType ||
+              !exercise.params ? (
+                <div className="rounded-md border bg-white p-4 text-sm opacity-80 dark:border-gray-700 dark:bg-gray-800">
+                  {exerciseLoadErr ? (
+                    <div>
+                      <div className="mb-2 text-rose-700 dark:text-rose-300">
+                        {exerciseLoadErr}
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded bg-rose-600 px-3 py-1.5 text-xs text-white hover:bg-rose-700"
+                        onClick={retryExerciseMeta}
+                      >
+                        Reintentar
+                      </button>
+                    </div>
+                  ) : (
+                    "Cargando ejercicio…"
+                  )}
+                </div>
+              ) : (
+                <DuelExerciseRenderer
+                  templateType={exercise.templateType}
+                  params={exercise.params}
+                  submissionKey={submissionKey}
+                  onSubmit={onSubmit}
+                  disabled={
+                    !(
+                      status === "ROUND" &&
+                      !sent &&
+                      (timeLeftMs > 0 || !deadlineRef.current)
+                    )
+                  }
+                  statementHtml={exerciseHtml}
+                />
+              )}
+            </div>
+          )}
+
+          {status === "RESULTS" && (
+            <div className="mt-3 rounded-2xl border bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-6">
+              {/* Encabezado resultados */}
+              <div className="mb-4 text-center">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Resultados del duelo
+                </div>
+                <div className="mt-1 text-2xl font-bold sm:text-3xl">
+                  {finalWinner
+                    ? finalWinner === myId
+                      ? "¡Ganaste! 🏆"
+                      : `${displayName(finalWinner)} ganó 🏆`
+                    : "¡Empate! 🤝"}
+                </div>
+                {matchLabel && (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {matchLabel} · {entries.length} jugador
+                    {entries.length === 1 ? "" : "es"}
+                  </p>
+                )}
+              </div>
+
+              {/* Leaderboard final bonito */}
+              {entries.length > 0 && (
+                <div className="mb-4">
+                  <div className="mb-2 text-sm font-semibold">
+                    Clasificación
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {entries.map((e, idx) => {
+                      const isMe = e.id === myId;
+                      const isWinner = finalWinner
+                        ? e.id === finalWinner
+                        : idx === 0;
+                      const medal =
+                        idx === 0
+                          ? "🥇"
+                          : idx === 1
+                          ? "🥈"
+                          : idx === 2
+                          ? "🥉"
+                          : null;
+                      return (
+                        <div
+                          key={e.id}
+                          className={`rounded-lg border p-3 text-sm transition dark:border-gray-700 ${
+                            isWinner
+                              ? "bg-emerald-50 ring-1 ring-emerald-400 dark:bg-emerald-900/20"
+                              : isMe
+                              ? "bg-indigo-50 dark:bg-indigo-900/20"
+                              : "bg-white dark:bg-gray-800"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold dark:border-gray-600">
+                                {idx + 1}
+                              </span>
+                              <div className="flex flex-col">
+                                <span className="flex items-center gap-1 truncate">
+                                  {displayName(e.id)}
+                                  {medal && (
+                                    <span className="text-base leading-none">
+                                      {medal}
+                                    </span>
+                                  )}
+                                </span>
+                                {isMe && (
+                                  <span className="text-[11px] text-indigo-600 dark:text-indigo-300">
+                                    Eres tú
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <span className="text-lg font-bold">
+                              {e.points}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Resumen por ronda */}
+              {finalByRound.length > 0 && (
+                <div className="rounded-xl bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200 sm:text-sm">
+                  <div className="mb-1 font-semibold">Resumen por ronda</div>
+                  <ul className="list-inside list-disc space-y-1">
+                    {finalByRound.map((r) => (
+                      <li key={r.round}>
+                        <span className="font-medium">Ronda {r.round}:</span>{" "}
+                        {r.noParticipation
+                          ? "nadie respondió"
+                          : r.winnerId
+                          ? r.winnerId === myId
+                            ? "tú ganaste esta ronda"
+                            : `${displayName(r.winnerId)} ganó esta ronda`
+                          : "empate"}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Botones de salida */}
+              <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={() => navigate("/student/duels/hub")}
+                  className="w-full rounded-xl border px-4 py-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 sm:w-auto"
+                >
+                  Volver al Hub de duelos
+                </button>
+                {shortCode && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const link = `${
+                        window.location.origin
+                      }/student/duels/join?code=${encodeURIComponent(
+                        shortCode
+                      )}`;
+                      try {
+                        if (navigator.share) {
+                          await navigator.share({
+                            title: "Resultados del duelo",
+                            text: "Te comparto el código del duelo que jugamos:",
+                            url: link,
+                          });
+                        } else {
+                          await navigator.clipboard.writeText(link);
+                        }
+                      } catch {
+                        /* noop */
+                      }
+                    }}
+                    className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto"
+                  >
+                    Compartir código
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Aviso de reconexión: SOLO mientras el duelo no ha terminado */}
+          {!connected && wsEnabled && status !== "RESULTS" && (
+            <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+              Reconectando con el servidor… Si tarda, revisa tu conexión o
+              recarga la página.
+            </div>
+          )}
+        </>
       )}
     </div>
   );

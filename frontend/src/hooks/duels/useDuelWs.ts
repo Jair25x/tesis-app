@@ -130,6 +130,7 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
   const token = "token" in opts ? opts.token : "";
   const matchId = "matchId" in opts ? opts.matchId : "";
   const code = "code" in opts ? opts.code : "";
+  const hasToken = Boolean(token);
 
   const base = import.meta.env.VITE_DUELS_WS_URL as string | undefined;
 
@@ -137,7 +138,7 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
     const params = new URLSearchParams();
     if (matchId) params.set("matchId", matchId);
     if (code) params.set("code", code);
-    params.set("token", token);
+    if (token) params.set("token", token); // no mandamos token vacío
     return buildWsUrl(base, params);
   }, [token, matchId, code, base]);
 
@@ -175,7 +176,8 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
   }, []);
 
   useEffect(() => {
-    if (!enabled) {
+    // Si no está habilitado o no hay token, cerramos y no intentamos conectar
+    if (!enabled || !hasToken) {
       setConnected(false);
       setLastMsg(null);
       stopRef.current = true;
@@ -224,8 +226,24 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
             return;
           }
 
-          // Mensajes de aplicación
           if (isServerMsg(unknownParsed)) {
+            // Si el servidor devuelve "unauthorized", detenemos reconexiones para no hacer spin
+            if (
+              unknownParsed.type === "error" &&
+              "message" in unknownParsed &&
+              unknownParsed.message === "unauthorized"
+            ) {
+              setLastMsg(unknownParsed);
+              setConnected(false);
+              stopRef.current = true;
+              try {
+                ws.close(1008);
+              } catch {
+                /* noop */
+              }
+              return;
+            }
+
             setLastMsg(unknownParsed);
           }
         } catch {
@@ -262,7 +280,7 @@ export function useDuelWs(opts: WsOpts, enabled: boolean): UseDuelWsReturn {
       }
       wsRef.current = null;
     };
-  }, [enabled, url, send]);
+  }, [enabled, hasToken, url, send]);
 
   return { connected, lastMsg, send };
 }

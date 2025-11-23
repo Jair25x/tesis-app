@@ -24,6 +24,9 @@ import type {
 import type { CurriculumResponse } from "../../../types/curriculum/Curriculum";
 import { useToastError } from "../../../hooks/useToastError";
 
+// ⬇️ NUEVO: helper de presets
+import { buildCreateMatchReq } from "../../../features/duels/createMatchPresets";
+
 function getAccessToken(): string | null {
   try {
     return (
@@ -287,17 +290,18 @@ const DuelNew: React.FC = () => {
 
   const fmtNode = (n: IdName) => (n.code ? `${n.code} — ${n.name}` : n.name);
 
-  // ===== Crear duelo rápido =====
-  const buildQuickReq = (chosenObjectiveId: string): CreateMatchReq => ({
-    curriculumId,
-    bestOf: 1,
-    questionsPerRound: Math.max(QPR_MIN, Math.min(QPR_MAX, quickQPR)),
-    maxPlayers: 2,
-    isPublic: true,
-    mode: "bestOf",
-    objectiveId: chosenObjectiveId,
-    ...(quickDifficulty ? { difficulty: quickDifficulty } : {}),
-  });
+  // ===== Crear duelo rápido usando el helper de presets =====
+  const buildQuickReq = (chosenObjectiveId: string): CreateMatchReq =>
+    buildCreateMatchReq({
+      preset: "quick",
+      curriculumId,
+      objectiveId: chosenObjectiveId,
+      difficulty: quickDifficulty || undefined,
+      isPublic: true,
+      maxPlayers: 2,
+      // este valor se mapea a questionsPerRound para el preset quick
+      questionsPerRound: requiredQuestions,
+    });
 
   const submitQuick = async () => {
     setError(null);
@@ -497,7 +501,7 @@ const DuelNew: React.FC = () => {
                       Ejercicios activos disponibles
                       {quickDifficulty
                         ? ` (${quickDifficulty.toLowerCase()})`
-                        : ""}
+                        : ""}{" "}
                       : <strong>{effectiveAvailable}</strong>
                       {serverSource ? ` · fuente: ${serverSource}` : ""}
                     </span>

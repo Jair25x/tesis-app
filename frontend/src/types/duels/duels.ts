@@ -5,6 +5,30 @@ export type DuelState = "WAITING" | "COUNTDOWN" | "ROUND" | "RESULTS";
 export type Difficulty = "EASY" | "MEDIUM" | "HARD";
 export type DuelMode = "bestOf" | "timePerQuestion" | "firstToAll";
 
+export interface CreateMatchReq {
+  curriculumId: string;
+  opponentId?: string;
+  bestOf?: number;        // 1 | 3 | 5 (BE hasta 9)
+  objectiveId?: string;
+  difficulty?: Difficulty;
+  exerciseIds?: string[];
+  isPublic?: boolean;
+
+  // Multijugador / modos
+  maxPlayers?: number;
+  mode?: DuelMode;
+  questionTimeSec?: number;
+  winTarget?: number;
+
+  // Simple (uniforme)
+  questionsPerRound?: number;
+
+  // Avanzado
+  rounds?: RoundPlan[];
+  roundConfigs?: RoundConfig[];
+  roundPicks?: RoundPick[];
+}
+
 export type RoundPlan = {
   questions: number;
   difficulty?: Difficulty;
