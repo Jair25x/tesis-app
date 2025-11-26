@@ -1,3 +1,4 @@
+// src/features/exercises/shared/cores/NUMBER_WORDS_BIDIR.tsx
 import type { ReactNode } from "react";
 import type { NumberWordsParams } from "../../../../types/exercise/TemplateParams";
 
@@ -27,13 +28,21 @@ const core = {
     }
   },
 
+  /**
+   * Validación:
+   * - WORDS_TO_DIGITS → debe ser un número válido.
+   * - DIGITS_TO_WORDS → basta con que no esté vacío (texto en palabras).
+   */
   isValid(v: NW_Value, p: NW_Params): boolean {
     const trimmed = v.trim();
     if (!trimmed) return false;
-    if (p.direction === "DIGITS_TO_WORDS") {
+
+    if (p.direction === "WORDS_TO_DIGITS") {
       const n = Number(trimmed.replace(/\s/g, "").replace(",", "."));
       return Number.isFinite(n);
     }
+
+    // DIGITS_TO_WORDS → cualquier texto no vacío
     return true;
   },
 
@@ -49,10 +58,12 @@ const core = {
     statementHtml?: string | null;
     submissionItemId: string;
   }): ReactNode {
-    const placeholder =
-      params.direction === "DIGITS_TO_WORDS"
-        ? "Escribe el número (ej. 47 305)"
-        : "Escribe en palabras (ej. 'cuarenta y siete mil trescientos cinco')";
+    const isWordsToDigits = params.direction === "WORDS_TO_DIGITS";
+
+    const placeholder = isWordsToDigits
+      ? "Escribe el número (ej. 47 305)"
+      : "Escribe en palabras (ej. 'cuarenta y siete mil trescientos cinco')";
+
     return (
       <>
         {statementHtml && (
@@ -63,9 +74,7 @@ const core = {
         )}
         <input
           type="text"
-          inputMode={
-            params.direction === "DIGITS_TO_WORDS" ? "numeric" : "text"
-          }
+          inputMode={isWordsToDigits ? "numeric" : "text"}
           className="w-full rounded-md border px-3 py-2 dark:bg-zinc-900"
           value={value}
           onChange={(e) => onChange(e.target.value)}

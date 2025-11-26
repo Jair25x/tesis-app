@@ -162,7 +162,7 @@ export default function AssignmentSubmissions() {
     size: filters.size,
   });
 
-  const page = normalizePage(q.data as unknown);
+  const page = q.data ? normalizePage(q.data as unknown) : normalizePage({});
   const rows = useMemo(() => page.content ?? [], [page.content]);
 
   const exportXlsx = () => {
@@ -206,147 +206,201 @@ export default function AssignmentSubmissions() {
           : 0,
     }));
 
+  const selectFilterCls =
+    "w-full rounded-lg border px-2 py-1 text-sm shadow-sm " +
+    "bg-white text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100";
+
   return (
-    <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold">Envíos de la asignación</h1>
-        <div className="flex gap-2">
-          <Link
-            to={`/teacher/assessments`}
-            className="rounded border px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
-          >
-            ← Volver
-          </Link>
-          <button
-            onClick={exportCsv}
-            className="rounded bg-slate-600 px-3 py-1.5 text-sm text-white hover:bg-slate-700"
-          >
-            Exportar CSV
-          </button>
-          <button
-            onClick={exportXlsx}
-            className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700"
-          >
-            Exportar XLSX
-          </button>
+    <div className="min-h-[calc(100vh-64px)] w-full bg-gray-50 px-3 py-4 dark:bg-[#1e2a34] sm:px-4 md:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-6xl space-y-4">
+        {/* Header */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-white sm:text-2xl">
+            Envíos de la asignación
+          </h1>
+
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <Link
+              to={`/teacher/assessments`}
+              className="inline-flex w-full items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-gray-800 shadow-sm transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800 sm:w-auto"
+            >
+              ← Volver
+            </Link>
+            <div className="flex w-full gap-2 sm:w-auto">
+              <button
+                type="button"
+                onClick={exportCsv}
+                className="inline-flex w-full items-center justify-center rounded-lg bg-slate-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 sm:w-auto"
+              >
+                Exportar CSV
+              </button>
+              <button
+                type="button"
+                onClick={exportXlsx}
+                className="inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 sm:w-auto"
+              >
+                Exportar XLSX
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
 
-      {/* Filtros */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <select
-          className="rounded border px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
-          value={filters.status ?? "ALL"}
-          onChange={(e) =>
-            setFilters((p) => ({
-              ...p,
-              status: e.target.value as Filters["status"],
-              page: 0,
-            }))
-          }
-        >
-          <option value="ALL">Estado: todos</option>
-          <option value="NOT_STARTED">No iniciado</option>
-          <option value="IN_PROGRESS">En progreso</option>
-          <option value="SUBMITTED">Enviado</option>
-          <option value="GRADED">Calificado</option>
-          <option value="CANCELED">Cancelado</option>
-        </select>
+        {/* Filtros */}
+        <div className="rounded-2xl border bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <label className="flex flex-col gap-1 text-sm sm:flex-1">
+              <span className="text-xs text-gray-600 dark:text-gray-300">
+                Estado
+              </span>
+              <select
+                className={selectFilterCls}
+                value={filters.status ?? "ALL"}
+                onChange={(e) =>
+                  setFilters((p) => ({
+                    ...p,
+                    status: e.target.value as Filters["status"],
+                    page: 0,
+                  }))
+                }
+              >
+                <option value="ALL">Estado: todos</option>
+                <option value="NOT_STARTED">No iniciado</option>
+                <option value="IN_PROGRESS">En progreso</option>
+                <option value="SUBMITTED">Enviado</option>
+                <option value="GRADED">Calificado</option>
+                <option value="CANCELED">Cancelado</option>
+              </select>
+            </label>
 
-        <select
-          className="ml-auto rounded border px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
-          value={filters.size ?? 20}
-          onChange={(e) =>
-            setFilters((p) => ({
-              ...p,
-              size: Number(e.target.value),
-              page: 0,
-            }))
-          }
-        >
-          <option value={10}>10 / pág</option>
-          <option value={20}>20 / pág</option>
-          <option value={50}>50 / pág</option>
-        </select>
-      </div>
+            <label className="flex flex-col gap-1 text-sm sm:w-40 sm:ml-auto">
+              <span className="text-xs text-gray-600 dark:text-gray-300">
+                Tamaño
+              </span>
+              <select
+                className={selectFilterCls}
+                value={filters.size ?? 20}
+                onChange={(e) =>
+                  setFilters((p) => ({
+                    ...p,
+                    size: Number(e.target.value),
+                    page: 0,
+                  }))
+                }
+              >
+                <option value={10}>10 / pág</option>
+                <option value={20}>20 / pág</option>
+                <option value={50}>50 / pág</option>
+              </select>
+            </label>
+          </div>
+        </div>
 
-      {q.isLoading ? (
-        <p>Cargando…</p>
-      ) : q.error ? (
-        <p className="text-red-500">Error al cargar.</p>
-      ) : (
-        <>
-          <div className="overflow-x-auto rounded border">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-700/50">
-                <tr>
-                  <th className="px-3 py-2 text-left">Estudiante</th>
-                  <th className="px-3 py-2 text-left">Estado</th>
-                  <th className="px-3 py-2 text-left">Intento</th>
-                  <th className="px-3 py-2 text-left">Duración</th>
-                  <th className="px-3 py-2 text-left">Puntaje</th>
-                  <th className="px-3 py-2 text-left">Actualizado</th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((s) => (
-                  <tr key={s.id} className="border-t dark:border-gray-700">
-                    <td className="px-3 py-2">
-                      {s.studentName ?? s.studentEmail ?? "—"}
-                    </td>
-                    <td className="px-3 py-2">{s.status}</td>
-                    <td className="px-3 py-2">{s.attemptNo ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      {formatDuration(s.durationSec)}
-                    </td>
-                    <td className="px-3 py-2">
-                      {s.score ?? "—"}
-                      {typeof s.maxScore === "number" ? ` / ${s.maxScore}` : ""}
-                    </td>
-                    <td className="px-3 py-2">
-                      {s.updatedAt
-                        ? new Date(s.updatedAt).toLocaleString()
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <Link
-                        to={`/teacher/assessments/${assignmentId}/submissions/${s.id}`}
-                        className="rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700"
-                      >
-                        Ver detalle →
-                      </Link>
-                    </td>
+        {/* Estado carga / error / tabla */}
+        {q.isLoading ? (
+          <div className="rounded-2xl border bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            Cargando…
+          </div>
+        ) : q.error ? (
+          <div className="rounded-2xl border bg-white p-4 text-sm text-red-500 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            Error al cargar.
+          </div>
+        ) : (
+          <div className="rounded-2xl border bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 dark:bg-gray-700/50">
+                  <tr className="text-xs uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                    <th className="px-3 py-2 text-left">Estudiante</th>
+                    <th className="px-3 py-2 text-left">Estado</th>
+                    <th className="px-3 py-2 text-left">Intento</th>
+                    <th className="px-3 py-2 text-left">Duración</th>
+                    <th className="px-3 py-2 text-left">Puntaje</th>
+                    <th className="px-3 py-2 text-left">Actualizado</th>
+                    <th className="px-3 py-2 text-left">Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {rows.map((s) => (
+                    <tr
+                      key={s.id}
+                      className="border-t text-gray-800 dark:border-gray-800 dark:text-gray-100"
+                    >
+                      <td className="px-3 py-2 align-top">
+                        {s.studentName ?? s.studentEmail ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top">{s.status}</td>
+                      <td className="px-3 py-2 align-top">
+                        {s.attemptNo ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        {formatDuration(s.durationSec)}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        {s.score ?? "—"}
+                        {typeof s.maxScore === "number"
+                          ? ` / ${s.maxScore}`
+                          : ""}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        {s.updatedAt
+                          ? new Date(s.updatedAt).toLocaleString()
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <Link
+                          to={`/teacher/assessments/${assignmentId}/submissions/${s.id}`}
+                          className="inline-flex rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700"
+                        >
+                          Ver detalle →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                  {rows.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-3 py-8 text-center text-sm text-gray-500 dark:text-gray-300"
+                      >
+                        No hay envíos con los filtros actuales.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-            <div className="flex items-center justify-between p-2 text-xs opacity-80">
-              <div>
+            {/* Paginación */}
+            <div className="flex flex-col items-center justify-between gap-3 px-3 py-2 text-xs text-gray-600 sm:flex-row dark:text-gray-300">
+              <div className="text-center sm:text-left">
                 Página: {page.page + 1} / {page.totalPages} · Total:{" "}
                 {page.totalElements}
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={prev}
                   disabled={(filters.page ?? 0) <= 0}
-                  className="rounded border px-2 py-1 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800 disabled:opacity-50"
+                  className="rounded-lg border px-3 py-1 text-sm transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
                 >
                   ← Anterior
                 </button>
+                <span className="opacity-70">
+                  {page.page + 1} de {page.totalPages}
+                </span>
                 <button
+                  type="button"
                   onClick={next}
                   disabled={page.page >= page.totalPages - 1}
-                  className="rounded border px-2 py-1 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800 disabled:opacity-50"
+                  className="rounded-lg border px-3 py-1 text-sm transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
                 >
                   Siguiente →
                 </button>
               </div>
             </div>
           </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

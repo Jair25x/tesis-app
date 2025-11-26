@@ -179,341 +179,372 @@ export default function AssignmentsList() {
     }));
   }
 
-  if (isLoading)
+  if (isLoading) {
     return (
-      <div className="min-h-[calc(100vh-64px)] px-4 py-6 sm:px-6 lg:px-8 flex items-start justify-center">
-        <div className="w-full max-w-6xl">
-          <div className="rounded-2xl border bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <p>Cargando…</p>
+      <div className="min-h-[calc(100vh-64px)] w-full bg-gray-50 px-3 py-4 dark:bg-[#1e2a34] sm:px-4 md:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-6xl items-start justify-center">
+          <div className="w-full">
+            <div className="rounded-2xl border bg-white p-6 text-sm shadow-sm dark:border-gray-800 dark:bg-gray-900">
+              Cargando…
+            </div>
           </div>
         </div>
       </div>
     );
-  if (error)
+  }
+
+  if (error) {
     return (
-      <div className="min-h-[calc(100vh-64px)] px-4 py-6 sm:px-6 lg:px-8 flex items-start justify-center">
-        <div className="w-full max-w-6xl">
-          <div className="rounded-2xl border bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <p className="text-red-500">Error al cargar.</p>
+      <div className="min-h-[calc(100vh-64px)] w-full bg-gray-50 px-3 py-4 dark:bg-[#1e2a34] sm:px-4 md:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-6xl items-start justify-center">
+          <div className="w-full">
+            <div className="rounded-2xl border bg-white p-6 text-sm shadow-sm dark:border-gray-800 dark:bg-gray-900">
+              <p className="text-red-500">Error al cargar.</p>
+            </div>
           </div>
         </div>
       </div>
     );
+  }
+
   if (!data) return null;
 
   const page = data as PageResponse<AssignmentSummaryResponse>;
 
+  const selectFilterCls =
+    "w-full rounded-lg border px-2 py-1 text-sm shadow-sm " +
+    "bg-white text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100";
+
   return (
-    <div className="min-h-[calc(100vh-64px)] px-4 py-6 sm:px-6 lg:px-8 flex items-start justify-center">
-      <div className="w-full max-w-6xl space-y-4">
-        {/* Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              Mis asignaciones
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Gestiona estado, ventana y accede a envíos y resumen.
-            </p>
-          </div>
-          <Link
-            to="/teacher/assessments/new"
-            className="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700"
-          >
-            + Nueva asignación
-          </Link>
-        </div>
-
-        {/* Filtros */}
-        <div className="rounded-2xl border bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <label className="flex items-center gap-2 text-sm">
-              <span className="w-24 text-gray-600 dark:text-gray-300">
-                Estado
-              </span>
-              <select
-                className="rounded-lg border px-2 py-1 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-950"
-                value={filters.state ?? ""}
-                onChange={(e) => onChange("state", e.target.value)}
-                aria-label="Filtrar por estado"
-              >
-                <option value="">Todos</option>
-                <option value="DRAFT">Borrador</option>
-                <option value="PUBLISHED">Publicada</option>
-                <option value="CLOSED">Cerrada</option>
-              </select>
-            </label>
-
-            <label className="flex items-center gap-2 text-sm">
-              <span className="w-24 text-gray-600 dark:text-gray-300">
-                Tipo
-              </span>
-              <select
-                className="rounded-lg border px-2 py-1 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-950"
-                value={filters.type ?? ""}
-                onChange={(e) => onChange("type", e.target.value)}
-                aria-label="Filtrar por tipo"
-              >
-                <option value="">Todos</option>
-                <option value="DIAGNOSTIC">Diagnóstico</option>
-                <option value="FORMATIVE">Formativa</option>
-                <option value="SUMMATIVE">Sumativa</option>
-              </select>
-            </label>
-
-            <label className="flex items-center gap-2 text-sm">
-              <span className="w-24 text-gray-600 dark:text-gray-300">
-                Alcance
-              </span>
-              <select
-                className="rounded-lg border px-2 py-1 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-950"
-                value={filters.scope ?? ""}
-                onChange={(e) => onChange("scope", e.target.value)}
-                aria-label="Filtrar por alcance"
-              >
-                <option value="">Todos</option>
-                <option value="CLASSROOM">Aula</option>
-                <option value="PUBLIC">Pública</option>
-              </select>
-            </label>
-
-            <div className="ml-auto flex items-center gap-2">
-              <span className="text-xs opacity-70">Tamaño</span>
-              <select
-                className="rounded-lg border px-2 py-1 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-950"
-                value={filters.size ?? 20}
-                onChange={(e) =>
-                  setFilters((f) => ({
-                    ...f,
-                    size: Number(e.target.value),
-                    page: 0,
-                  }))
-                }
-                aria-label="Elementos por página"
-              >
-                <option value={10}>10 / pág</option>
-                <option value={20}>20 / pág</option>
-                <option value={50}>50 / pág</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Tabla */}
-        <div className="rounded-2xl border bg-white p-0 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-left dark:bg-gray-800/60">
-                <tr className="text-xs uppercase tracking-wide text-gray-600 dark:text-gray-300">
-                  <th className="px-4 py-2">ID</th>
-                  <th className="px-4 py-2">Plantilla</th>
-                  <th className="px-4 py-2">Tipo</th>
-                  <th className="px-4 py-2">Alcance</th>
-                  <th className="px-4 py-2">Estado</th>
-                  <th className="px-4 py-2">Ventana</th>
-                  <th className="px-4 py-2">Opciones</th>
-                </tr>
-              </thead>
-
-              {page.content.length === 0 ? (
-                <tbody>
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center">
-                      <div className="mx-auto max-w-md">
-                        <div className="mb-2 text-base font-medium">
-                          Sin asignaciones
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                          No hay resultados con los filtros actuales.
-                        </p>
-                        <div className="mt-4">
-                          <Link
-                            to="/teacher/assessments/new"
-                            className="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700"
-                          >
-                            Crear una asignación
-                          </Link>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              ) : (
-                <tbody>
-                  {page.content.map((a) => {
-                    const phase =
-                      a.type === "DIAGNOSTIC" ? getDiagnosticPhase(a) : null;
-                    return (
-                      <tr key={a.id} className="border-t dark:border-gray-800">
-                        <td className="px-4 py-2 align-top">
-                          <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-slate-800">
-                            {a.id}
-                          </code>
-                        </td>
-                        <td className="px-4 py-2 align-top">
-                          <div className="font-medium">
-                            {a.templateTitle ?? (
-                              <span className="opacity-60">sin título</span>
-                            )}
-                          </div>
-                          {(a.classroomName || a.classroomId) && (
-                            <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                              Aula: {a.classroomName ?? a.classroomId}
-                            </div>
-                          )}
-                          {/* Fase (sólo si es de tipo diagnóstico) */}
-                          {phase && (
-                            <div className="mt-1 text-xs">
-                              {phaseBadge(phase)}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-2 align-top">
-                          {typeBadge(a.type)}
-                        </td>
-                        <td className="px-4 py-2 align-top">
-                          {scopeBadge(a.scope)}
-                        </td>
-                        <td className="px-4 py-2 align-top">
-                          {stateBadge(a.state)}
-                        </td>
-                        <td className="px-4 py-2 align-top">
-                          <div className="text-xs">
-                            {a.windowStart
-                              ? new Date(a.windowStart).toLocaleString()
-                              : "—"}{" "}
-                            <span className="opacity-60">→</span>{" "}
-                            {a.windowEnd
-                              ? new Date(a.windowEnd).toLocaleString()
-                              : "—"}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2 align-top">
-                          <div className="flex flex-wrap gap-2">
-                            <Link
-                              to={`/teacher/assessments/${a.id}/overview`}
-                              className="rounded-lg border px-3 py-1.5 text-xs transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
-                            >
-                              Resumen
-                            </Link>
-                            <Link
-                              to={`/teacher/assessments/${a.id}/submissions`}
-                              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700"
-                            >
-                              Ver envíos
-                            </Link>
-
-                            <button
-                              onClick={() => setCloningId(a.id)}
-                              className="rounded-lg border px-3 py-1.5 text-xs transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
-                            >
-                              Clonar
-                            </button>
-
-                            {a.state === "DRAFT" && (
-                              <button
-                                onClick={() =>
-                                  setConfirm({ action: "publish", id: a.id })
-                                }
-                                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-700"
-                              >
-                                Publicar
-                              </button>
-                            )}
-
-                            {a.state === "PUBLISHED" && (
-                              <button
-                                onClick={() =>
-                                  setConfirm({ action: "close", id: a.id })
-                                }
-                                className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rose-700"
-                              >
-                                Cerrar
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              )}
-            </table>
-          </div>
-
-          {/* Footer tabla */}
-          <div className="flex flex-col items-center justify-between gap-3 px-4 py-3 text-xs text-gray-600 sm:flex-row dark:text-gray-300">
+    <div className="min-h-[calc(100vh-64px)] w-full bg-gray-50 px-3 py-4 dark:bg-[#1e2a34] sm:px-4 md:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-6xl items-start justify-center">
+        <div className="w-full space-y-4">
+          {/* Header */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              Página: {page.page + 1} / {page.totalPages} · Total:{" "}
-              {page.totalElements}
+              <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+                Mis asignaciones
+              </h1>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                Gestiona estado, ventana y accede a envíos y resumen.
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                disabled={(page.page ?? 0) <= 0}
-                onClick={() =>
-                  setFilters((f) => ({
-                    ...f,
-                    page: Math.max(0, (f.page ?? 0) - 1),
-                  }))
-                }
-                className="rounded-lg border px-3 py-1 text-sm transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
+            <div className="flex w-full justify-start sm:w-auto sm:justify-end">
+              <Link
+                to="/teacher/assessments/new"
+                className="inline-flex w-full items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 sm:w-auto"
               >
-                ← Anterior
-              </button>
-              <span className="opacity-70">
-                {page.page + 1} de {page.totalPages}
-              </span>
-              <button
-                disabled={page.page + 1 >= page.totalPages}
-                onClick={() =>
-                  setFilters((f) => ({
-                    ...f,
-                    page: Math.min(
-                      (page.page ?? 0) + 1,
-                      Math.max(0, page.totalPages - 1)
-                    ),
-                  }))
-                }
-                className="rounded-lg border px-3 py-1 text-sm transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
-              >
-                Siguiente →
-              </button>
+                + Nueva asignación
+              </Link>
             </div>
           </div>
+
+          {/* Filtros */}
+          <div className="rounded-2xl border bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+              <label className="flex flex-col gap-1 text-sm sm:flex-1">
+                <span className="text-xs text-gray-600 dark:text-gray-300">
+                  Estado
+                </span>
+                <select
+                  className={selectFilterCls}
+                  value={filters.state ?? ""}
+                  onChange={(e) => onChange("state", e.target.value)}
+                  aria-label="Filtrar por estado"
+                >
+                  <option value="">Todos</option>
+                  <option value="DRAFT">Borrador</option>
+                  <option value="PUBLISHED">Publicada</option>
+                  <option value="CLOSED">Cerrada</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1 text-sm sm:flex-1">
+                <span className="text-xs text-gray-600 dark:text-gray-300">
+                  Tipo
+                </span>
+                <select
+                  className={selectFilterCls}
+                  value={filters.type ?? ""}
+                  onChange={(e) => onChange("type", e.target.value)}
+                  aria-label="Filtrar por tipo"
+                >
+                  <option value="">Todos</option>
+                  <option value="DIAGNOSTIC">Diagnóstico</option>
+                  <option value="FORMATIVE">Formativa</option>
+                  <option value="SUMMATIVE">Sumativa</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1 text-sm sm:flex-1">
+                <span className="text-xs text-gray-600 dark:text-gray-300">
+                  Alcance
+                </span>
+                <select
+                  className={selectFilterCls}
+                  value={filters.scope ?? ""}
+                  onChange={(e) => onChange("scope", e.target.value)}
+                  aria-label="Filtrar por alcance"
+                >
+                  <option value="">Todos</option>
+                  <option value="CLASSROOM">Aula</option>
+                  <option value="PUBLIC">Pública</option>
+                </select>
+              </label>
+
+              <div className="flex flex-col gap-1 text-sm sm:ml-auto sm:w-auto">
+                <span className="text-xs text-gray-600 dark:text-gray-300">
+                  Tamaño
+                </span>
+                <select
+                  className={selectFilterCls}
+                  value={filters.size ?? 20}
+                  onChange={(e) =>
+                    setFilters((f) => ({
+                      ...f,
+                      size: Number(e.target.value),
+                      page: 0,
+                    }))
+                  }
+                  aria-label="Elementos por página"
+                >
+                  <option value={10}>10 / pág</option>
+                  <option value={20}>20 / pág</option>
+                  <option value={50}>50 / pág</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabla */}
+          <div className="rounded-2xl border bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-left dark:bg-gray-800/60">
+                  <tr className="text-xs uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                    <th className="px-4 py-2">ID</th>
+                    <th className="px-4 py-2">Plantilla</th>
+                    <th className="px-4 py-2">Tipo</th>
+                    <th className="px-4 py-2">Alcance</th>
+                    <th className="px-4 py-2">Estado</th>
+                    <th className="px-4 py-2">Ventana</th>
+                    <th className="px-4 py-2">Opciones</th>
+                  </tr>
+                </thead>
+
+                {page.content.length === 0 ? (
+                  <tbody>
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center">
+                        <div className="mx-auto max-w-md">
+                          <div className="mb-2 text-base font-medium text-gray-900 dark:text-white">
+                            Sin asignaciones
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            No hay resultados con los filtros actuales.
+                          </p>
+                          <div className="mt-4">
+                            <Link
+                              to="/teacher/assessments/new"
+                              className="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700"
+                            >
+                              Crear una asignación
+                            </Link>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                ) : (
+                  <tbody>
+                    {page.content.map((a) => {
+                      const phase =
+                        a.type === "DIAGNOSTIC" ? getDiagnosticPhase(a) : null;
+                      return (
+                        <tr
+                          key={a.id}
+                          className="border-t text-gray-800 dark:border-gray-800 dark:text-gray-100"
+                        >
+                          <td className="px-4 py-2 align-top">
+                            <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-slate-800">
+                              {a.id}
+                            </code>
+                          </td>
+                          <td className="px-4 py-2 align-top">
+                            <div className="font-medium text-gray-900 dark:text-white">
+                              {a.templateTitle ?? (
+                                <span className="opacity-60">sin título</span>
+                              )}
+                            </div>
+                            {(a.classroomName || a.classroomId) && (
+                              <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                                Aula: {a.classroomName ?? a.classroomId}
+                              </div>
+                            )}
+                            {phase && (
+                              <div className="mt-1 text-xs">
+                                {phaseBadge(phase)}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 align-top">
+                            {typeBadge(a.type)}
+                          </td>
+                          <td className="px-4 py-2 align-top">
+                            {scopeBadge(a.scope)}
+                          </td>
+                          <td className="px-4 py-2 align-top">
+                            {stateBadge(a.state)}
+                          </td>
+                          <td className="px-4 py-2 align-top">
+                            <div className="text-xs text-gray-800 dark:text-gray-200">
+                              {a.windowStart
+                                ? new Date(a.windowStart).toLocaleString()
+                                : "—"}{" "}
+                              <span className="opacity-60">→</span>{" "}
+                              {a.windowEnd
+                                ? new Date(a.windowEnd).toLocaleString()
+                                : "—"}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2 align-top">
+                            <div className="flex flex-wrap gap-2">
+                              <Link
+                                to={`/teacher/assessments/${a.id}/overview`}
+                                className="rounded-lg border px-3 py-1.5 text-xs transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
+                              >
+                                Resumen
+                              </Link>
+                              <Link
+                                to={`/teacher/assessments/${a.id}/submissions`}
+                                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700"
+                              >
+                                Ver envíos
+                              </Link>
+
+                              <button
+                                type="button"
+                                onClick={() => setCloningId(a.id)}
+                                className="rounded-lg border px-3 py-1.5 text-xs transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
+                              >
+                                Clonar
+                              </button>
+
+                              {a.state === "DRAFT" && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setConfirm({
+                                      action: "publish",
+                                      id: a.id,
+                                    })
+                                  }
+                                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-700"
+                                >
+                                  Publicar
+                                </button>
+                              )}
+
+                              {a.state === "PUBLISHED" && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setConfirm({
+                                      action: "close",
+                                      id: a.id,
+                                    })
+                                  }
+                                  className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rose-700"
+                                >
+                                  Cerrar
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                )}
+              </table>
+            </div>
+
+            {/* Footer tabla */}
+            <div className="flex flex-col items-center justify-between gap-3 px-4 py-3 text-xs text-gray-600 sm:flex-row dark:text-gray-300">
+              <div className="text-center sm:text-left">
+                Página: {page.page + 1} / {page.totalPages} · Total:{" "}
+                {page.totalElements}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={(page.page ?? 0) <= 0}
+                  onClick={() =>
+                    setFilters((f) => ({
+                      ...f,
+                      page: Math.max(0, (f.page ?? 0) - 1),
+                    }))
+                  }
+                  className="rounded-lg border px-3 py-1 text-sm transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                >
+                  ← Anterior
+                </button>
+                <span className="opacity-70">
+                  {page.page + 1} de {page.totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page.page + 1 >= page.totalPages}
+                  onClick={() =>
+                    setFilters((f) => ({
+                      ...f,
+                      page: Math.min(
+                        (page.page ?? 0) + 1,
+                        Math.max(0, page.totalPages - 1)
+                      ),
+                    }))
+                  }
+                  className="rounded-lg border px-3 py-1 text-sm transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                >
+                  Siguiente →
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Modales */}
+          <ConfirmModal
+            isOpen={!!confirm}
+            onClose={() => setConfirm(null)}
+            onConfirm={doConfirm}
+            title={
+              confirm?.action === "publish"
+                ? "¿Publicar esta asignación?"
+                : "¿Cerrar esta asignación?"
+            }
+            description={
+              confirm?.action === "publish"
+                ? "Los estudiantes podrán comenzarla dentro de la ventana definida."
+                : "Los estudiantes ya no podrán enviar nuevos intentos."
+            }
+            variant={confirm?.action === "publish" ? "success" : "danger"}
+            isLoading={isMutating}
+          />
+
+          <ConfirmModal
+            isOpen={!!cloningId}
+            onClose={() => setCloningId(null)}
+            onConfirm={async () => {
+              if (!cloningId) return;
+              await cloneM.mutateAsync(cloningId);
+              setCloningId(null);
+            }}
+            title="¿Clonar esta asignación?"
+            description="Se creará un borrador con la misma configuración."
+            variant="warning"
+            isLoading={cloneM.isPending}
+          />
         </div>
-
-        {/* Modales */}
-        <ConfirmModal
-          isOpen={!!confirm}
-          onClose={() => setConfirm(null)}
-          onConfirm={doConfirm}
-          title={
-            confirm?.action === "publish"
-              ? "¿Publicar esta asignación?"
-              : "¿Cerrar esta asignación?"
-          }
-          description={
-            confirm?.action === "publish"
-              ? "Los estudiantes podrán comenzarla dentro de la ventana definida."
-              : "Los estudiantes ya no podrán enviar nuevos intentos."
-          }
-          variant={confirm?.action === "publish" ? "success" : "danger"}
-          isLoading={isMutating}
-        />
-
-        <ConfirmModal
-          isOpen={!!cloningId}
-          onClose={() => setCloningId(null)}
-          onConfirm={async () => {
-            if (!cloningId) return;
-            await cloneM.mutateAsync(cloningId);
-            setCloningId(null);
-          }}
-          title="¿Clonar esta asignación?"
-          description="Se creará un borrador con la misma configuración."
-          variant="warning"
-          isLoading={cloneM.isPending}
-        />
       </div>
     </div>
   );

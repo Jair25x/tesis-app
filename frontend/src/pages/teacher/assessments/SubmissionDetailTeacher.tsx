@@ -77,6 +77,12 @@ export default function SubmissionDetailTeacher() {
   const items = useMemo(() => data?.items ?? [], [data?.items]);
   const manualItems = useMemo(() => items.filter(isManual), [items]);
 
+  const defaultDraft = (): ManualDraft => ({
+    score: "",
+    correct: false,
+    feedback: "",
+  });
+
   // Hidrata borradores con score/correct/feedback actuales del BE
   useEffect(() => {
     if (!data) return;
@@ -94,7 +100,7 @@ export default function SubmissionDetailTeacher() {
       nextDrafts[it.submissionItemId] = {
         score,
         correct,
-        feedback: readFeedback(it.feedback), // 👈 hidrata con feedback existente
+        feedback: readFeedback(it.feedback),
       };
       nextShowUi[it.submissionItemId] = true;
     }
@@ -108,20 +114,15 @@ export default function SubmissionDetailTeacher() {
       [itemId]: { ...(d[itemId] ?? defaultDraft()), ...patch },
     }));
 
-  const defaultDraft = (): ManualDraft => ({
-    score: "",
-    correct: false,
-    feedback: "",
-  });
-
   // Carga perezosa de ejercicio
   const ensureExerciseLoaded = async (exerciseId?: string | null) => {
     if (
       !exerciseId ||
       examCache[exerciseId] ||
       loadingSet.current.has(exerciseId)
-    )
+    ) {
       return;
+    }
     loadingSet.current.add(exerciseId);
     try {
       const ex = await getExerciseForExam(exerciseId);
@@ -155,7 +156,7 @@ export default function SubmissionDetailTeacher() {
         : 0;
 
     const feedbackText = d.feedback.trim();
-    // 👇 Enviamos string plano (compat BE). Si algún día tu BE pidiera el objeto, se podría añadir un toggle/env var.
+
     const body: GradeItemBody = {
       score,
       correct: Boolean(d.correct),
@@ -168,7 +169,6 @@ export default function SubmissionDetailTeacher() {
       body,
     });
 
-    // Sincronizamos borrador con lo guardado (y evitamos perder lo escrito)
     setDraft(it.submissionItemId, {
       score,
       correct: body.correct,
@@ -176,328 +176,367 @@ export default function SubmissionDetailTeacher() {
     });
   };
 
-  if (isLoading) return <p className="p-6">Cargando…</p>;
-  if (error) return <p className="p-6 text-red-500">Error al cargar.</p>;
+  if (isLoading) {
+    return (
+      <div className="min-h-[calc(100vh-64px)] w-full bg-gray-50 px-3 py-4 dark:bg-[#1e2a34] sm:px-4 md:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-5xl">
+          <div className="rounded-2xl border bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            Cargando…
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-[calc(100vh-64px)] w-full bg-gray-50 px-3 py-4 dark:bg-[#1e2a34] sm:px-4 md:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-5xl">
+          <div className="rounded-2xl border bg-white p-4 text-sm text-red-500 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            Error al cargar.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!data) return null;
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold">Detalle de envío</h1>
-        <div className="flex gap-2">
-          <Link
-            to={`/teacher/assessments/${assignmentId}/submissions`}
-            className="rounded border px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
-          >
-            ← Volver a envíos
-          </Link>
-          <button
-            onClick={() => void refetch()}
-            disabled={isFetching}
-            className="rounded bg-slate-600 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:opacity-60"
-          >
-            {isFetching ? "Actualizando…" : "Refrescar"}
-          </button>
+    <div className="min-h-[calc(100vh-64px)] w-full bg-gray-50 px-3 py-4 dark:bg-[#1e2a34] sm:px-4 md:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-5xl space-y-4">
+        {/* Header */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-white sm:text-2xl">
+            Detalle de envío
+          </h1>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <Link
+              to={`/teacher/assessments/${assignmentId}/submissions`}
+              className="inline-flex w-full items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-gray-800 shadow-sm transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800 sm:w-auto"
+            >
+              ← Volver a envíos
+            </Link>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+              className="inline-flex w-full items-center justify-center rounded-lg bg-slate-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-60 sm:w-auto"
+            >
+              {isFetching ? "Actualizando…" : "Refrescar"}
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* Resumen */}
-      <div className="mb-4 text-sm opacity-80">
-        <div>
-          ID: <strong>{data.submissionId}</strong>
+        {/* Resumen */}
+        <div className="rounded-2xl border bg-white p-4 text-sm text-gray-800 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100">
+          <div>
+            ID:{" "}
+            <strong className="font-mono text-xs sm:text-sm">
+              {data.submissionId}
+            </strong>
+          </div>
+          <div>
+            Estado: <strong>{data.status}</strong>
+          </div>
+          <div>
+            Puntaje:{" "}
+            <strong>
+              {typeof data.score === "number" ? data.score : "—"}
+              {typeof data.maxScore === "number" ? ` / ${data.maxScore}` : ""}
+            </strong>
+          </div>
         </div>
-        <div>
-          Estado: <strong>{data.status}</strong>
-        </div>
-        <div>
-          Puntaje:{" "}
-          <strong>
-            {typeof data.score === "number" ? data.score : "—"}
-            {typeof data.maxScore === "number" ? ` / ${data.maxScore}` : ""}
-          </strong>
-        </div>
-      </div>
 
-      {/* Ítems */}
-      <div className="space-y-6">
-        {items
-          .slice()
-          .sort((a, b) => a.position - b.position)
-          .map((it) => {
-            const d = drafts[it.submissionItemId] ?? defaultDraft();
-            const max = it.points ?? 0;
+        {/* Ítems */}
+        <div className="space-y-4">
+          {items
+            .slice()
+            .sort((a, b) => a.position - b.position)
+            .map((it) => {
+              const d = drafts[it.submissionItemId] ?? defaultDraft();
+              const max = it.points ?? 0;
 
-            const exerciseLite = it.exerciseId
-              ? examCache[it.exerciseId]
-              : null;
-            const tplKey: TemplateType | null =
-              (exerciseLite?.templateType as TemplateType | undefined) ??
-              (it.exerciseType as TemplateType | undefined) ??
-              null;
+              const exerciseLite = it.exerciseId
+                ? examCache[it.exerciseId]
+                : null;
+              const tplKey: TemplateType | null =
+                (exerciseLite?.templateType as TemplateType | undefined) ??
+                (it.exerciseType as TemplateType | undefined) ??
+                null;
 
-            const mod = tplKey ? registry[tplKey] : undefined;
-            const loading = it.exerciseId
-              ? loadingSet.current.has(it.exerciseId)
-              : false;
+              const mod = tplKey ? registry[tplKey] : undefined;
+              const loading = it.exerciseId
+                ? loadingSet.current.has(it.exerciseId)
+                : false;
 
-            const decodedValue =
-              showUi[it.submissionItemId] && mod
-                ? mod.read(it.answer ? JSON.stringify(it.answer) : undefined)
-                : undefined;
+              const decodedValue =
+                showUi[it.submissionItemId] && mod
+                  ? mod.read(it.answer ? JSON.stringify(it.answer) : undefined)
+                  : undefined;
 
-            const guardedParams =
-              exerciseLite && mod ? mod.guard(exerciseLite.parameters) : null;
+              const guardedParams =
+                exerciseLite && mod ? mod.guard(exerciseLite.parameters) : null;
 
-            const quicks = quicksFor(max);
-            const onQuick = (q: number) => {
-              setDraft(it.submissionItemId, {
-                score: q,
-                ...(q === 0 ? { correct: false } : {}),
-                ...(q === max ? { correct: true } : {}),
-              });
-            };
+              const quicks = quicksFor(max);
+              const onQuick = (q: number) => {
+                setDraft(it.submissionItemId, {
+                  score: q,
+                  ...(q === 0 ? { correct: false } : {}),
+                  ...(q === max ? { correct: true } : {}),
+                });
+              };
 
-            const beFeedback = readFeedback(it.feedback);
+              const beFeedback = readFeedback(it.feedback);
 
-            return (
-              <section
-                key={it.submissionItemId}
-                className="rounded-xl border p-4 shadow-sm dark:border-gray-700"
-                aria-labelledby={`item-${it.submissionItemId}`}
-              >
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <div
-                    className="font-medium"
-                    id={`item-${it.submissionItemId}`}
-                  >
-                    Ítem {it.position} · {it.points} pts · {it.gradingMode}
+              return (
+                <section
+                  key={it.submissionItemId}
+                  className="rounded-2xl border bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-gray-900"
+                  aria-labelledby={`item-${it.submissionItemId}`}
+                >
+                  <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div
+                      className="font-medium text-gray-900 dark:text-white"
+                      id={`item-${it.submissionItemId}`}
+                    >
+                      Ítem {it.position} · {it.points} pts · {it.gradingMode}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      OA: {it.objectiveId?.slice(0, 8)}… · EX:{" "}
+                      {it.exerciseId?.slice(0, 8)}…
+                    </div>
                   </div>
-                  <div className="text-xs opacity-70">
-                    OA: {it.objectiveId?.slice(0, 8)}… · EX:{" "}
-                    {it.exerciseId?.slice(0, 8)}…
-                  </div>
-                </div>
 
-                {it.statementRendered ? (
-                  <div
-                    className="prose prose-sm max-w-none dark:prose-invert mb-3"
-                    dangerouslySetInnerHTML={{ __html: it.statementRendered }}
-                  />
-                ) : null}
-
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <label className="inline-flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={Boolean(showUi[it.submissionItemId])}
-                      onChange={(e) =>
-                        setShowUi((s) => ({
-                          ...s,
-                          [it.submissionItemId]: e.target.checked,
-                        }))
-                      }
+                  {it.statementRendered ? (
+                    <div
+                      className="prose prose-sm mb-3 max-w-none dark:prose-invert"
+                      dangerouslySetInnerHTML={{ __html: it.statementRendered }}
                     />
-                    <span>Ver UI del ítem (solo vista)</span>
-                  </label>
+                  ) : null}
 
-                  <div className="text-xs opacity-70">
-                    <span className="mr-3">
-                      Correcto:{" "}
-                      <strong>
-                        {typeof it.correct === "boolean"
-                          ? it.correct
-                            ? "Sí"
-                            : "No"
-                          : "—"}
-                      </strong>
-                    </span>
-                    <span>
-                      Puntaje actual:{" "}
-                      <strong>
-                        {typeof it.score === "number" ? it.score : "—"}
-                      </strong>
-                    </span>
-                  </div>
-                </div>
-
-                {showUi[it.submissionItemId] ? (
-                  <div className="relative mb-3 rounded-lg border bg-white p-3 dark:border-gray-800 dark:bg-gray-800">
-                    {!tplKey || !mod ? (
-                      <div className="text-sm opacity-70">
-                        Tipo no soportado por el visor docente.
-                        {tplKey ? ` (${tplKey})` : " (sin tipo)"}
-                      </div>
-                    ) : loading && !exerciseLite ? (
-                      <div
-                        className="text-sm opacity-70"
-                        aria-live="polite"
-                        aria-busy="true"
-                      >
-                        Cargando parámetros del ejercicio…
-                      </div>
-                    ) : !exerciseLite ? (
-                      <div className="text-sm opacity-70">
-                        No se pudieron cargar los parámetros del ejercicio.
-                      </div>
-                    ) : !guardedParams ? (
-                      <div className="text-sm opacity-70">
-                        Parámetros inválidos o incompletos para esta plantilla.
-                      </div>
-                    ) : (
-                      <>
-                        <div className="opacity-100 pointer-events-none select-none">
-                          {
-                            mod.Render({
-                              params: guardedParams,
-                              value: decodedValue as never,
-                              onChange: () => {},
-                              statementHtml:
-                                it.statementRendered ??
-                                exerciseLite.statementRendered ??
-                                null,
-                              submissionItemId: it.submissionItemId,
-                            }) as JSX.Element
-                          }
-                        </div>
-                        <span className="absolute right-2 top-2 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-80">
-                          Solo vista
-                        </span>
-                      </>
-                    )}
-                  </div>
-                ) : null}
-
-                {it.answer ? (
-                  <details className="mb-3 rounded border p-2 text-sm dark:border-gray-700 dark:bg-gray-900">
-                    <summary className="cursor-pointer select-none text-xs font-medium">
-                      Ver respuesta JSON
-                    </summary>
-                    <pre className="mt-2 max-h-40 overflow-auto rounded bg-gray-50 p-2 text-xs dark:bg-gray-950">
-                      {toJsonPretty(it.answer)}
-                    </pre>
-                  </details>
-                ) : (
-                  <div className="mb-3 text-sm opacity-70">Sin respuesta.</div>
-                )}
-
-                {/* Feedback actual del BE (si existiera) */}
-                {beFeedback ? (
-                  <div className="mb-3 rounded border p-2 text-xs dark:border-gray-700 dark:bg-gray-900">
-                    <span className="font-semibold">Feedback actual:</span>{" "}
-                    <span className="opacity-90">{beFeedback}</span>
-                  </div>
-                ) : null}
-
-                {/* Calificación manual */}
-                {isManual(it) ? (
-                  <div className="rounded-md border p-3 dark:border-gray-600">
-                    <div className="mb-2 text-sm font-semibold">
-                      Calificar manualmente
-                    </div>
-
-                    <div className="mb-3 flex items-center gap-2">
-                      <span className="text-sm opacity-80">Marca:</span>
-                      <div className="inline-flex overflow-hidden rounded-lg border dark:border-gray-700">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDraft(it.submissionItemId, { correct: true })
-                          }
-                          className={`px-3 py-1.5 text-sm ${
-                            d.correct
-                              ? "bg-emerald-600 text-white"
-                              : "bg-white text-gray-800 dark:bg-gray-900 dark:text-gray-100"
-                          }`}
-                        >
-                          Correcto
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDraft(it.submissionItemId, { correct: false })
-                          }
-                          className={`px-3 py-1.5 text-sm ${
-                            !d.correct
-                              ? "bg-rose-600 text-white"
-                              : "bg-white text-gray-800 dark:bg-gray-900 dark:text-gray-100"
-                          }`}
-                        >
-                          Incorrecto
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <span className="text-sm opacity-80">Puntaje:</span>
-                      <div className="inline-flex gap-1">
-                        {quicks.map((q) => (
-                          <button
-                            key={`q-${it.submissionItemId}-${q}`}
-                            type="button"
-                            onClick={() => onQuick(q)}
-                            className="rounded border px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            {q}
-                          </button>
-                        ))}
-                      </div>
+                  <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <label className="inline-flex items-center gap-2 text-xs sm:text-sm">
                       <input
-                        type="number"
-                        min={0}
-                        max={max}
-                        value={typeof d.score === "number" ? d.score : ""}
-                        onChange={(e) => {
-                          const n = Number(e.target.value);
-                          setDraft(it.submissionItemId, {
-                            score: Number.isFinite(n)
-                              ? Math.max(0, Math.min(max, n))
-                              : "",
-                          });
-                        }}
-                        className="w-24 rounded border px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900"
-                        aria-label="Puntaje"
-                      />
-                      <span className="text-xs opacity-70">0 … {max}</span>
-                    </div>
-
-                    <div className="mb-3">
-                      <textarea
-                        className="w-full rounded border px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900"
-                        rows={3}
-                        placeholder="Feedback opcional para el alumno"
-                        value={d.feedback}
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={Boolean(showUi[it.submissionItemId])}
                         onChange={(e) =>
-                          setDraft(it.submissionItemId, {
-                            feedback: e.target.value,
-                          })
+                          setShowUi((s) => ({
+                            ...s,
+                            [it.submissionItemId]: e.target.checked,
+                          }))
                         }
                       />
-                    </div>
+                      <span>Ver UI del ítem (solo vista)</span>
+                    </label>
 
-                    <div>
-                      <button
-                        onClick={() => void handleSave(it)}
-                        disabled={gradeM.isPending}
-                        className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
-                      >
-                        {gradeM.isPending
-                          ? "Guardando…"
-                          : "Guardar calificación"}
-                      </button>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      <span className="mr-3">
+                        Correcto:{" "}
+                        <strong>
+                          {typeof it.correct === "boolean"
+                            ? it.correct
+                              ? "Sí"
+                              : "No"
+                            : "—"}
+                        </strong>
+                      </span>
+                      <span>
+                        Puntaje actual:{" "}
+                        <strong>
+                          {typeof it.score === "number" ? it.score : "—"}
+                        </strong>
+                      </span>
                     </div>
                   </div>
-                ) : null}
-              </section>
-            );
-          })}
 
-        {manualItems.length === 0 ? (
-          <div className="rounded border p-4 text-sm opacity-70 dark:border-gray-700">
-            No hay ítems manuales en este envío.
-          </div>
-        ) : null}
+                  {/* UI del ítem */}
+                  {showUi[it.submissionItemId] ? (
+                    <div className="relative mb-3 rounded-lg border bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800">
+                      {!tplKey || !mod ? (
+                        <div className="text-sm text-gray-600 dark:text-gray-300">
+                          Tipo no soportado por el visor docente.
+                          {tplKey ? ` (${tplKey})` : " (sin tipo)"}
+                        </div>
+                      ) : loading && !exerciseLite ? (
+                        <div
+                          className="text-sm text-gray-600 dark:text-gray-300"
+                          aria-live="polite"
+                          aria-busy="true"
+                        >
+                          Cargando parámetros del ejercicio…
+                        </div>
+                      ) : !exerciseLite ? (
+                        <div className="text-sm text-gray-600 dark:text-gray-300">
+                          No se pudieron cargar los parámetros del ejercicio.
+                        </div>
+                      ) : !guardedParams ? (
+                        <div className="text-sm text-gray-600 dark:text-gray-300">
+                          Parámetros inválidos o incompletos para esta
+                          plantilla.
+                        </div>
+                      ) : (
+                        <>
+                          <div className="pointer-events-none select-none opacity-100">
+                            {
+                              mod.Render({
+                                params: guardedParams,
+                                value: decodedValue as never,
+                                onChange: () => {},
+                                statementHtml:
+                                  it.statementRendered ??
+                                  exerciseLite.statementRendered ??
+                                  null,
+                                submissionItemId: it.submissionItemId,
+                              }) as JSX.Element
+                            }
+                          </div>
+                          <span className="absolute right-2 top-2 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-80">
+                            Solo vista
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {it.answer ? (
+                    <details className="mb-3 rounded border p-2 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                      <summary className="cursor-pointer select-none font-medium">
+                        Ver respuesta JSON
+                      </summary>
+                      <pre className="mt-2 max-h-40 overflow-auto rounded bg-gray-50 p-2 text-[11px] dark:bg-black">
+                        {toJsonPretty(it.answer)}
+                      </pre>
+                    </details>
+                  ) : (
+                    <div className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                      Sin respuesta.
+                    </div>
+                  )}
+
+                  {/* Feedback actual del BE (si existiera) */}
+                  {beFeedback ? (
+                    <div className="mb-3 rounded border p-2 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                      <span className="font-semibold">Feedback actual:</span>{" "}
+                      <span className="opacity-90">{beFeedback}</span>
+                    </div>
+                  ) : null}
+
+                  {/* Calificación manual */}
+                  {isManual(it) ? (
+                    <div className="rounded-lg border p-3 text-sm text-gray-800 dark:border-gray-600 dark:text-gray-100">
+                      <div className="mb-2 font-semibold">
+                        Calificar manualmente
+                      </div>
+
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <span className="text-xs opacity-80 sm:text-sm">
+                          Marca:
+                        </span>
+                        <div className="inline-flex overflow-hidden rounded-lg border dark:border-gray-700">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraft(it.submissionItemId, { correct: true })
+                            }
+                            className={`px-3 py-1.5 text-xs sm:text-sm ${
+                              d.correct
+                                ? "bg-emerald-600 text-white"
+                                : "bg-white text-gray-800 dark:bg-gray-900 dark:text-gray-100"
+                            }`}
+                          >
+                            Correcto
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraft(it.submissionItemId, { correct: false })
+                            }
+                            className={`px-3 py-1.5 text-xs sm:text-sm ${
+                              !d.correct
+                                ? "bg-rose-600 text-white"
+                                : "bg-white text-gray-800 dark:bg-gray-900 dark:text-gray-100"
+                            }`}
+                          >
+                            Incorrecto
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <span className="text-xs opacity-80 sm:text-sm">
+                          Puntaje:
+                        </span>
+                        <div className="inline-flex flex-wrap gap-1">
+                          {quicks.map((q) => (
+                            <button
+                              key={`q-${it.submissionItemId}-${q}`}
+                              type="button"
+                              onClick={() => onQuick(q)}
+                              className="rounded border px-2 py-1 text-[11px] hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                            >
+                              {q}
+                            </button>
+                          ))}
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={max}
+                          value={typeof d.score === "number" ? d.score : ""}
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
+                            setDraft(it.submissionItemId, {
+                              score: Number.isFinite(n)
+                                ? Math.max(0, Math.min(max, n))
+                                : "",
+                            });
+                          }}
+                          className="w-24 rounded border px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900"
+                          aria-label="Puntaje"
+                        />
+                        <span className="text-xs opacity-70">0 … {max}</span>
+                      </div>
+
+                      <div className="mb-3">
+                        <textarea
+                          className="w-full rounded border px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900"
+                          rows={3}
+                          placeholder="Feedback opcional para el alumno"
+                          value={d.feedback}
+                          onChange={(e) =>
+                            setDraft(it.submissionItemId, {
+                              feedback: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => void handleSave(it)}
+                          disabled={gradeM.isPending}
+                          className="inline-flex items-center rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          {gradeM.isPending
+                            ? "Guardando…"
+                            : "Guardar calificación"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+              );
+            })}
+
+          {manualItems.length === 0 ? (
+            <div className="rounded-2xl border bg-white p-4 text-sm text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+              No hay ítems manuales en este envío.
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

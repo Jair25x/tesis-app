@@ -1,3 +1,4 @@
+// src/features/assessments/modules/adapters/NUMBER_WORDS_BIDIR.ts
 // NUMBER_WORDS_BIDIR adapter (assessment)
 import type { ExamAdapter } from "../../../exercises/shared/types";
 import type { NumberWordsParams } from "../../../../types/exercise/TemplateParams";
@@ -14,7 +15,7 @@ const MODULE: ExamAdapter<NumberWordsParams, UIValue, Wire> = {
   guard: CORE.guard,
   read: CORE.read,
 
-  isValid: (v, params) => CORE.isValid(v ?? "", params),
+  isValid: (v, params) => CORE.isValid((v ?? "") as string, params),
 
   Render: (props) =>
     CORE.Render({
@@ -23,28 +24,26 @@ const MODULE: ExamAdapter<NumberWordsParams, UIValue, Wire> = {
       onChange: (next: string) => props.onChange(next),
     }),
 
-  write: (v: unknown, params?: NumberWordsParams): Wire => {
-    const direction = params?.direction ?? "WORDS_TO_DIGITS";
-
-    // Ya numérico
+  write: (v: unknown): Wire => {
+    // Si ya viene como número, lo respetamos
     if (typeof v === "number" && Number.isFinite(v)) {
       return { template: "NUMBER_WORDS_BIDIR", value: v };
     }
 
     if (typeof v === "string") {
-      if (direction === "DIGITS_TO_WORDS") {
-        // Esperamos palabras → normaliza texto
+      const trimmed = v.trim();
+      // Si parece número estricto → lo enviamos numérico
+      const n = toNumberStrict(trimmed);
+      if (n !== null) {
         return {
           template: "NUMBER_WORDS_BIDIR",
-          value: normalizeWords(v),
+          value: n,
         };
       }
-
-      // WORDS_TO_DIGITS → intentamos número; si no, 0
-      const n = toNumberStrict(v);
+      // Si no es número → lo tratamos como palabras normalizadas
       return {
         template: "NUMBER_WORDS_BIDIR",
-        value: n !== null ? n : 0,
+        value: normalizeWords(trimmed),
       };
     }
 

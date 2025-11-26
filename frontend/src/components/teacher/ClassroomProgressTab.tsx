@@ -1,4 +1,3 @@
-// src/components/teacher/ClassroomProgressTab.tsx
 // Requiere: npm i recharts xlsx
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -43,40 +42,44 @@ type PieDatum = {
   key: "mastered" | "inProgress" | "notStarted";
 };
 
-const PIE_COLORS = ["#10B981", "#F59E0B", "#9CA3AF"]; // emerald, amber, gray
+const PIE_COLORS = ["#10B981", "#F59E0B", "#9CA3AF"];
 const LS_KEY_CURR = "teacher:lastCurriculumId";
 
-/** Guard: ¿existe 'role' (privado)? */
 function hasPrivateRole(m: unknown): m is { role: MemberRole } {
   return (
     !!m && typeof m === "object" && "role" in (m as Record<string, unknown>)
   );
 }
 
+interface ClassroomProgressTabProps {
+  classroomId: string;
+}
+
 export default function ClassroomProgressTab({
   classroomId,
-}: {
-  classroomId: string;
-}) {
+}: ClassroomProgressTabProps) {
   const { curricula } = useCurriculum();
   const { byId } = useMembersDirectory(classroomId);
 
-  // Persistencia (localStorage) del curriculumId
+  // Persistencia curriculumId
   const [curriculumId, setCurriculumId] = useState<string | undefined>(() => {
     const saved = localStorage.getItem(LS_KEY_CURR) || "";
     return saved || undefined;
   });
+
   useEffect(() => {
-    if (curriculumId) localStorage.setItem(LS_KEY_CURR, curriculumId);
-    else localStorage.removeItem(LS_KEY_CURR);
+    if (curriculumId) {
+      localStorage.setItem(LS_KEY_CURR, curriculumId);
+    } else {
+      localStorage.removeItem(LS_KEY_CURR);
+    }
   }, [curriculumId]);
 
-  // Filtro, modo de gráfico y rango de serie
+  // Filtros UI
   const [query, setQuery] = useState("");
   const [showPercent, setShowPercent] = useState(false);
   const [range, setRange] = useState<"today" | "7d" | "14d">("7d");
 
-  // Datos principales
   const { data, isLoading } = useClassroomOverview(classroomId, curriculumId);
   const { data: series, isLoading: isSeriesLoading } = useClassroomSeries(
     classroomId,
@@ -84,16 +87,15 @@ export default function ClassroomProgressTab({
     range
   );
 
-  // Nombre amigable: usa fullName si viene; marca roles no-estudiante de forma segura
   const displayName = (studentId: string) => {
-    const m = byId.get(studentId); // MemberPublicDto | undefined
+    const m = byId.get(studentId);
     const base = m?.fullName?.trim()
       ? m.fullName.trim()
       : studentId.slice(0, 8);
 
-    let role: MemberRole | undefined = m?.safeRole as MemberRole | undefined; // OWNER | STUDENT
+    let role: MemberRole | undefined = m?.safeRole as MemberRole | undefined;
     if (!role && hasPrivateRole(m)) {
-      role = m.role; // Si el BE, por error, expone 'role' en público, lo usamos defensivamente
+      role = m.role;
     }
 
     if (role && role !== "STUDENT") {
@@ -102,7 +104,7 @@ export default function ClassroomProgressTab({
     return base;
   };
 
-  // Filtrado por query (case-insensitive) usando displayName y uuid
+  // Filtrado por alumno
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return data ?? [];
@@ -110,25 +112,25 @@ export default function ClassroomProgressTab({
       const label = displayName(s.studentId).toLowerCase();
       return label.includes(q) || s.studentId.toLowerCase().includes(q);
     });
-  }, [data, query]);
+  }, [data, query, byId]);
 
-  // Dataset por alumno (siempre con accuracy)
-  const barData: BarDatum[] = useMemo(() => {
-    return (filtered ?? []).map((s) => {
-      const a = s.overview.dailyAttempts;
-      const c = s.overview.dailyCorrect;
-      const acc = a > 0 ? Math.round((c / a) * 100) : 0;
-      return {
-        id: s.studentId,
-        label: displayName(s.studentId),
-        attempts: a,
-        correct: c,
-        accuracy: acc,
-      };
-    });
-  }, [filtered]);
+  const barData: BarDatum[] = useMemo(
+    () =>
+      (filtered ?? []).map((s) => {
+        const a = s.overview.dailyAttempts;
+        const c = s.overview.dailyCorrect;
+        const acc = a > 0 ? Math.round((c / a) * 100) : 0;
+        return {
+          id: s.studentId,
+          label: displayName(s.studentId),
+          attempts: a,
+          correct: c,
+          accuracy: acc,
+        };
+      }),
+    [filtered, byId]
+  );
 
-  // Agregados del aula (sobre filtrados)
   const totals = useMemo(() => {
     const base = {
       attempts: 0,
@@ -149,12 +151,14 @@ export default function ClassroomProgressTab({
       base.mastered += s.overview.masteredObjectives;
       base.inProgress += s.overview.inProgressObjectives;
       base.notStarted += s.overview.notStartedObjectives;
+
       if (s.overview.dailyAttempts > 0) {
         base.studentsTriedToday += 1;
         accSum += s.overview.dailyCorrect / s.overview.dailyAttempts;
         accCount += 1;
       }
     }
+
     base.avgAccuracy = accCount ? Math.round((accSum / accCount) * 100) : 0;
     return base;
   }, [filtered]);
@@ -168,11 +172,10 @@ export default function ClassroomProgressTab({
     [totals.mastered, totals.inProgress, totals.notStarted]
   );
 
-  // Serie diaria (aula) — normaliza datos
   const seriesData = useMemo(
     () =>
       (series ?? []).map((d) => ({
-        date: d.date, // YYYY-MM-DD
+        date: d.date,
         attempts: d.attempts,
         correct: d.correct,
         activeStudents: d.activeStudents ?? 0,
@@ -180,7 +183,6 @@ export default function ClassroomProgressTab({
     [series]
   );
 
-  // Export CSV (sobre filtrados)
   const handleExportCsv = () => {
     const rows = [
       [
@@ -223,7 +225,6 @@ export default function ClassroomProgressTab({
     URL.revokeObjectURL(url);
   };
 
-  // Export Excel (sobre filtrados)
   const handleExportExcel = () => {
     const rows = filtered.map((s) => {
       const a = s.overview.dailyAttempts;
@@ -260,18 +261,23 @@ export default function ClassroomProgressTab({
         : String(name);
     return [num, label];
   };
+
   const yTickFormatter = (v: number) => (showPercent ? `${v}%` : `${v}`);
 
+  const totalElements = filtered.length;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 rounded-2xl border bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:p-6">
       {/* Filtros + acciones */}
-      <div className="flex items-end justify-between gap-2 flex-wrap">
-        <div className="flex items-end gap-3 flex-wrap">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col flex-wrap gap-3 sm:flex-row sm:items-end">
           {curricula?.length ? (
-            <label className="text-sm inline-flex flex-col gap-1">
-              <span className="text-xs">Currículo (opcional)</span>
+            <label className="flex flex-col text-sm sm:w-64">
+              <span className="mb-1 text-xs text-gray-700 dark:text-gray-200">
+                Currículo (opcional)
+              </span>
               <select
-                className="border rounded px-2 py-1 w-72 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                className="w-full rounded-lg border px-2 py-1 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                 value={curriculumId ?? ""}
                 onChange={(e) => setCurriculumId(e.target.value || undefined)}
               >
@@ -283,41 +289,43 @@ export default function ClassroomProgressTab({
                 ))}
               </select>
             </label>
-          ) : (
-            <div />
-          )}
+          ) : null}
 
-          <label className="text-sm inline-flex flex-col gap-1">
-            <span className="text-xs">Buscar alumno</span>
+          <label className="flex flex-col text-sm sm:w-64">
+            <span className="mb-1 text-xs text-gray-700 dark:text-gray-200">
+              Buscar alumno
+            </span>
             <input
               type="text"
-              className="border rounded px-2 py-1 w-64 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              className="w-full rounded-lg border px-2 py-1 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white"
               placeholder="Nombre o UUID…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
           </label>
 
-          <label className="text-sm inline-flex items-center gap-2 ml-2">
+          <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
             <input
               type="checkbox"
               checked={showPercent}
               onChange={(e) => setShowPercent(e.target.checked)}
             />
-            <span className="select-none">Mostrar % acierto</span>
+            Mostrar % acierto
           </label>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
+            type="button"
             onClick={handleExportCsv}
-            className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-700"
+            className="rounded-lg border px-3 py-1.5 text-xs text-gray-800 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-700 sm:text-sm"
           >
             ⬇️ CSV
           </button>
           <button
+            type="button"
             onClick={handleExportExcel}
-            className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-700"
+            className="rounded-lg border px-3 py-1.5 text-xs text-gray-800 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-700 sm:text-sm"
           >
             ⬇️ Excel
           </button>
@@ -325,7 +333,7 @@ export default function ClassroomProgressTab({
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard title="Intentos hoy" value={totals.attempts} />
         <KpiCard title="Correctos hoy" value={totals.correct} />
         <KpiCard
@@ -344,23 +352,23 @@ export default function ClassroomProgressTab({
         />
       </div>
 
-      {/* Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      {/* Gráficos principales */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
         {/* Barras por alumno */}
-        <div className="col-span-1 lg:col-span-3 rounded border p-3 dark:border-gray-700 bg-white dark:bg-gray-800">
-          <div className="text-sm font-semibold mb-2">
+        <div className="col-span-1 overflow-hidden rounded-2xl border bg-white p-3 dark:border-gray-700 dark:bg-gray-800 md:col-span-3">
+          <div className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
             {showPercent
               ? "Precisión (%) por alumno"
               : "Intentos vs Correctos (por alumno)"}
           </div>
-          <div className="h-72">
+          <div className="h-64 sm:h-72">
             {isLoading ? (
               <SkeletonChart />
             ) : barData.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={barData}
-                  margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
+                  margin={{ top: 8, right: 16, left: 0, bottom: 40 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="label" />
@@ -396,11 +404,11 @@ export default function ClassroomProgressTab({
         </div>
 
         {/* Pie global aula */}
-        <div className="col-span-1 lg:col-span-2 rounded border p-3 dark:border-gray-700 bg-white dark:bg-gray-800">
-          <div className="text-sm font-semibold mb-2">
+        <div className="col-span-1 overflow-hidden rounded-2xl border bg-white p-3 dark:border-gray-700 dark:bg-gray-800 md:col-span-2">
+          <div className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
             Distribución de OA (aula)
           </div>
-          <div className="h-72">
+          <div className="h-64 sm:h-72">
             {isLoading ? (
               <SkeletonChart />
             ) : pieData[0].value + pieData[1].value + pieData[2].value > 0 ? (
@@ -436,14 +444,16 @@ export default function ClassroomProgressTab({
         </div>
       </div>
 
-      {/* Serie diaria del aula */}
-      <div className="rounded border p-3 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-sm font-semibold">Actividad diaria (aula)</div>
-          <label className="text-xs inline-flex items-center gap-2">
+      {/* Serie diaria */}
+      <div className="overflow-hidden rounded-2xl border bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+        <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+            Actividad diaria (aula)
+          </div>
+          <label className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
             <span>Rango:</span>
             <select
-              className="border rounded px-2 py-1 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              className="rounded-lg border px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
               value={range}
               onChange={(e) =>
                 setRange(e.target.value as "today" | "7d" | "14d")
@@ -455,14 +465,14 @@ export default function ClassroomProgressTab({
             </select>
           </label>
         </div>
-        <div className="h-56">
+        <div className="h-56 sm:h-64">
           {isSeriesLoading ? (
             <SkeletonChart />
           ) : seriesData.length ? (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={seriesData}
-                margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
+                margin={{ top: 8, right: 16, left: 0, bottom: 32 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
@@ -489,67 +499,138 @@ export default function ClassroomProgressTab({
         </div>
       </div>
 
-      {/* Tabla compacta con link a detalle */}
-      <div className="rounded border dark:border-gray-700 bg-white dark:bg-gray-800 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 dark:bg-gray-700/50">
-            <tr>
-              <Th>Alumno</Th>
-              <Th className="text-center">Intentos hoy</Th>
-              <Th className="text-center">Correctos hoy</Th>
-              <Th className="text-center">Dominados</Th>
-              <Th className="text-center">En progreso</Th>
-              <Th className="text-center">No iniciados</Th>
-              <Th className="text-center">Detalle</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
+      {/* Lista compacta (MÓVIL) */}
+      <div className="space-y-2 md:hidden">
+        {isLoading ? (
+          <div className="rounded-2xl border bg-white p-3 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            Cargando...
+          </div>
+        ) : !totalElements ? (
+          <div className="rounded-2xl border bg-white p-3 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            Sin datos.
+          </div>
+        ) : (
+          filtered.map((s) => (
+            <div
+              key={s.studentId}
+              className="rounded-2xl border bg-white p-3 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-800"
+            >
+              <div className="mb-1 font-mono text-sm text-gray-900 dark:text-white">
+                {displayName(s.studentId)}
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-700 dark:text-gray-200">
+                <div>
+                  Intentos hoy:{" "}
+                  <span className="font-semibold">
+                    {s.overview.dailyAttempts}
+                  </span>
+                </div>
+                <div>
+                  Correctos hoy:{" "}
+                  <span className="font-semibold">
+                    {s.overview.dailyCorrect}
+                  </span>
+                </div>
+                <div>
+                  Dominados:{" "}
+                  <span className="font-semibold">
+                    {s.overview.masteredObjectives}
+                  </span>
+                </div>
+                <div>
+                  En progreso:{" "}
+                  <span className="font-semibold">
+                    {s.overview.inProgressObjectives}
+                  </span>
+                </div>
+                <div className="col-span-2">
+                  No iniciados:{" "}
+                  <span className="font-semibold">
+                    {s.overview.notStartedObjectives}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-2 flex justify-end">
+                <Link
+                  className="rounded-lg border px-2 py-1 text-xs transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-700"
+                  to={`/teacher/classrooms/${classroomId}/students/${s.studentId}`}
+                >
+                  Ver detalle
+                </Link>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Tabla compacta (DESKTOP) */}
+      <div className="hidden md:block">
+        <div className="overflow-x-auto rounded-2xl border bg-white dark:border-gray-700 dark:bg-gray-800">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-700/50">
               <tr>
-                <td colSpan={7} className="p-3 text-center">
-                  Cargando...
-                </td>
+                <Th>Alumno</Th>
+                <Th className="text-center">Intentos hoy</Th>
+                <Th className="text-center">Correctos hoy</Th>
+                <Th className="text-center">Dominados</Th>
+                <Th className="text-center">En progreso</Th>
+                <Th className="text-center">No iniciados</Th>
+                <Th className="text-center">Detalle</Th>
               </tr>
-            ) : filtered.length ? (
-              filtered.map((s) => (
-                <tr key={s.studentId} className="border-t dark:border-gray-700">
-                  <Td mono>{displayName(s.studentId)}</Td>
-                  <Td center>{s.overview.dailyAttempts}</Td>
-                  <Td center>{s.overview.dailyCorrect}</Td>
-                  <Td center>✅ {s.overview.masteredObjectives}</Td>
-                  <Td center>🟡 {s.overview.inProgressObjectives}</Td>
-                  <Td center>⚪ {s.overview.notStartedObjectives}</Td>
-                  <Td center>
-                    <Link
-                      className="rounded border px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700"
-                      to={`/teacher/classrooms/${classroomId}/students/${s.studentId}`}
-                    >
-                      Ver
-                    </Link>
-                  </Td>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="p-3 text-center">
+                    Cargando...
+                  </td>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={7} className="p-3 text-center text-gray-500">
-                  Sin datos.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              ) : totalElements ? (
+                filtered.map((s) => (
+                  <tr
+                    key={s.studentId}
+                    className="border-t text-sm text-gray-800 dark:border-gray-700 dark:text-gray-100"
+                  >
+                    <Td mono>{displayName(s.studentId)}</Td>
+                    <Td center>{s.overview.dailyAttempts}</Td>
+                    <Td center>{s.overview.dailyCorrect}</Td>
+                    <Td center>✅ {s.overview.masteredObjectives}</Td>
+                    <Td center>🟡 {s.overview.inProgressObjectives}</Td>
+                    <Td center>⚪ {s.overview.notStartedObjectives}</Td>
+                    <Td center>
+                      <Link
+                        className="rounded-lg border px-2 py-1 text-xs transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700"
+                        to={`/teacher/classrooms/${classroomId}/students/${s.studentId}`}
+                      >
+                        Ver
+                      </Link>
+                    </Td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="p-3 text-center text-sm text-gray-500 dark:text-gray-300"
+                  >
+                    Sin datos.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ──────────── helpers ──────────── */
+/* helpers */
 function csvEscape(s: string): string {
   if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
 
-/* ──────────── UI helpers ──────────── */
 function KpiCard({
   title,
   value,
@@ -560,9 +641,9 @@ function KpiCard({
   suffix?: string;
 }) {
   return (
-    <div className="rounded border p-3 dark:border-gray-700 bg-white dark:bg-gray-800">
+    <div className="rounded-2xl border bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
       <div className="text-xs text-gray-500 dark:text-gray-300">{title}</div>
-      <div className="text-2xl font-semibold">
+      <div className="text-2xl font-semibold text-gray-900 dark:text-white">
         {value}
         {suffix ?? ""}
       </div>
@@ -579,7 +660,7 @@ function Th({
 }) {
   return (
     <th
-      className={`px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-100 ${className}`}
+      className={`px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-100 ${className}`}
     >
       {children}
     </th>
@@ -597,9 +678,9 @@ function Td({
 }) {
   return (
     <td
-      className={`px-3 py-2 dark:text-gray-100 ${
-        center ? "text-center" : "text-left"
-      } ${mono ? "font-mono" : ""}`}
+      className={`px-3 py-2 ${center ? "text-center" : "text-left"} ${
+        mono ? "font-mono" : ""
+      }`}
     >
       {children}
     </td>
@@ -608,13 +689,13 @@ function Td({
 
 function SkeletonChart() {
   return (
-    <div className="w-full h-full animate-pulse bg-gray-100 dark:bg-gray-700 rounded" />
+    <div className="h-full w-full animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
   );
 }
 
 function EmptyChart() {
   return (
-    <div className="w-full h-full flex items-center justify-center text-sm text-gray-500">
+    <div className="flex h-full w-full items-center justify-center text-sm text-gray-500 dark:text-gray-300">
       Sin datos suficientes.
     </div>
   );

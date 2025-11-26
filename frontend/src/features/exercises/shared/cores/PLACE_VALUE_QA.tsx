@@ -1,3 +1,4 @@
+// src/...(ruta que usas)/shared/cores/PLACE_VALUE_QA.tsx
 import type { ReactNode } from "react";
 import type { PlaceValueParams } from "../../../../types/exercise/TemplateParams";
 
@@ -52,6 +53,7 @@ const core = {
     value,
     onChange,
     statementHtml,
+    submissionItemId,
   }: {
     params: PV_Params;
     value: PV_Value;
@@ -61,6 +63,7 @@ const core = {
   }): ReactNode {
     const isChoice = Array.isArray(params.choices) && params.choices.length > 0;
     const numericMode = NUMERIC_ASKS.includes(params.ask);
+    const groupName = `pv_choice_${submissionItemId}`;
 
     return (
       <>
@@ -73,21 +76,31 @@ const core = {
 
         {isChoice ? (
           <div className="flex flex-col gap-2">
-            {params.choices!.map((opt) => (
-              <label key={opt} className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="pv_choice"
-                  value={opt}
-                  checked={value === opt}
-                  onChange={() => onChange(opt)}
-                />
-                <span>{opt}</span>
-              </label>
-            ))}
+            {params.choices!.map((opt) => {
+              const id = `${groupName}_${opt}`;
+              return (
+                <label
+                  key={opt}
+                  className="inline-flex items-center gap-2"
+                  htmlFor={id}
+                >
+                  <input
+                    id={id}
+                    type="radio"
+                    name={groupName}
+                    value={opt}
+                    checked={value === opt}
+                    onChange={() => onChange(opt)}
+                  />
+                  <span>{opt}</span>
+                </label>
+              );
+            })}
           </div>
         ) : (
           <input
+            id={`pv_input_${submissionItemId}`}
+            name={`pv_input_${submissionItemId}`}
             type="text"
             inputMode={numericMode ? "numeric" : "text"}
             className="w-60 rounded-md border px-2 py-1 dark:bg-zinc-900"

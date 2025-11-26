@@ -5,8 +5,10 @@ interface Props {
 
 export default function AuthFormWrapper({ title, children }: Props) {
   return (
-    <div className="bg-[#2d3b46] rounded-xl px-10 py-8 w-full max-w-md shadow-lg space-y-5">
-      <h1 className="text-3xl font-bold text-center mb-4">{title}</h1>
+    <div className="bg-white/95 dark:bg-slate-800 rounded-2xl px-8 py-8 sm:px-10 w-full max-w-md shadow-xl border border-slate-200/80 dark:border-slate-700 space-y-5">
+      <h1 className="text-2xl sm:text-3xl font-bold text-center mb-2 text-slate-900 dark:text-slate-50">
+        {title}
+      </h1>
       {children}
     </div>
   );

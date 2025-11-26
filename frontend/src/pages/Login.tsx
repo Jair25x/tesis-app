@@ -68,18 +68,23 @@ export default function Login() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#1e2a34] text-white flex-col">
-        <img src={capybaraGif} alt="Cargando..." className="w-48 h-48 mb-4" />
-        <p className="italic text-center">Cargando... 🦫</p>
+      <div className="flex items-center justify-center h-screen bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-100 flex-col">
+        <img src={capybaraGif} alt="Cargando..." className="w-40 h-40 mb-4" />
+        <p className="italic text-center text-sm">Cargando... 🦫</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-[#1e2a34] min-h-screen flex items-center justify-center text-white">
+    <div className="bg-slate-100 dark:bg-slate-900 min-h-screen flex items-center justify-center text-slate-800 dark:text-slate-100 px-4">
       <AuthFormWrapper title="Ingresar">
-        {error && <p className="text-red-400 text-sm text-center">{error}</p>}
-        <p className="text-center">Los capibaras aman las matemáticas 🦫</p>
+        {error && (
+          <p className="text-red-500 text-sm text-center mb-2">{error}</p>
+        )}
+
+        <p className="text-center text-sm text-slate-600 dark:text-slate-300 mb-4">
+          Los capibaras aman las matemáticas 🦫
+        </p>
 
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <AuthInput
@@ -106,7 +111,7 @@ export default function Login() {
             <div className="text-right">
               <button
                 type="button"
-                className="text-sm text-blue-300 hover:underline"
+                className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
                 onClick={() =>
                   showToast.info("Recuperación de contraseña: próximamente.")
                 }
@@ -116,10 +121,10 @@ export default function Login() {
             </div>
           </div>
 
-          <label className="flex items-center text-sm">
+          <label className="flex items-center text-sm text-slate-700 dark:text-slate-200">
             <input
               type="checkbox"
-              className="mr-2"
+              className="mr-2 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
             />
@@ -135,21 +140,21 @@ export default function Login() {
         <SocialLoginButton />
 
         <div className="text-center mt-6">
-          <p className="text-sm text-gray-300">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
             ¿No tienes una cuenta?{" "}
             <button
               onClick={() => navigate("/register")}
-              className="text-blue-300 hover:underline"
+              className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
             >
               Regístrate aquí
             </button>
           </p>
         </div>
 
-        <p className="text-xs text-gray-400 text-center mt-6">
+        <p className="text-xs text-slate-500 dark:text-slate-400 text-center mt-6">
           Al iniciar sesión, aceptas nuestros{" "}
-          <span className="underline">Términos</span> y{" "}
-          <span className="underline">Política de privacidad</span>.
+          <span className="underline cursor-pointer">Términos</span> y{" "}
+          <span className="underline cursor-pointer">Política de privacidad</span>.
         </p>
       </AuthFormWrapper>
     </div>

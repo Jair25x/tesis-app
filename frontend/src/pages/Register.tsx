@@ -1,4 +1,3 @@
-// src/pages/Register.tsx
 import { useState, useMemo } from "react";
 import { register } from "../services/authService";
 import { useNavigate } from "react-router-dom";
@@ -61,10 +60,10 @@ export default function Register() {
   };
 
   return (
-    <div className="bg-[#1e2a34] text-white min-h-screen flex items-center justify-center">
+    <div className="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-screen flex items-center justify-center px-4">
       <AuthFormWrapper title="Crear cuenta">
         {error && <AuthError message={error} />}
-        <p className="text-center text-sm text-gray-300 mb-2">
+        <p className="text-center text-sm text-slate-600 dark:text-slate-300 mb-3">
           ¡Únete y empieza a aprender con los capibaras! 🧠🦫
         </p>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -118,10 +117,10 @@ export default function Register() {
           buttonLabel="Inicia sesión aquí"
           onClick={() => navigate("/login")}
         />
-        <p className="text-xs text-gray-400 text-center mt-6">
+        <p className="text-xs text-slate-500 dark:text-slate-400 text-center mt-6">
           Al registrarte, aceptas nuestros{" "}
-          <span className="underline">Términos</span> y{" "}
-          <span className="underline">Política de privacidad</span>.
+          <span className="underline cursor-pointer">Términos</span> y{" "}
+          <span className="underline cursor-pointer">Política de privacidad</span>.
         </p>
       </AuthFormWrapper>
     </div>

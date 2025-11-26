@@ -2,18 +2,19 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* 🔧 Ajuste clave aquí */
+/* Layout base: que todo llene la pantalla, sin forzar tema global */
 html,
 body,
 #root {
   min-height: 100vh;
-  height: auto;
-  background-color: #121212;
   margin: 0;
   padding: 0;
   overflow-x: hidden; /* Previene scroll horizontal innecesario */
 }
 
+/* ================================
+   Utilidades de animación
+   ================================ */
 @layer utilities {
   .animate-enter {
     animation: enter 0.3s ease-out forwards;
@@ -46,5 +47,10 @@ body,
 }
 
 /* Ocultar scrollbar de manera accesible (sigue siendo desplazable) */
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

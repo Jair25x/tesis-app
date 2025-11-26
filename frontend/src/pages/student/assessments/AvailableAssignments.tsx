@@ -55,16 +55,18 @@ function StatusBadge({
   started: boolean;
   submitted: boolean;
 }) {
-  if (submitted)
+  if (submitted) {
     return badge(
       "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200",
       "enviada"
     );
-  if (started)
+  }
+  if (started) {
     return badge(
       "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200",
       "en curso"
     );
+  }
   return null;
 }
 
@@ -75,7 +77,7 @@ function ActiveNowBadge() {
   );
 }
 
-function formatWindow(a: StudentAssignmentSummaryResponse) {
+function formatWindow(a: StudentAssignmentSummaryResponse): string {
   const hasFrom = !!a.windowStart;
   const hasTo = !!a.windowEnd;
   if (!hasFrom && !hasTo) return "Siempre abierta";
@@ -99,17 +101,16 @@ function groupBy<T>(arr: T[], keyFn: (x: T) => string): Record<string, T[]> {
 export default function AvailableAssignments() {
   const nav = useNavigate();
 
-  // Filtros de servidor (paginado). Manténlos minimalistas: sólo page/size
+  // Filtros de servidor (paginado). Minimal: sólo page/size
   const [filters, setFilters] = useState<{ page: number; size: number }>({
     page: 0,
     size: 20,
   });
 
-  // ⚠️ Filtros de UI (client-side) — NO deben tocar el servidor
+  // Filtros de UI (client-side)
   const [onlyAvailable, setOnlyAvailable] = useState(false);
   const [classroomFilter, setClassroomFilter] = useState<string | "ALL">("ALL");
 
-  // Hook unificado (misma key en toda la app)
   const {
     data: page,
     isLoading,
@@ -144,7 +145,7 @@ export default function AvailableAssignments() {
     [rowsFiltered]
   );
 
-  // Opciones de aula (orden alfabético, “Sin aula” al final)
+  // Opciones de aula
   const classroomOptions = useMemo(() => {
     const names = Array.from(
       new Set(
@@ -160,35 +161,38 @@ export default function AvailableAssignments() {
     return names;
   }, [rowsAll]);
 
-  // Iniciar evaluación (mutación)
+  // Iniciar evaluación
   const startM = useStartAssignment();
-  const begin = async (id?: string) => {
+  const begin = async (id?: string): Promise<void> => {
     if (!id) {
       showToast.error("Falta el identificador de la evaluación.");
       return;
     }
     try {
-      const res = await startM.mutateAsync(id); // idempotente si había IN_PROGRESS
+      const res = await startM.mutateAsync(id);
       nav(`/student/assessments/take/${res.submissionId}`);
     } catch {
       showToast.error("No se pudo iniciar la evaluación.");
     }
   };
 
+  type SectionProps = {
+    title: string;
+    items: StudentAssignmentSummaryResponse[];
+    groupByClassroom?: boolean;
+  };
+
   const Section = ({
     title,
     items,
     groupByClassroom = false,
-  }: {
-    title: string;
-    items: StudentAssignmentSummaryResponse[];
-    groupByClassroom?: boolean;
-  }) => {
+  }: SectionProps) => {
     if (items.length === 0) return null;
 
     const grouped = groupByClassroom
       ? groupBy(items, (x) => x.classroomName ?? "Sin aula")
       : { [title]: items };
+
     const groupEntries = Object.entries(grouped).sort(([a], [b]) => {
       if (a === "Sin aula") return 1;
       if (b === "Sin aula") return -1;
@@ -200,7 +204,7 @@ export default function AvailableAssignments() {
         {groupEntries.map(([subtitle, list]) => (
           <section className="mb-6" key={`${title}-${subtitle}`}>
             <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide opacity-70">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700 opacity-70 dark:text-gray-200">
                 {title} {groupByClassroom && `· ${subtitle}`}{" "}
                 <span className="ml-1 opacity-60">({list.length})</span>
               </h2>
@@ -229,7 +233,7 @@ export default function AvailableAssignments() {
                   return (
                     <article
                       key={a.id}
-                      className="rounded-xl border p-4 shadow-sm transition hover:shadow-md dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50"
+                      className="rounded-xl border bg-gray-50 p-4 shadow-sm transition hover:shadow-md dark:border-gray-800 dark:bg-gray-800/50"
                       aria-label={`Evaluación: ${
                         a.templateTitle ?? "sin título"
                       }`}
@@ -258,7 +262,7 @@ export default function AvailableAssignments() {
                           : null}
                       </div>
 
-                      <h3 className="line-clamp-2 text-base font-semibold">
+                      <h3 className="line-clamp-2 text-base font-semibold text-gray-900 dark:text-white">
                         {a.templateTitle ?? (
                           <span className="opacity-60">sin título</span>
                         )}
@@ -279,6 +283,7 @@ export default function AvailableAssignments() {
 
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <button
+                          type="button"
                           disabled={disabled}
                           onClick={() => void begin(a.id)}
                           className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition ${
@@ -301,6 +306,7 @@ export default function AvailableAssignments() {
 
                         {a.lastSubmissionId && (
                           <button
+                            type="button"
                             onClick={() =>
                               nav(
                                 `/student/assessments/result/${a.lastSubmissionId}`
@@ -323,19 +329,25 @@ export default function AvailableAssignments() {
     );
   };
 
-  /* ---------- UI ---------- */
+  const rowsFilteredCount = rowsFiltered.length;
   const empty =
     !isLoading &&
     !error &&
-    ((page?.totalElements ?? 0) === 0 || rowsFiltered.length === 0);
+    ((page?.totalElements ?? 0) === 0 || rowsFilteredCount === 0);
+
+  const totalElements = page?.totalElements ?? 0;
+  const currentPage = (page?.page ?? 0) + 1;
+  const totalPages = page?.totalPages ?? 1;
 
   return (
-    <div className="min-h-[calc(100vh-64px)] px-4 py-6 sm:px-6 lg:px-8 flex items-start justify-center">
+    <div className="min-h-[calc(100vh-64px)] flex items-start justify-center bg-gray-50 px-4 py-6 dark:bg-[#1e2a34] sm:px-6 lg:px-8">
       <div className="w-full max-w-6xl space-y-4">
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Disponibles</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+              Disponibles
+            </h1>
             <p className="text-sm text-gray-600 dark:text-gray-300">
               Aquí verás las evaluaciones que tu docente puso a tu disposición
             </p>
@@ -345,7 +357,7 @@ export default function AvailableAssignments() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
               <input
                 type="checkbox"
                 checked={onlyAvailable}
@@ -359,7 +371,7 @@ export default function AvailableAssignments() {
 
             {/* Filtro por aula */}
             <select
-              className="rounded-lg border px-2 py-1 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-950"
+              className="rounded-lg border px-2 py-1 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
               value={classroomFilter}
               onChange={(e) => {
                 setClassroomFilter(e.target.value as "ALL" | string);
@@ -375,8 +387,9 @@ export default function AvailableAssignments() {
               ))}
             </select>
 
+            {/* Tamaño de página */}
             <select
-              className="rounded-lg border px-2 py-1 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-950"
+              className="rounded-lg border px-2 py-1 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
               value={filters.size}
               onChange={(e) =>
                 setFilters((f) => ({
@@ -393,6 +406,7 @@ export default function AvailableAssignments() {
             </select>
 
             <button
+              type="button"
               onClick={() => refetch()}
               className="rounded-lg border px-3 py-1.5 text-sm transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
               aria-label="Recargar"
@@ -409,7 +423,7 @@ export default function AvailableAssignments() {
             aria-busy="true"
           >
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {[...Array(6)].map((_, i) => (
+              {Array.from({ length: 6 }).map((_, i) => (
                 <div
                   key={i}
                   className="h-32 animate-pulse rounded-xl bg-gray-100 dark:bg-gray-800"
@@ -419,10 +433,11 @@ export default function AvailableAssignments() {
           </div>
         ) : error ? (
           <div className="rounded-2xl border bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <p className="text-red-600">
+            <p className="text-sm text-red-600 dark:text-red-400">
               No se pudieron cargar tus evaluaciones.
             </p>
             <button
+              type="button"
               onClick={() => refetch()}
               className="mt-3 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-700"
             >
@@ -432,7 +447,9 @@ export default function AvailableAssignments() {
         ) : empty ? (
           <div className="rounded-2xl border bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mx-auto max-w-md text-center">
-              <div className="mb-2 text-base font-medium">Sin evaluaciones</div>
+              <div className="mb-2 text-base font-medium text-gray-900 dark:text-white">
+                Sin evaluaciones
+              </div>
               <p className="text-sm text-gray-600 dark:text-gray-300">
                 No tienes evaluaciones por ahora
                 {onlyAvailable
@@ -441,6 +458,7 @@ export default function AvailableAssignments() {
               </p>
               {onlyAvailable && (
                 <button
+                  type="button"
                   className="mt-4 rounded-lg border px-3 py-1.5 text-sm transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
                   onClick={() => setOnlyAvailable(false)}
                 >
@@ -461,24 +479,28 @@ export default function AvailableAssignments() {
             {/* Footer paginado */}
             <div className="mt-4 flex flex-col items-center justify-between gap-3 text-xs text-gray-600 sm:flex-row dark:text-gray-300">
               <div>
-                Página: {(page?.page ?? 0) + 1} / {page?.totalPages ?? 1} ·
-                Total: {page?.totalElements ?? 0}
+                Página: {currentPage} / {totalPages} · Total: {totalElements}
               </div>
 
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() =>
-                    setFilters((f) => ({ ...f, page: Math.max(0, f.page - 1) }))
+                    setFilters((f) => ({
+                      ...f,
+                      page: Math.max(0, f.page - 1),
+                    }))
                   }
-                  disabled={(filters.page ?? 0) <= 0 || isFetching}
+                  disabled={filters.page <= 0 || isFetching}
                   className="rounded-lg border px-3 py-1 text-sm transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
                 >
                   ← Anterior
                 </button>
                 <span className="opacity-70">
-                  {(page?.page ?? 0) + 1} de {page?.totalPages ?? 1}
+                  {currentPage} de {totalPages}
                 </span>
                 <button
+                  type="button"
                   onClick={() =>
                     setFilters((f) =>
                       page
@@ -490,9 +512,7 @@ export default function AvailableAssignments() {
                     )
                   }
                   disabled={
-                    !page ||
-                    (filters.page ?? 0) >= (page?.totalPages ?? 1) - 1 ||
-                    isFetching
+                    !page || filters.page >= totalPages - 1 || isFetching
                   }
                   className="rounded-lg border px-3 py-1 text-sm transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
                 >

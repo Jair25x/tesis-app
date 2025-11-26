@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type JSX } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { showToast } from "../../utils/showToast";
 import { renderStatement } from "../../utils/renderStatement";
@@ -49,6 +49,27 @@ type ResultState = {
   updatedStreak?: UpdatedStreak;
   statusMessage?: string;
 };
+
+/** ===== Tipado del runtime (sin any) ===== */
+
+type RuntimeComponentProps = {
+  params: unknown;
+  value: unknown;
+  onChange: (next: unknown) => void;
+  submissionItemId: string;
+};
+
+type RuntimeModule = {
+  guard: (raw: unknown) => unknown | null;
+  read: (raw?: unknown) => unknown;
+  write: (value: unknown) => unknown;
+  Render: (props: RuntimeComponentProps) => JSX.Element;
+  isValid?: (value: unknown, params: unknown) => boolean;
+};
+
+type RuntimeRegistry = Record<string, RuntimeModule>;
+
+const runtimeModules = runtimeRegistry as RuntimeRegistry;
 
 /** ===== Mensajes motivacionales por estado de objetivo ===== */
 
@@ -156,51 +177,57 @@ export default function ExercisePlayerByHierarchy() {
     let active = true;
     setLoading(true);
 
-    Promise.all([
-      getExerciseById(
-        curriculumId,
-        competencyId,
-        standardId,
-        learningObjectiveId,
-        exerciseId
-      ),
-      getExercises(
-        curriculumId,
-        competencyId,
-        standardId,
-        learningObjectiveId,
-        "active"
-      ),
-    ])
-      .then(([ex, list]) => {
-        if (!active) return;
-        setExercise(ex);
-        setLoExercises(list);
+    const load = async () => {
+      try {
+        const [ex, list] = await Promise.all([
+          getExerciseById(
+            curriculumId,
+            competencyId,
+            standardId,
+            learningObjectiveId,
+            exerciseId
+          ),
+          getExercises(
+            curriculumId,
+            competencyId,
+            standardId,
+            learningObjectiveId,
+            "active"
+          ),
+        ]);
 
-        // Reset UI state por ejercicio
+        if (!active) return;
+
+        setExercise(ex);
+        setLoExercises(list ?? []);
+
+        // Reset de estado de UI por ejercicio
         setRevealedHints(0);
         setRevealedSteps(0);
         setResult(null);
         setStartedAt(Date.now());
 
         // Inicializa el valor del adapter (si existe)
-        const mod =
-          runtimeRegistry[ex.templateType as keyof typeof runtimeRegistry];
+        const mod = runtimeModules[ex.templateType] ?? null;
         if (mod) {
           const params = mod.guard(ex.parameters);
           if (params) {
-            setValue(mod.read(undefined)); // valor inicial limpio
+            // Valor inicial limpio (sin respuesta previa)
+            setValue(mod.read(undefined));
           } else {
             setValue(null); // parámetros mal formados
           }
         } else {
           setValue(null); // plantilla no soportada
         }
-      })
-      .catch(() => showToast.error("No se pudo cargar el ejercicio."))
-      .finally(() => {
+      } catch {
+        showToast.error("No se pudo cargar el ejercicio.");
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    };
+
+    void load();
 
     return () => {
       active = false;
@@ -208,6 +235,7 @@ export default function ExercisePlayerByHierarchy() {
   }, [curriculumId, competencyId, standardId, learningObjectiveId, exerciseId]);
 
   const currentIndex = useMemo(() => {
+    if (!loExercises.length) return null;
     const idx = loExercises.findIndex((e) => e.id === exerciseId);
     return idx >= 0 ? idx : null;
   }, [loExercises, exerciseId]);
@@ -221,6 +249,15 @@ export default function ExercisePlayerByHierarchy() {
   /** HTML ya sanitizado para inyección segura */
   const statementHtml = useMemo(() => {
     if (!exercise) return { __html: "" };
+
+    // Preferimos statement pre-renderizado si viene del backend
+    const rendered = (
+      exercise as unknown as { statementRendered?: string | null }
+    ).statementRendered;
+    if (rendered && rendered.trim().length > 0) {
+      return { __html: rendered };
+    }
+
     try {
       return renderStatement(exercise.statement, exercise.parameters ?? {});
     } catch {
@@ -233,14 +270,13 @@ export default function ExercisePlayerByHierarchy() {
     setStartedAt(Date.now());
   };
 
-  const moduleForTpl = useMemo(() => {
+  const moduleForTpl = useMemo<RuntimeModule | null>(() => {
     if (!exercise) return null;
-    const mod =
-      runtimeRegistry[exercise.templateType as keyof typeof runtimeRegistry];
+    const mod = runtimeModules[exercise.templateType];
     return mod ?? null;
   }, [exercise]);
 
-  const paramsForTpl = useMemo(() => {
+  const paramsForTpl = useMemo<unknown | null>(() => {
     if (!exercise || !moduleForTpl) return null;
     return moduleForTpl.guard(exercise.parameters);
   }, [exercise, moduleForTpl]);
@@ -248,7 +284,7 @@ export default function ExercisePlayerByHierarchy() {
   const isAnswerValid = useMemo(() => {
     if (!moduleForTpl || !paramsForTpl) return false;
     if (typeof moduleForTpl.isValid === "function") {
-      return moduleForTpl.isValid(value as never, paramsForTpl as never);
+      return moduleForTpl.isValid(value, paramsForTpl);
     }
     return value != null;
   }, [moduleForTpl, paramsForTpl, value]);
@@ -256,12 +292,16 @@ export default function ExercisePlayerByHierarchy() {
   const handleSubmit = async (): Promise<void> => {
     if (!exercise || isSubmitting || !moduleForTpl || !paramsForTpl) return;
 
-    const answer = moduleForTpl.write(value as never);
-    if (!answer || typeof answer !== "object") {
+    // Limpiamos el resultado previo para evitar parpadeos raros
+    setResult(null);
+
+    const rawAnswer = moduleForTpl.write(value);
+    if (!rawAnswer || typeof rawAnswer !== "object") {
       showToast.error("Este ejercicio no tiene un template soportado.");
       return;
     }
 
+    const answer = rawAnswer as Record<string, unknown>;
     const durationMs = Math.max(0, Date.now() - startedAt);
     const sessionId = `practice:${curriculumId}:${learningObjectiveId}`;
 
@@ -347,6 +387,10 @@ export default function ExercisePlayerByHierarchy() {
 
   const formatAccuracy = (acc?: number | null): string =>
     typeof acc === "number" && acc >= 0 ? `${Math.round(acc * 100)}%` : "—";
+
+  const RuntimeComponent:
+    | ((props: RuntimeComponentProps) => JSX.Element)
+    | null = moduleForTpl ? moduleForTpl.Render : null;
 
   return (
     <div className="min-h-screen bg-transparent pb-16">
@@ -444,17 +488,17 @@ export default function ExercisePlayerByHierarchy() {
 
         {/* Render del adapter por plantilla */}
         <div className="mx-auto max-w-[720px] space-y-6" aria-live="polite">
-          {!moduleForTpl || !paramsForTpl ? (
+          {!RuntimeComponent || !paramsForTpl ? (
             <div className="rounded-md border p-4 text-sm dark:border-gray-700">
               Plantilla no soportada todavía ({exercise.templateType}).
             </div>
           ) : (
-            moduleForTpl.Render({
-              params: paramsForTpl as never,
-              value: value as never,
-              onChange: (next: unknown) => setValue(next),
-              submissionItemId: practiceKey, // requerido por CoreModule
-            })
+            <RuntimeComponent
+              params={paramsForTpl}
+              value={value}
+              onChange={setValue}
+              submissionItemId={practiceKey}
+            />
           )}
 
           {/* Acciones */}

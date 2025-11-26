@@ -1,10 +1,10 @@
 // src/layouts/components/Sidebar.tsx
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { X } from "lucide-react";
 import { useAuth } from "../../context/useAuth";
 import { useStudentView } from "../../context/useStudentView";
 import { cn } from "../../utils/cn";
-import { X } from "lucide-react";
 import StudentMenu from "./StudentMenu";
 import AdminMenu from "./AdminMenu";
 import SettingsMenu from "./SettingsMenu";
@@ -15,38 +15,67 @@ interface SidebarProps {
   setSidebarOpen: (open: boolean) => void;
 }
 
-export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
+const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+
   const { user, isAuthenticated, logout } = useAuth();
   const { impersonateStudentView, toggleStudentView, isStudentView } =
     useStudentView();
-  const location = useLocation();
-  const roles = user?.roles || [];
+
+  const roles = user?.roles ?? [];
   const isTeacher =
     roles.includes("ROLE_TEACHER") || roles.includes("ROLE_ADMIN");
 
-  const [teacherOpen, setTeacherOpen] = useState(true);
-  const [studentOpen, setStudentOpen] = useState(false);
-  const [adminOpen, setAdminOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [teacherOpen, setTeacherOpen] = useState<boolean>(true);
+  const [studentOpen, setStudentOpen] = useState<boolean>(false);
+  const [adminOpen, setAdminOpen] = useState<boolean>(false);
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+
+  const closeSidebar = (): void => setSidebarOpen(false);
 
   useEffect(() => {
     if (isStudentView) setStudentOpen(true);
   }, [isStudentView]);
 
+  // Cerrar con tecla Esc cuando el sidebar esté abierto (especialmente en móvil)
+  useEffect(() => {
+    if (!sidebarOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        closeSidebar();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sidebarOpen]);
+
+  const handleLogout = async (): Promise<void> => {
+    await logout();
+    navigate("/login", { replace: true });
+    closeSidebar();
+  };
+
   return (
     <>
+      {/* Overlay móvil */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
-          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-black bg-opacity-50 md:hidden"
+          onClick={closeSidebar}
+          aria-hidden="true"
         />
       )}
+
       <aside
         className={cn(
-          "fixed top-0 left-0 z-40 h-full w-64 bg-white dark:bg-[#1e2a34] shadow-md border-r border-gray-200 dark:border-white/20 p-6 transform transition-transform duration-300",
+          "fixed top-0 left-0 z-40 h-full w-64 transform border-r border-gray-200 bg-white p-6 shadow-md transition-transform duration-300 dark:border-white/20 dark:bg-[#1e2a34]",
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
+        role="navigation"
+        aria-label="Menú principal"
       >
         <div className="flex h-full flex-col">
           {/* Header fijo */}
@@ -55,8 +84,9 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
               TesisApp
             </h2>
             <button
-              className="md:hidden text-gray-700 dark:text-gray-300"
-              onClick={() => setSidebarOpen(false)}
+              type="button"
+              className="text-gray-700 hover:text-gray-900 md:hidden dark:text-gray-300 dark:hover:text-white"
+              onClick={closeSidebar}
               aria-label="Cerrar menú"
             >
               <X size={24} />
@@ -65,41 +95,47 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
 
           {isAuthenticated && user && (
             <p className="mb-4 text-sm italic text-gray-700 dark:text-gray-300">
-              👋 Hola, <span className="font-semibold">{user.nombres}</span>
+              👋 Hola,{" "}
+              <span className="font-semibold">{user.nombres ?? "usuario"}</span>
             </p>
           )}
 
-          {/* Zona scrollable con fade inferior */}
-          <div className="relative flex-1 overflow-y-auto no-scrollbar pr-1">
+          {/* Zona scrollable simple (sin fade) */}
+          <div className="flex-1 overflow-y-auto pr-1 no-scrollbar">
             <nav className="space-y-2">
               <Link
                 to="/profile-dashboard"
                 className={cn(
-                  "block px-4 py-2 rounded-md text-sm font-medium transition",
+                  "block rounded-md px-4 py-2 text-sm font-medium transition",
                   location.pathname === "/profile-dashboard"
                     ? "bg-green-500 text-white"
                     : "hover:bg-gray-200 dark:hover:bg-gray-700"
                 )}
-                onClick={() => setSidebarOpen(false)}
+                onClick={closeSidebar}
               >
-                🏠 Mi Perfil
+                🏠 Mi perfil
               </Link>
 
+              {/* Toggle “ver como estudiante” */}
               {isTeacher && (
                 <button
+                  type="button"
                   className={cn(
-                    "w-full text-left px-4 py-2 rounded-md text-sm font-medium flex justify-between items-center transition hover:bg-gray-200 dark:hover:bg-gray-700",
+                    "flex w-full items-center justify-between rounded-md px-4 py-2 text-left text-sm font-medium transition hover:bg-gray-200 dark:hover:bg-gray-700",
                     impersonateStudentView ? "bg-green-500 text-white" : ""
                   )}
                   onClick={() => {
                     toggleStudentView();
                     setStudentOpen(true);
                   }}
+                  aria-pressed={impersonateStudentView}
                 >
-                  🎭{" "}
-                  {impersonateStudentView
-                    ? "Salir de vista estudiante"
-                    : "Ver como estudiante"}
+                  <span>
+                    🎭{" "}
+                    {impersonateStudentView
+                      ? "Salir de vista estudiante"
+                      : "Ver como estudiante"}
+                  </span>
                   <span className="ml-2">
                     {impersonateStudentView ? "▴" : "▾"}
                   </span>
@@ -133,31 +169,22 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                 />
               )}
 
+              {/* Menú Settings (siempre) */}
               <SettingsMenu
                 settingsOpen={settingsOpen}
                 setSettingsOpen={setSettingsOpen}
                 setSidebarOpen={setSidebarOpen}
               />
             </nav>
-
-            {/* Fade inferior (sugiere que hay más contenido) */}
-            <div
-              className="pointer-events-none absolute bottom-0 left-0 right-0 h-6
-                         bg-gradient-to-t from-white to-transparent
-                         dark:from-[#1e2a34]"
-            />
           </div>
 
           {/* Footer fijo (logout) */}
           {isAuthenticated && (
             <div className="pt-4">
               <button
-                onClick={async () => {
-                  await logout();
-                  navigate("/login", { replace: true });
-                  setSidebarOpen(false);
-                }}
-                className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm"
+                type="button"
+                onClick={handleLogout}
+                className="w-full rounded bg-red-600 px-4 py-2 text-sm text-white transition hover:bg-red-700"
               >
                 🔓 Cerrar sesión
               </button>
@@ -167,4 +194,6 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
       </aside>
     </>
   );
-}
+};
+
+export default Sidebar;

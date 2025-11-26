@@ -1,3 +1,4 @@
+// src/main/java/com/tesis/curriculum_service/service/template/InMemoryTemplateService.java
 package com.tesis.curriculum_service.service.template;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,25 +21,34 @@ public class InMemoryTemplateService implements ExerciseTemplateService {
         @PostConstruct
         public void init() {
                 // 1) EQUATION_SINGLE_CHOICE (Mustache + opciones)
-                schemas.put(TemplateSchema.TemplateType.EQUATION_SINGLE_CHOICE,
+                schemas.put(
+                                TemplateSchema.TemplateType.EQUATION_SINGLE_CHOICE,
                                 TemplateSchema.builder()
                                                 .templateType(TemplateSchema.TemplateType.EQUATION_SINGLE_CHOICE)
                                                 .pattern("Resuelve: {{a}} × {{b}} = ?")
                                                 .fields(List.of(
-                                                                FieldDescriptor.builder().name("a")
+                                                                FieldDescriptor.builder()
+                                                                                .name("a")
                                                                                 .type(FieldDescriptor.FieldType.NUMBER)
                                                                                 .build(),
-                                                                FieldDescriptor.builder().name("b")
+                                                                FieldDescriptor.builder()
+                                                                                .name("b")
                                                                                 .type(FieldDescriptor.FieldType.NUMBER)
                                                                                 .build()))
                                                 .example(obj(o -> {
                                                         o.put("a", 6);
                                                         o.put("b", 7);
                                                         o.set("choices", arr("36", "40", "42", "48"));
+                                                        // respuesta correcta para autoría / BE
                                                         o.put("answer", "42");
                                                 }))
                                                 .uiHints(obj(h -> {
-                                                        h.put("notes", "Usa 'a' y 'b' para renderizar el enunciado. 'choices' (string[]) y 'answer' (string) son requeridos para corrección automática.");
+                                                        h.put(
+                                                                        "notes",
+                                                                        "Usa 'a' y 'b' para renderizar el enunciado. " +
+                                                                                        "'choices' (string[]) y 'answer' (string) son requeridos "
+                                                                                        +
+                                                                                        "para corrección automática.");
                                                         var rules = mapper.createArrayNode();
                                                         rules.add("'choices' no vacío.");
                                                         rules.add("'answer' debe existir dentro de 'choices'.");
@@ -47,180 +57,229 @@ public class InMemoryTemplateService implements ExerciseTemplateService {
                                                 .build());
 
                 // 2) FREQUENCY_TABLE_QA (tabla con preguntas)
-                schemas.put(TemplateSchema.TemplateType.FREQUENCY_TABLE_QA, TemplateSchema.builder()
-                                .templateType(TemplateSchema.TemplateType.FREQUENCY_TABLE_QA)
-                                .example(obj(o -> {
-                                        o.set("columns", arr("Actividad", "Frecuencia"));
-                                        var rows = mapper.createArrayNode();
-                                        rows.add(obj(r -> {
-                                                r.put("actividad", "Ajedrez");
-                                                r.put("frecuencia", 10);
-                                        }));
-                                        rows.add(obj(r -> {
-                                                r.put("actividad", "Cantar");
-                                                r.put("frecuencia", 12);
-                                        }));
-                                        rows.add(obj(r -> {
-                                                r.put("actividad", "Bailar");
-                                                r.put("frecuencia", 8);
-                                        }));
-                                        rows.add(obj(r -> {
-                                                r.put("actividad", "Otras");
-                                                r.put("frecuencia", 5);
-                                        }));
-                                        o.set("rows", rows);
+                schemas.put(
+                                TemplateSchema.TemplateType.FREQUENCY_TABLE_QA,
+                                TemplateSchema.builder()
+                                                .templateType(TemplateSchema.TemplateType.FREQUENCY_TABLE_QA)
+                                                .example(obj(o -> {
+                                                        o.set("columns", arr("Actividad", "Frecuencia"));
 
-                                        var qs = mapper.createArrayNode();
-                                        qs.add(obj(q -> {
-                                                q.put("id", "q1");
-                                                q.put("kind", "single_choice");
-                                                q.put("prompt", "¿Cuál es la moda?");
-                                                q.set("options", arr("Ajedrez", "Cantar", "Bailar", "Otras"));
-                                                q.put("answer", "Cantar");
-                                        }));
-                                        qs.add(obj(q -> {
-                                                q.put("id", "q2");
-                                                q.put("kind", "numeric");
-                                                q.put("prompt", "¿Total de estudiantes?");
-                                                q.put("answer", 35);
-                                        }));
-                                        o.set("questions", qs);
-                                }))
-                                .uiHints(obj(h -> {
-                                        h.put("notes",
-                                                        "Estructura: 'columns' y 'rows' definen la tabla. 'questions' es una lista de preguntas sobre la tabla. "
-                                                                        + "Soportado: 'single_choice' y 'numeric'. Para 'single_choice' debes incluir 'options' (string[]) y 'answer' como string. "
-                                                                        + "Para 'numeric', 'answer' es un número. 'id' debe ser único por pregunta.");
+                                                        var rows = mapper.createArrayNode();
+                                                        rows.add(obj(r -> {
+                                                                r.put("actividad", "Ajedrez");
+                                                                r.put("frecuencia", 10);
+                                                        }));
+                                                        rows.add(obj(r -> {
+                                                                r.put("actividad", "Cantar");
+                                                                r.put("frecuencia", 12);
+                                                        }));
+                                                        rows.add(obj(r -> {
+                                                                r.put("actividad", "Bailar");
+                                                                r.put("frecuencia", 8);
+                                                        }));
+                                                        rows.add(obj(r -> {
+                                                                r.put("actividad", "Otras");
+                                                                r.put("frecuencia", 5);
+                                                        }));
+                                                        o.set("rows", rows);
 
-                                        // Descripción de tipos de pregunta soportados
-                                        var kinds = mapper.createObjectNode();
-                                        var sc = mapper.createObjectNode();
-                                        sc.put("answerType", "string");
-                                        sc.put("optionsRequired", true);
-                                        sc.put("optionsType", "string[]");
-                                        sc.put("exampleAnswer", "Cantar");
+                                                        var qs = mapper.createArrayNode();
+                                                        qs.add(obj(q -> {
+                                                                q.put("id", "q1");
+                                                                q.put("kind", "single_choice");
+                                                                q.put("prompt", "¿Cuál es la moda?");
+                                                                q.set("options", arr("Ajedrez", "Cantar", "Bailar",
+                                                                                "Otras"));
+                                                                q.put("answer", "Cantar"); // string
+                                                        }));
+                                                        qs.add(obj(q -> {
+                                                                q.put("id", "q2");
+                                                                q.put("kind", "numeric");
+                                                                q.put("prompt", "¿Total de estudiantes?");
+                                                                q.put("answer", 35); // número
+                                                        }));
+                                                        o.set("questions", qs);
+                                                }))
+                                                .uiHints(obj(h -> {
+                                                        h.put(
+                                                                        "notes",
+                                                                        "Estructura: 'columns' y 'rows' definen la tabla. "
+                                                                                        +
+                                                                                        "'questions' es una lista de preguntas sobre la tabla. "
+                                                                                        +
+                                                                                        "Soportado: 'single_choice' y 'numeric'. "
+                                                                                        +
+                                                                                        "Para 'single_choice' debes incluir 'options' (string[]) "
+                                                                                        +
+                                                                                        "y 'answer' como string. Para 'numeric', 'answer' es un número. "
+                                                                                        +
+                                                                                        "'id' debe ser único por pregunta.");
 
-                                        var num = mapper.createObjectNode();
-                                        num.put("answerType", "number");
-                                        num.put("optionsRequired", false);
-                                        num.put("exampleAnswer", 35);
+                                                        // Descripción de tipos de pregunta soportados
+                                                        var kinds = mapper.createObjectNode();
+                                                        var sc = mapper.createObjectNode();
+                                                        sc.put("answerType", "string");
+                                                        sc.put("optionsRequired", true);
+                                                        sc.put("optionsType", "string[]");
+                                                        sc.put("exampleAnswer", "Cantar");
 
-                                        kinds.set("single_choice", sc);
-                                        kinds.set("numeric", num);
-                                        h.set("questionKinds", kinds);
+                                                        var num = mapper.createObjectNode();
+                                                        num.put("answerType", "number");
+                                                        num.put("optionsRequired", false);
+                                                        num.put("exampleAnswer", 35);
 
-                                        // Esquema lógico de cada pregunta (en lenguaje humano/JSON-suave)
-                                        var qSchema = mapper.createObjectNode();
-                                        qSchema.put("id", "string (único, obligatorio)");
-                                        qSchema.put("kind", "\"single_choice\" | \"numeric\"");
-                                        qSchema.put("prompt", "string (obligatorio)");
-                                        qSchema.put("options", "string[] (obligatorio si kind = single_choice)");
-                                        qSchema.put("answer", "string | number (tipo acorde a kind)");
-                                        h.set("questionSchema", qSchema);
+                                                        kinds.set("single_choice", sc);
+                                                        kinds.set("numeric", num);
+                                                        h.set("questionKinds", kinds);
 
-                                        // Reglas/validaciones útiles para el autor
-                                        var rules = mapper.createArrayNode();
-                                        rules.add("columns: mínimo 2 columnas (p. ej., 'Actividad', 'Frecuencia').");
-                                        rules.add("rows: cada fila debe tener al menos una clave/valor; típicamente { actividad: string, frecuencia: number }.");
-                                        rules.add("questions: lista no vacía; cada 'id' debe ser único.");
-                                        rules.add("single_choice: 'options' no vacío y 'answer' debe existir dentro de 'options'.");
-                                        rules.add("numeric: 'answer' numérico.");
-                                        h.set("authoringRules", rules);
+                                                        // Esquema lógico de cada pregunta (en lenguaje
+                                                        // humano/JSON-suave)
+                                                        var qSchema = mapper.createObjectNode();
+                                                        qSchema.put("id", "string (único, obligatorio)");
+                                                        qSchema.put("kind", "\"single_choice\" | \"numeric\"");
+                                                        qSchema.put("prompt", "string (obligatorio)");
+                                                        qSchema.put("options",
+                                                                        "string[] (obligatorio si kind = single_choice)");
+                                                        qSchema.put("answer", "string | number (tipo acorde a kind)");
+                                                        h.set("questionSchema", qSchema);
 
-                                        // Sugerencias de UI (el front puede usarlas o ignorarlas)
-                                        var ui = mapper.createObjectNode();
-                                        ui.put("showTableCompact", true);
-                                        ui.put("align", "center");
-                                        h.set("ui", ui);
-                                }))
-                                .build());
+                                                        // Reglas/validaciones útiles para el autor
+                                                        var rules = mapper.createArrayNode();
+                                                        rules.add("columns: mínimo 2 columnas (p. ej., 'Actividad', 'Frecuencia').");
+                                                        rules.add("rows: cada fila debe tener al menos una clave/valor; típicamente { actividad: string, frecuencia: number }.");
+                                                        rules.add("questions: lista no vacía; cada 'id' debe ser único.");
+                                                        rules.add("single_choice: 'options' no vacío y 'answer' debe existir dentro de 'options'.");
+                                                        rules.add("numeric: 'answer' numérico.");
+                                                        h.set("authoringRules", rules);
+
+                                                        // Sugerencias de UI (el front puede usarlas o ignorarlas)
+                                                        var ui = mapper.createObjectNode();
+                                                        ui.put("showTableCompact", true);
+                                                        ui.put("align", "center");
+                                                        h.set("ui", ui);
+                                                }))
+                                                .build());
 
                 // 3) FREQUENCY_TABLE_COMPLETE (completar celdas)
-                schemas.put(TemplateSchema.TemplateType.FREQUENCY_TABLE_COMPLETE, TemplateSchema.builder()
-                                .templateType(TemplateSchema.TemplateType.FREQUENCY_TABLE_COMPLETE)
-                                .example(obj(o -> {
-                                        o.set("columns", arr("Actividad", "Frecuencia"));
-                                        var rows = mapper.createArrayNode();
-                                        rows.add(obj(r -> {
-                                                r.put("actividad", "Ajedrez");
-                                                r.put("frecuencia", 14);
-                                        }));
-                                        rows.add(obj(r -> {
-                                                r.put("actividad", "Cantar");
-                                                r.put("frecuencia", 11);
-                                        }));
-                                        rows.add(obj(r -> {
-                                                r.put("actividad", "Bailar");
-                                                r.put("frecuencia", 10);
-                                        }));
-                                        rows.add(obj(r -> {
-                                                r.put("actividad", "Otras");
-                                                r.put("frecuencia", 5);
-                                        }));
-                                        o.set("rows", rows);
+                schemas.put(
+                                TemplateSchema.TemplateType.FREQUENCY_TABLE_COMPLETE,
+                                TemplateSchema.builder()
+                                                .templateType(TemplateSchema.TemplateType.FREQUENCY_TABLE_COMPLETE)
+                                                .example(obj(o -> {
+                                                        o.set("columns", arr("Actividad", "Frecuencia"));
 
-                                        var miss = mapper.createArrayNode();
-                                        miss.add(obj(m -> {
-                                                m.put("cell", "total");
-                                                m.put("answer", 40);
-                                        }));
-                                        // Ejemplo alternativo de celda faltante por etiqueta de fila:
-                                        // miss.add(obj(m -> { m.put("cell", "Cantar"); m.put("answer", 11); }));
+                                                        var rows = mapper.createArrayNode();
+                                                        rows.add(obj(r -> {
+                                                                r.put("actividad", "Ajedrez");
+                                                                r.put("frecuencia", 14);
+                                                        }));
+                                                        rows.add(obj(r -> {
+                                                                r.put("actividad", "Cantar");
+                                                                r.put("frecuencia", 11);
+                                                        }));
+                                                        rows.add(obj(r -> {
+                                                                r.put("actividad", "Bailar");
+                                                                r.put("frecuencia", 10);
+                                                        }));
+                                                        rows.add(obj(r -> {
+                                                                r.put("actividad", "Otras");
+                                                                r.put("frecuencia", 5);
+                                                        }));
+                                                        o.set("rows", rows);
 
-                                        o.set("missing", miss);
+                                                        var miss = mapper.createArrayNode();
+                                                        miss.add(obj(m -> {
+                                                                // Clave de la celda faltante (puede ser 'total',
+                                                                // 'row_1_frecuencia', etc.)
+                                                                m.put("cell", "total");
+                                                                m.put("answer", 40);
+                                                        }));
+                                                        o.set("missing", miss);
 
-                                        // 💡 Nuevo: documentamos el total objetivo opcional para la UI
-                                        o.put("targetTotal", 40);
-                                }))
-                                // 💡 Pista para el front: claves válidas en "missing.cell" y uso de targetTotal
-                                .uiHints(obj(h -> {
-                                        h.put("notes", "Las celdas faltantes pueden indicarse como 'total', 'row_{i}_frecuencia' (clave técnica) o con la etiqueta exacta de la fila (p.ej. 'Cantar'). 'targetTotal' (número) es opcional y solo afecta a la visualización del total en la UI.");
-                                        var accepted = mapper.createArrayNode();
-                                        accepted.add("total");
-                                        accepted.add("row_{i}_frecuencia");
-                                        accepted.add("<Etiqueta de la fila>");
-                                        h.set("acceptedMissingKeys", accepted);
-                                        h.put("targetTotal", "number | optional");
-                                }))
-                                .build());
-                // 4) NUMBER_WORDS_BIDIR (palabras ↔ cifras)
-                schemas.put(TemplateSchema.TemplateType.NUMBER_WORDS_BIDIR,
+                                                        // total objetivo opcional para la UI
+                                                        o.put("targetTotal", 40);
+                                                }))
+                                                .uiHints(obj(h -> {
+                                                        h.put(
+                                                                        "notes",
+                                                                        "Las celdas faltantes pueden indicarse como 'total', "
+                                                                                        +
+                                                                                        "'row_{i}_frecuencia' (clave técnica) o con la etiqueta exacta de la fila "
+                                                                                        +
+                                                                                        "(p.ej. 'Cantar'). 'targetTotal' (número) es opcional y solo afecta "
+                                                                                        +
+                                                                                        "a la visualización del total en la UI.");
+                                                        var accepted = mapper.createArrayNode();
+                                                        accepted.add("total");
+                                                        accepted.add("row_{i}_frecuencia");
+                                                        accepted.add("<Etiqueta de la fila>");
+                                                        h.set("acceptedMissingKeys", accepted);
+                                                        h.put("targetTotal", "number | optional");
+                                                }))
+                                                .build());
+
+                // 4) NUMBER_WORDS_BIDIR (números ↔ palabras)
+                schemas.put(
+                                TemplateSchema.TemplateType.NUMBER_WORDS_BIDIR,
                                 TemplateSchema.builder()
                                                 .templateType(TemplateSchema.TemplateType.NUMBER_WORDS_BIDIR)
                                                 .example(obj(o -> {
-                                                        o.put("mode", "to_words"); // "to_words" | "to_digits"
-                                                        o.put("number", 70015); // requerido si mode=to_words
-                                                        o.put("words", "Setenta mil quince"); // requerido si
-                                                                                              // mode=to_digits
+                                                        // contrato alineado con NumberWordsParams (FE)
+                                                        o.put("direction", "DIGITS_TO_WORDS"); // "DIGITS_TO_WORDS" |
+                                                                                               // "WORDS_TO_DIGITS"
+                                                        o.put("value", 70015); // si DIGITS_TO_WORDS, value es number
+                                                        o.put("answer", "setenta mil quince"); // grafía esperada
+                                                                                               // normalizada
                                                         o.put("locale", "es-PE");
                                                 }))
                                                 .uiHints(obj(h -> {
-                                                        h.put("notes", "Convierte números ↔ palabras en español. 'mode' define la dirección.");
-                                                        h.put("mode", "'to_words' | 'to_digits'");
+                                                        h.put(
+                                                                        "notes",
+                                                                        "Convierte números ↔ palabras en español. 'direction' define la dirección.");
+                                                        h.put("direction", "\"DIGITS_TO_WORDS\" | \"WORDS_TO_DIGITS\"");
+
                                                         var rules = mapper.createArrayNode();
-                                                        rules.add("to_words: exige 'number' entero 0..999999.");
-                                                        rules.add("to_digits: exige 'words' con grafía válida en es-PE.");
+                                                        rules.add("DIGITS_TO_WORDS: exige 'value' como entero 0..999999.");
+                                                        rules.add("WORDS_TO_DIGITS: exige 'value' como palabras válidas en es-PE.");
+                                                        rules.add("answer: opcional si quieres mostrar solo enunciado, pero recomendable para corrección.");
                                                         h.set("authoringRules", rules);
                                                 }))
                                                 .build());
 
                 // 5) PLACE_VALUE_QA (valor posicional / descomposición)
-                schemas.put(TemplateSchema.TemplateType.PLACE_VALUE_QA,
+                schemas.put(
+                                TemplateSchema.TemplateType.PLACE_VALUE_QA,
                                 TemplateSchema.builder()
                                                 .templateType(TemplateSchema.TemplateType.PLACE_VALUE_QA)
                                                 .example(obj(o -> {
-                                                        o.put("kind", "place_value"); // "place_value" | "expansion" |
-                                                                                      // "count_units"
+                                                        // contrato alineado con PlaceValueParams (FE)
+                                                        o.put("ask", "value_of_digit"); // ver lista de 'ask' en uiHints
                                                         o.put("number", 74325);
-                                                        o.put("digit", 7); // si kind=place_value
+                                                        o.put("digit", 7);
                                                         o.put("place", "ten_thousands"); // decenas de millar
-                                                        o.put("answer", "70 000"); // respuesta string normalizada para
-                                                                                   // corrección exacta
-                                                        // Para expansion, usar: "answer": "70 000 + 4 000 + 300 + 20 +
-                                                        // 5"
+                                                        o.put("answer", "70 000"); // string normalizada para corrección
+                                                                                   // exacta
                                                 }))
                                                 .uiHints(obj(h -> {
-                                                        h.put("notes", "Consultas de valor posicional/expansión en base 10.");
+                                                        h.put(
+                                                                        "notes",
+                                                                        "Consultas de valor posicional/expansión en base 10. "
+                                                                                        +
+                                                                                        "El campo 'ask' define el tipo de pregunta.");
+
+                                                        var asks = mapper.createArrayNode();
+                                                        asks.add("hundreds");
+                                                        asks.add("tens");
+                                                        asks.add("units");
+                                                        asks.add("expanded");
+                                                        asks.add("positional_of_digit");
+                                                        asks.add("value_of_digit");
+                                                        asks.add("compose");
+                                                        asks.add("tens_count");
+                                                        asks.add("hundreds_to_units");
+                                                        asks.add("expanded_choice");
+                                                        h.set("asks", asks);
+
                                                         var places = mapper.createArrayNode();
                                                         places.add("units");
                                                         places.add("tens");
@@ -228,11 +287,19 @@ public class InMemoryTemplateService implements ExerciseTemplateService {
                                                         places.add("thousands");
                                                         places.add("ten_thousands");
                                                         h.set("places", places);
+
+                                                        var rules = mapper.createArrayNode();
+                                                        rules.add("'number' requerido para la mayoría de asks.");
+                                                        rules.add("ask = 'value_of_digit' → requiere 'digit' y 'place'.");
+                                                        rules.add("ask = 'expanded' → 'answer' puede ser string tipo '70 000 + 4 000 + 300 + 20 + 5'.");
+                                                        rules.add("ask numéricos (compose, tens_count, hundreds_to_units, value_of_digit) → 'answer' numérico o string numérico.");
+                                                        h.set("authoringRules", rules);
                                                 }))
                                                 .build());
 
                 // 6) BASE_TEN_BLOCKS_QA (fichas de centenas/decenas/unidades)
-                schemas.put(TemplateSchema.TemplateType.BASE_TEN_BLOCKS_QA,
+                schemas.put(
+                                TemplateSchema.TemplateType.BASE_TEN_BLOCKS_QA,
                                 TemplateSchema.builder()
                                                 .templateType(TemplateSchema.TemplateType.BASE_TEN_BLOCKS_QA)
                                                 .example(obj(o -> {
@@ -240,39 +307,52 @@ public class InMemoryTemplateService implements ExerciseTemplateService {
                                                         o.put("tens", 4);
                                                         o.put("ones", 2);
                                                         o.put("answer", 342);
-                                                        // opcional: "altText": "3 centenas, 4 decenas y 2 unidades"
+                                                        o.put("altText", "3 centenas, 4 decenas y 2 unidades");
                                                 }))
                                                 .uiHints(obj(h -> {
-                                                        h.put("notes", "Cuenta bloques base-10 → cifra total. FE puede mostrar íconos/emoji.");
+                                                        h.put(
+                                                                        "notes",
+                                                                        "Cuenta bloques base-10 → cifra total. El FE puede mostrar íconos/emoji.");
                                                         h.put("renderHint", "🟦=100, 🟩=10, 🟨=1 (sugerencia)");
                                                 }))
                                                 .build());
 
                 // 7) NUMBER_SEQUENCE_QA (patrones y reglas)
-                schemas.put(TemplateSchema.TemplateType.NUMBER_SEQUENCE_QA,
+                schemas.put(
+                                TemplateSchema.TemplateType.NUMBER_SEQUENCE_QA,
                                 TemplateSchema.builder()
                                                 .templateType(TemplateSchema.TemplateType.NUMBER_SEQUENCE_QA)
                                                 .example(obj(o -> {
-                                                        // Secuencia 9005, 8905, 8805, 8705, __, 8505 (−1000 entre los
-                                                        // dos primeros, luego −100, −100…)
+                                                        // Ejemplo: secuencia con un hueco (null)
+                                                        // 9005, 8905, 8805, __, 8605
                                                         var seq = mapper.createArrayNode();
                                                         seq.add(9005);
                                                         seq.add(8905);
                                                         seq.add(8805);
-                                                        seq.add(8705);
+                                                        seq.addNull(); // índice 3 → hueco
+                                                        seq.add(8605);
                                                         o.set("sequence", seq);
-                                                        var blanks = mapper.createArrayNode();
-                                                        blanks.add(4); // índices a completar (0-based)
-                                                        o.set("missingIndices", blanks);
-                                                        // aceptar respuesta como "8605" para pos 4
-                                                        var ans = mapper.createArrayNode();
-                                                        ans.add(8605);
-                                                        o.set("answers", ans);
-                                                        o.put("ruleHint", "Disminuye de 100 en 100 desde 8905.");
+
+                                                        // un solo hueco
+                                                        o.put("missingIndex", 3);
+                                                        o.put("answer", 8705);
+
+                                                        // pista opcional para el estudiante
+                                                        o.put("rule", "Observa cómo disminuye la secuencia y completa el número que falta.");
                                                 }))
                                                 .uiHints(obj(h -> {
-                                                        h.put("notes", "Define 'sequence' (lista), 'missingIndices' y 'answers' alineados.");
-                                                        h.put("acceptMulti", false); // si quieres varios huecos → true
+                                                        h.put(
+                                                                        "notes",
+                                                                        "Define 'sequence' (lista de números o null para huecos). "
+                                                                                        +
+                                                                                        "Usa 'missingIndex' (1 hueco) o 'missingIndices' + 'answers' (varios).");
+                                                        h.put("acceptMulti", true);
+
+                                                        var rules = mapper.createArrayNode();
+                                                        rules.add("Si usas 'missingIndex', usa 'answer' (number).");
+                                                        rules.add("Si usas 'missingIndices', alinea con 'answers' (number[]).");
+                                                        rules.add("Cada null en 'sequence' debe corresponder a un índice en 'missingIndex/indices'.");
+                                                        h.set("authoringRules", rules);
                                                 }))
                                                 .build());
         }
@@ -296,8 +376,9 @@ public class InMemoryTemplateService implements ExerciseTemplateService {
 
         private com.fasterxml.jackson.databind.node.ArrayNode arr(String... values) {
                 var a = mapper.createArrayNode();
-                for (var v : values)
+                for (var v : values) {
                         a.add(v);
+                }
                 return a;
         }
 }

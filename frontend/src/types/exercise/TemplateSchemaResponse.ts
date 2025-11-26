@@ -1,3 +1,4 @@
+// src/types/exercise/TemplateSchemaResponse.ts
 import type { FieldDescriptor } from "./FieldDescriptor";
 
 /**
@@ -8,10 +9,10 @@ export type TemplateType =
   | "FREQUENCY_TABLE_QA"
   | "FREQUENCY_TABLE_COMPLETE"
   // NUEVOS (Unidad 1 – 4.º)
-  | "NUMBER_WORDS_BIDIR"   // palabras ↔ cifras
-  | "PLACE_VALUE_QA"       // valor posicional / descomposición
-  | "BASE_TEN_BLOCKS_QA"   // bloques base diez → número
-  | "NUMBER_SEQUENCE_QA";  // reglas y continuación de secuencias
+  | "NUMBER_WORDS_BIDIR" // palabras ↔ cifras
+  | "PLACE_VALUE_QA" // valor posicional / descomposición
+  | "BASE_TEN_BLOCKS_QA" // bloques base diez → número
+  | "NUMBER_SEQUENCE_QA"; // reglas y continuación de secuencias
 
 /**
  * Extensión compatible hacia adelante/legacy (si en algún punto
@@ -64,6 +65,7 @@ export interface TemplateSchemaResponse {
   description: string;
   example: Record<string, unknown>;
   uiHints?: Record<string, unknown>;
+  validation?: Record<string, unknown> | null;
 
   // opcionales: úsalos si tu backend los expone para Mustache
   pattern?: string | null;
