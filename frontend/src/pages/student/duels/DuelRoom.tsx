@@ -141,7 +141,7 @@ const DuelRoom: React.FC = () => {
 
   // De-dupe de meta de ejercicio
   const lastExerciseKeyRef = useRef<string | null>(null);
-  const inFlightRef = useRef<Record<string, boolean>>({ });
+  const inFlightRef = useRef<Record<string, boolean>>({});
   const fetchAbortRef = useRef<AbortController | null>(null);
 
   // Montado (evitar setState tras unmount)
@@ -330,7 +330,9 @@ const DuelRoom: React.FC = () => {
 
   // Auto “ready” al reconectar si ya estabas listo
   useEffect(() => {
-    if (!connected || iAmReady || status === "RESULTS") return;
+    // ⬅️ OJO: ahora usamos !iAmReady para SALIR si aún no me declaré listo
+    if (!connected || !iAmReady || status === "RESULTS") return;
+
     const res = send({ type: "ready" });
     if (!res.ok) {
       // no bloqueante
